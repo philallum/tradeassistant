@@ -48,6 +48,54 @@
         "chatSessionId": "sess_b6434dc2-6454-473b-9397-8c76951fdc42",
         "timestamp": 1789498687161
       }
+    ],
+    "1.5 Write unit tests for version ledger recording and upgrade surfacing": [
+      {
+        "executionId": "9f5aec69-4fcc-4c99-839d-b5f38ec239b8",
+        "chatSessionId": "sess_63fc74c1-82ba-46f5-9742-ebdd04254acb",
+        "timestamp": 1789543497025
+      },
+      {
+        "executionId": "9f5aec69-4fcc-4c99-839d-b5f38ec239b8",
+        "chatSessionId": "sess_63fc74c1-82ba-46f5-9742-ebdd04254acb",
+        "timestamp": 1789543882148
+      }
+    ],
+    "1.6 Implement environment-based Supabase config (local + hosted) and connectivity round-trip": [
+      {
+        "executionId": "eda6b1c0-03f9-4412-8a1d-3b13f747698d",
+        "chatSessionId": "sess_07de0ee6-282a-467c-b6da-c9c94d65a7bb",
+        "timestamp": 1789544234094
+      },
+      {
+        "executionId": "eda6b1c0-03f9-4412-8a1d-3b13f747698d",
+        "chatSessionId": "sess_07de0ee6-282a-467c-b6da-c9c94d65a7bb",
+        "timestamp": 1789544548442
+      }
+    ],
+    "1.7 Create living-docs (PROJECT-STATE.md, RESEARCH-LOG.md, LESSONS.md) and the Living-Docs Writer": [
+      {
+        "executionId": "08eaf87c-97ff-4a8f-b073-3bba165b95d4",
+        "chatSessionId": "sess_5b6c7f5f-1510-4702-8292-8eda8f5d585b",
+        "timestamp": 1789544598537
+      },
+      {
+        "executionId": "08eaf87c-97ff-4a8f-b073-3bba165b95d4",
+        "chatSessionId": "sess_5b6c7f5f-1510-4702-8292-8eda8f5d585b",
+        "timestamp": 1789544994134
+      }
+    ],
+    "1.8 Write unit tests for living-docs writer and log-entry template validation": [
+      {
+        "executionId": "7f77f32c-2d83-4800-b993-bb26e3d221ab",
+        "chatSessionId": "sess_bb60026b-b9de-48fd-828f-221f65c97836",
+        "timestamp": 1789546078985
+      },
+      {
+        "executionId": "7f77f32c-2d83-4800-b993-bb26e3d221ab",
+        "chatSessionId": "sess_bb60026b-b9de-48fd-828f-221f65c97836",
+        "timestamp": 1789546207347
+      }
     ]
   }
 }

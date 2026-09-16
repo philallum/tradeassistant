@@ -40,21 +40,21 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
     - **Property 34: For all dependency/language/runtime specifications, the automated version-policy check fails if any specification is a prerelease build or uses an open-ended version range, and passes only when every specification is an exact, non-prerelease version.**
     - **Validates: Requirements 18.3, 18.4, 18.8**
 
-  - [ ] 1.5 Write unit tests for version ledger recording and upgrade surfacing
+  - [x] 1.5 Write unit tests for version ledger recording and upgrade surfacing
     - Test `record()` persists version + verification date; test `availableUpgrades()` surfaces newer stable versions
     - _Requirements: 18.6, 18.7_
 
-  - [ ] 1.6 Implement environment-based Supabase config (local + hosted) and connectivity round-trip
+  - [x] 1.6 Implement environment-based Supabase config (local + hosted) and connectivity round-trip
     - Read Supabase connection config from env supporting both a local and a hosted target
     - Implement a connectivity check performing a round-trip write and read
     - _Requirements: 6.3, 6.4, 17.2_
 
-  - [ ] 1.7 Create living-docs (PROJECT-STATE.md, RESEARCH-LOG.md, LESSONS.md) and the Living-Docs Writer
+  - [x] 1.7 Create living-docs (PROJECT-STATE.md, RESEARCH-LOG.md, LESSONS.md) and the Living-Docs Writer
     - Author `PROJECT-STATE.md`, `RESEARCH-LOG.md`, and `LESSONS.md` (LESSONS.md captures PROJECT-PLAN section 0)
     - Implement `LivingDocs` with `updateState()`, `appendVerdict()`, `appendCut()`, and `validateLogEntry()` (structural check of a templated Research_Log entry)
     - _Requirements: 5.1, 5.2, 5.3, 6.5_
 
-  - [ ] 1.8 Write unit tests for living-docs writer and log-entry template validation
+  - [x] 1.8 Write unit tests for living-docs writer and log-entry template validation
     - Test `validateLogEntry()` accepts a conforming template and rejects malformed entries; test docs existence smoke test
     - _Requirements: 5.1, 5.3, 6.5_
 
