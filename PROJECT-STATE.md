@@ -6,9 +6,9 @@
 > `BEGIN`/`END STATE` markers is machine-managed and rewritten on each update.
 
 <!-- BEGIN STATE -->
-- **Phase:** Bootstrap (Task 1 — project + quality/documentation harness)
-- **Updated:** (not yet updated by the writer)
-- **Summary:** Initial living-docs scaffold created.
+- **Phase:** Minimal Pattern Vector (Task 3 — Multi-scale shape-only encoder & pgvector persistence)
+- **Updated:** 2026-09-16
+- **Summary:** Tasks 1.1–1.10, 2.1–2.8, and 3.1–3.5 completed. Multi-scale (10/20/40, dim=70) shape-only encoder, 5-day rolling ROC weeklyTrendSign with Look-Ahead Guard, Property 9 scale invariance, Property 1 determinism, and pgvector persistence verified.
 <!-- END STATE -->
 
 ## Notes

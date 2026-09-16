@@ -7,6 +7,7 @@ This plan converts the design into incremental, test-driven coding tasks in the 
 The deterministic core is TypeScript (authoritative), with Python used only as a statistical cross-check where the design calls for it (Requirement 3.3, 3.4). Storage is Supabase Postgres + pgvector.
 
 Two shared primitives are built early and reused everywhere:
+
 - The **Look-Ahead Guard** (Requirement 4) — a single tested guard function imported by ingestion, encoder, retrieval, and resolver.
 - The **AI/deterministic boundary** (`LLM_Interface` + `ScoringInputGuard`) — no LLM output ever reaches a probability or verdict path (Requirement 2).
 
@@ -17,7 +18,7 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
 
 ## Tasks
 
-- [ ] 1. Project bootstrap + quality/documentation harness
+- [x] 1. Project bootstrap + quality/documentation harness
   - [x] 1.1 Scaffold the TypeScript project on Node Active LTS with pinned latest-stable toolchain
     - Initialize the TS project (latest-stable TypeScript on Node Active LTS), configure ESLint, the type-checker, and the test runner (Vitest/Jest) with `fast-check` pinned
     - Configure the Python cross-check environment (latest-stable Python) with `hypothesis` pinned, invoked as isolated deterministic steps
@@ -58,73 +59,73 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
     - Test `validateLogEntry()` accepts a conforming template and rejects malformed entries; test docs existence smoke test
     - _Requirements: 5.1, 5.3, 6.5_
 
-  - [ ] 1.9 Implement the shared Look-Ahead Guard primitive
+  - [x] 1.9 Implement the shared Look-Ahead Guard primitive
     - Implement `LookAheadGuard.assertPastOnly()` (reject any candle dated >= decisionDate), `isMatured()` (full horizon window closed as of evalDate), and `maturedPreDateOnly()` (filter analogues to matured, strictly-pre-date)
     - Surface rejections as typed `LookAheadViolation` results (fail-loud), never silent drops; export as the single source of truth for date-boundary safety
     - _Requirements: 4.1, 4.2, 4.3, 4.4_
 
-  - [ ] 1.10 Write the look-ahead-guard property test
+  - [x] 1.10 Write the look-ahead-guard property test
     - **Property 2: For all candle sets and Decision_Dates, the guarded feature/retrieval input contains no candle dated at or after the Decision_Date, and for all forward outcomes and evaluation dates, an outcome is counted only when its full Horizon window has closed as of the evaluation date.**
     - This is the mandated look-ahead-guard named test (Requirement 4.5)
     - **Validates: Requirements 4.1, 4.2, 4.4, 4.5, 7.5**
 
-- [ ] 2. Storage schema and daily OHLC ingestion
-  - [ ] 2.1 Create the shared Supabase migrations (schema identical local and hosted)
+- [x] 2. Storage schema and daily OHLC ingestion
+  - [x] 2.1 Create the shared Supabase migrations (schema identical local and hosted)
     - Author migrations for `candles`, `yields` (per-country 10Y, keyed by `(country,date)`), `pattern_vectors` (with HNSW `vector_cosine_ops` index + `weekly_trend_sign` metadata index), `analogue_outcomes`, `data_splits`, `walk_forward_folds` (fold_index, train/test bounds, `frozen`), `gate_fold_verdicts` (per-fold gate results + `skipped` flag), `feature_registry`, `gate_verdicts`, `firing_setups` (stop_loss/take_profit + `suppression_reason` enum incl. `'currency_concentration'` + competing_pairs), `calendar_events`, `news_risk_flags`, and `version_ledger`; enable pgvector
     - Include the `ohlc_valid` check constraint on `candles` and the `(asset,date)` primary key; key `yields` by `(country,date)`, `walk_forward_folds` by `(asset,fold_index)`, `gate_fold_verdicts` by `(verdict_id,fold_index)`, and `firing_setups` by `(decision_date,pair)`
     - Keep compute and storage independent of any serving layer; the same migrations run local and hosted
     - _Requirements: 7.2, 7.3, 8.4, 13.8, 17.1, 17.2, 19, 21, 22_
 
-  - [ ] 2.2 Implement NY-close session-boundary normalization
+  - [x] 2.2 Implement NY-close session-boundary normalization
     - Implement `normalizeSessionBoundary()` to normalize every source feed to the 17:00 America/New_York boundary (22:00 UTC during EST) before storage, producing Monday-Friday daily candles and merging Sunday partials into Monday
     - _Requirements: 7.7, 7.8_
 
-  - [ ] 2.3 Implement OHLC validation and idempotent ingestion keyed by (asset, date)
+  - [x] 2.3 Implement OHLC validation and idempotent ingestion keyed by (asset, date)
     - Implement `validate()` rejecting high<low or open/close outside [low,high]; implement `ingest()` performing idempotent upsert by (asset,date), invoking the Look-Ahead Guard on adjacent windowing
     - Implement `coverageSummary()` producing per-pair coverage of ingested daily history
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
 
-  - [ ] 2.4 Write property test for OHLC validity rejection
+  - [x] 2.4 Write property test for OHLC validity rejection
     - **Property 32: For all candidate candles, ingestion accepts the candle if and only if its high is greater than or equal to its low and both open and close fall within the high-low range; otherwise it is rejected.**
     - **Validates: Requirement 7.3**
 
-  - [ ] 2.5 Write property test for idempotent ingestion
+  - [x] 2.5 Write property test for idempotent ingestion
     - **Property 33: For all source candle sets, ingesting the set once and ingesting it multiple times produce the same stored result with no duplicate (Asset, Date) rows.**
     - **Validates: Requirement 7.4**
 
-  - [ ] 2.6 Write integration test for OHLC ingestion into Supabase and coverage summary
+  - [x] 2.6 Write integration test for OHLC ingestion into Supabase and coverage summary
     - Ingest representative candles into Supabase; assert stored result and per-pair coverage summary
     - _Requirements: 7.1, 7.6_
 
-  - [ ] 2.7 Implement yield-feed ingestion into `yields` (per-country 10Y)
+  - [x] 2.7 Implement yield-feed ingestion into `yields` (per-country 10Y)
     - Implement `ingestYields()` performing look-ahead-safe, idempotent upsert of per-country 10Y government-bond yields keyed by (country, date)
     - Implement a fail-safe: when the yield feed is missing/unavailable for a (country, date), treat the yield feature as unavailable for that date (never fabricate, interpolate, or use a future value)
     - _Requirements: 13.8_
 
-  - [ ] 2.8 Write integration test for yield ingestion into Supabase
+  - [x] 2.8 Write integration test for yield ingestion into Supabase
     - Ingest representative per-country 10Y yields; assert `(country,date)` keying, idempotent upsert, and the missing-feed unavailable path
     - _Requirements: 13.8_
 
-- [ ] 3. Minimal shape-only pattern vector
-  - [ ] 3.1 Implement the shape-only, per-scale-normalized pattern vector encoder
+- [x] 3. Minimal shape-only pattern vector
+  - [x] 3.1 Implement the shape-only, per-scale-normalized pattern vector encoder
     - Implement `encode()` over fixed 10/20/40 trading-day windows, per-scale independent normalization, concatenated fixed dim=70 embedding; handle degenerate (zero-variance) windows with a defined non-error result
-    - Implement `weeklyTrendSign()` = 5-trading-day rolling ROC sign (UP if Close_T - Close_{T-5} >= 0, else DOWN); enforce the Look-Ahead Guard on the input window
+    - Implement `weeklyTrendSign()` = 5-trading-day rolling ROC sign (UP if Close*T - Close*{T-5} >= 0, else DOWN); enforce the Look-Ahead Guard on the input window
     - _Requirements: 8.1, 8.2, 8.3, 8.6, 4.1_
 
-  - [ ] 3.2 Persist pattern vectors to pgvector with metadata
+  - [x] 3.2 Persist pattern vectors to pgvector with metadata
     - Store each vector as a `pattern_vectors` row (embedding, weekly_trend_sign, per-scale slices), keyed by (asset, decision_date)
     - _Requirements: 8.3, 8.4_
 
-  - [ ] 3.3 Write property test for shape-only scale invariance
+  - [x] 3.3 Write property test for shape-only scale invariance
     - **Property 9: For all input windows and positive price scalars, encoding the window and encoding the window with all prices multiplied by that scalar produce identical Pattern_Vectors, so absolute price level does not dominate the representation.**
     - **Validates: Requirement 8.2**
 
-  - [ ] 3.4 Write property test for identical-window determinism (deterministic reproducibility)
+  - [x] 3.4 Write property test for identical-window determinism (deterministic reproducibility)
     - **Property 1 (encoder scope): For all valid inputs to the pattern-vector encoder, invoking it twice with identical inputs produces identical outputs.** Generators include zero-variance windows.
     - Part of the mandated deterministic-reproducibility named test
     - **Validates: Requirements 3.1, 3.2, 8.5**
 
-  - [ ] 3.5 Write integration test for pgvector persistence
+  - [x] 3.5 Write integration test for pgvector persistence
     - Persist and read back a pattern vector; assert embedding and metadata round-trip
     - _Requirements: 8.4_
 
@@ -198,7 +199,7 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
 
 - [ ] 6. Two-stage kill-gate harness (BEFORE feature discovery)
   - [ ] 6.1 Implement the weekly-trend-follow baseline
-    - Implement `Baseline.predict()` returning the 5-trading-day rolling ROC sign (UP if Close_T - Close_{T-5} >= 0, else DOWN)
+    - Implement `Baseline.predict()` returning the 5-trading-day rolling ROC sign (UP if Close*T - Close*{T-5} >= 0, else DOWN)
     - _Requirements: 11.1_
 
   - [ ] 6.2 Implement the walk-forward folds (sequential, non-overlapping, chronological)
@@ -220,7 +221,7 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
     - _Requirements: 11.2, 11.9, 11.10, 11.11, 11.13, 19, 5.4, 5.5, 12.1_
 
   - [ ] 6.6 Write property test for baseline equals weekly trend sign
-    - **Property 15: For all Decision_Dates and Pairs, the Weekly_Trend_Follow baseline's predicted direction equals the Weekly_Trend_Sign, defined as the 5-trading-day rolling ROC: UP when Close_T - Close_{T-5} >= 0, otherwise DOWN.**
+    - **Property 15: For all Decision*Dates and Pairs, the Weekly_Trend_Follow baseline's predicted direction equals the Weekly_Trend_Sign, defined as the 5-trading-day rolling ROC: UP when Close_T - Close*{T-5} >= 0, otherwise DOWN.**
     - **Validates: Requirement 11.1**
 
   - [ ] 6.7 Write property test for the chronological split definition
@@ -433,15 +434,51 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
     { "id": 4, "tasks": ["2.4", "2.5", "2.6", "2.8", "3.1"] },
     { "id": 5, "tasks": ["3.2", "3.3", "3.4"] },
     { "id": 6, "tasks": ["3.5", "4.1", "4.2"] },
-    { "id": 7, "tasks": ["4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "5.1", "5.2"] },
-    { "id": 8, "tasks": ["5.3", "5.4", "5.5", "5.6", "5.7", "5.8", "6.1", "6.2"] },
+    {
+      "id": 7,
+      "tasks": ["4.3", "4.4", "4.5", "4.6", "4.7", "4.8", "5.1", "5.2"]
+    },
+    {
+      "id": 8,
+      "tasks": ["5.3", "5.4", "5.5", "5.6", "5.7", "5.8", "6.1", "6.2"]
+    },
     { "id": 9, "tasks": ["6.3", "6.4"] },
     { "id": 10, "tasks": ["6.5"] },
-    { "id": 11, "tasks": ["6.6", "6.7", "6.8", "6.9", "6.10", "6.11", "6.12", "6.13", "6.14", "6.15", "6.16", "6.17", "6.18"] },
+    {
+      "id": 11,
+      "tasks": [
+        "6.6",
+        "6.7",
+        "6.8",
+        "6.9",
+        "6.10",
+        "6.11",
+        "6.12",
+        "6.13",
+        "6.14",
+        "6.15",
+        "6.16",
+        "6.17",
+        "6.18"
+      ]
+    },
     { "id": 12, "tasks": ["8.1", "8.2"] },
     { "id": 13, "tasks": ["8.3", "8.4", "8.5", "8.6", "8.7", "8.8", "9.1"] },
     { "id": 14, "tasks": ["9.2", "9.3", "9.4"] },
-    { "id": 15, "tasks": ["9.5", "9.6", "9.7", "9.8", "9.9", "9.10", "9.11", "10.1", "10.7"] },
+    {
+      "id": 15,
+      "tasks": [
+        "9.5",
+        "9.6",
+        "9.7",
+        "9.8",
+        "9.9",
+        "9.10",
+        "9.11",
+        "10.1",
+        "10.7"
+      ]
+    },
     { "id": 16, "tasks": ["10.2", "10.3", "10.9", "10.10"] },
     { "id": 17, "tasks": ["10.4", "10.5", "10.6", "10.8", "11.1"] },
     { "id": 18, "tasks": ["11.2"] }

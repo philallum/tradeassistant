@@ -9,3 +9,18 @@
 
 /** Placeholder scaffold marker. Replaced by real modules in later tasks. */
 export const SCAFFOLD_READY = true;
+
+// Look-Ahead Safety Guard Primitive (Requirement 4).
+export * from "./guard/index.js";
+
+// OHLC Ingestion and Session Boundary Normalization (Requirement 7).
+export * from "./ingestion/index.js";
+
+// Sovereign Yield Feed Ingestion (Requirement 13.8).
+export * from "./yields/index.js";
+
+// Pattern Vector Encoder (Requirement 8).
+export * from "./encoder/index.js";
+
+
+
