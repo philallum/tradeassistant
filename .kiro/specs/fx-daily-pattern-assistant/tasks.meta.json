@@ -1,0 +1,53 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Scaffold the TypeScript project on Node Active LTS with pinned latest-stable toolchain": [
+      {
+        "executionId": "8911e1a6-52f0-4fd0-9905-eed2703f6dc5",
+        "chatSessionId": "sess_c4b81cfd-93d0-428a-a25a-5ea7283055a1",
+        "timestamp": 1789490509781
+      },
+      {
+        "executionId": "8911e1a6-52f0-4fd0-9905-eed2703f6dc5",
+        "chatSessionId": "sess_c4b81cfd-93d0-428a-a25a-5ea7283055a1",
+        "timestamp": 1789490942300
+      }
+    ],
+    "1.2 Configure CI to run lint, type-check, and tests, failing on any failure": [
+      {
+        "executionId": "b1663d15-417f-4fbc-b9b5-ed9ca8f2e3b2",
+        "chatSessionId": "sess_625a72b3-27af-41f3-99ff-916642ba1974",
+        "timestamp": 1789490974706
+      },
+      {
+        "executionId": "b1663d15-417f-4fbc-b9b5-ed9ca8f2e3b2",
+        "chatSessionId": "sess_625a72b3-27af-41f3-99ff-916642ba1974",
+        "timestamp": 1789491479405
+      }
+    ],
+    "1.3 Implement the version-policy check and version ledger": [
+      {
+        "executionId": "5b0019a8-a34e-409c-9f46-7aa03af54473",
+        "chatSessionId": "sess_e9ad34a7-e5b6-44a9-af35-62f4abb7ea2b",
+        "timestamp": 1789491577691
+      },
+      {
+        "executionId": "5b0019a8-a34e-409c-9f46-7aa03af54473",
+        "chatSessionId": "sess_e9ad34a7-e5b6-44a9-af35-62f4abb7ea2b",
+        "timestamp": 1789497808181
+      }
+    ],
+    "1.4 Write property test for version-policy enforcement": [
+      {
+        "executionId": "f0362ce0-f224-4906-aef0-3331ed79c145",
+        "chatSessionId": "sess_b6434dc2-6454-473b-9397-8c76951fdc42",
+        "timestamp": 1789498105539
+      },
+      {
+        "executionId": "f0362ce0-f224-4906-aef0-3331ed79c145",
+        "chatSessionId": "sess_b6434dc2-6454-473b-9397-8c76951fdc42",
+        "timestamp": 1789498687161
+      }
+    ]
+  }
+}

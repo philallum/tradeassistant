@@ -1,0 +1,48 @@
+name: CI
+
+# Runs lint, type-check, tests, and the version-policy check on every push and
+# pull request. Any stage that fails causes the whole pipeline to report a
+# failing status (Requirements 6.1, 6.2). No step uses continue-on-error, so
+# non-zero exit codes are never swallowed.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  quality:
+    name: Lint, type-check, tests, version-policy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Pin the runner Node version to the Active LTS line the project uses.
+      # node-version-file reads .nvmrc so CI stays in lockstep with local dev.
+      - name: Set up Node (Active LTS from .nvmrc)
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # Deterministic install from the committed lockfile (pinned dependencies).
+      - name: Install dependencies
+        run: npm ci
+
+      # Distinct stages. Each runs the existing package.json scripts (added in
+      # task 1.1) so CI references real, working commands rather than
+      # duplicating command logic. A failure in any stage fails the job.
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm run test
+
+      - name: Version-policy check
+        run: npm run version-policy

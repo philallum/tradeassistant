@@ -1,0 +1,7 @@
+# Python statistical cross-check environment (Requirement 3.4, 18.3, 18.4).
+# Every dependency pinned to an exact, non-prerelease version.
+# The TypeScript implementation is authoritative; Python is an isolated,
+# deterministic cross-check invoked as discrete steps.
+hypothesis==6.168.0
+pytest==9.1.1
+
