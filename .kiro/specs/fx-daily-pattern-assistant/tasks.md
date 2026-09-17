@@ -129,37 +129,37 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
     - Persist and read back a pattern vector; assert embedding and metadata round-trip
     - _Requirements: 8.4_
 
-- [ ] 4. Similarity retrieval and forward-outcome resolution
-  - [ ] 4.1 Implement pgvector retrieval with weekly-trend-sign pre-filter, self-exclusion, pre-date, matured-only, and Similarity_Radius epsilon cutoff
+- [x] 4. Similarity retrieval and forward-outcome resolution
+  - [x] 4.1 Implement pgvector retrieval with weekly-trend-sign pre-filter, self-exclusion, pre-date, matured-only, and Similarity_Radius epsilon cutoff
     - Implement `retrieve()` that pre-filters on `weekly_trend_sign` metadata before the ANN search, applies pgvector similarity, excludes the query itself, restricts to strictly-pre-date and matured analogues (via `maturedPreDateOnly`), and uses a stable tie-break ordering (similarity, then date, then asset) for determinism
     - Apply the configurable `Similarity_Radius` epsilon cutoff: admit an analogue only if its cosine distance to the query is <= epsilon (in addition to, not instead of, the existing pre-filters); if fewer than 30 analogues fall within epsilon for a Decision_Date, shrink Earned_Confidence toward neutral (reusing the sample-size floor/shrinkage mechanism) and surface nothing on similarity grounds alone
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.7, 9.8, 9.9, 20_
 
-  - [ ] 4.2 Implement the forward-outcome resolver (1/2/3d terminal direction + MFE/MAE)
+  - [x] 4.2 Implement the forward-outcome resolver (1/2/3d terminal direction + MFE/MAE)
     - Implement `resolve()` capturing terminal Direction_Class and MFE/MAE at each of the 1/2/3-day horizons, using only candles dated after the analogue date; persist to `analogue_outcomes` with `matured` flag
     - _Requirements: 9.6, 4.2_
 
-  - [ ] 4.3 Write property test for retrieval self-exclusion, pre-date, matured-only
+  - [x] 4.3 Write property test for retrieval self-exclusion, pre-date, matured-only
     - **Property 3: For all queries and backing data, every analogue in the returned Analogue_Neighborhood is dated strictly before the query Decision_Date, is a Matured_Outcome, and is not the query pattern itself.**
     - **Validates: Requirements 9.3, 9.4, 9.5**
 
-  - [ ] 4.4 Write property test for neighborhood weekly-trend regime match
+  - [x] 4.4 Write property test for neighborhood weekly-trend regime match
     - **Property 10: For all queries and backing data, every analogue in the returned neighborhood has the same Weekly_Trend_Sign as the query.**
     - **Validates: Requirement 9.2**
 
-  - [ ] 4.5 Write property test for forward outcomes per horizon
+  - [x] 4.5 Write property test for forward outcomes per horizon
     - **Property 11: For all resolved analogues, the forward outcome contains a terminal Direction_Class and MFE/MAE values for each of the 1-, 2-, and 3-day Horizons, computed only from candles dated after the analogue date.**
     - **Validates: Requirement 9.6**
 
-  - [ ] 4.6 Write property test for retrieval determinism
+  - [x] 4.6 Write property test for retrieval determinism
     - **Property 1 (retrieval scope): For all identical inputs, retrieval returns identical analogue sets.**
     - **Validates: Requirements 3.1, 9.7**
 
-  - [ ] 4.7 Write integration test for pgvector ANN retrieval ordering
+  - [x] 4.7 Write integration test for pgvector ANN retrieval ordering
     - Verify ANN retrieval ordering and metadata pre-filter against seeded data
     - _Requirements: 9.1_
 
-  - [ ] 4.8 Write the similarity-radius silence property test
+  - [x] 4.8 Write the similarity-radius silence property test
     - **Property 35: For all queries and analogues, an analogue is admitted only if its cosine distance to the query is <= the configurable epsilon; and if fewer than 30 analogues fall within epsilon, no setup is surfaced on similarity grounds alone.**
     - This is the mandated "similarity-radius silence test"
     - **Validates: Requirements 9.8, 9.9, 20.2, 20.3**

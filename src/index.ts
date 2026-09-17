@@ -22,5 +22,8 @@ export * from "./yields/index.js";
 // Pattern Vector Encoder (Requirement 8).
 export * from "./encoder/index.js";
 
+// Analogue Retrieval and Forward-Outcome Resolver (Requirements 9, 4.2, 20).
+export * from "./retrieval/index.js";
+
 
 
