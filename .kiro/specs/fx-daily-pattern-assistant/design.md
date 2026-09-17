@@ -27,7 +27,7 @@ The design also incorporates five robustness improvements that harden the system
 - **Python (latest stable)** only where statistical/backtest tooling genuinely benefits — e.g. calibration checks, distribution statistics, or heavier numerical validation of gate metrics. Python components are pure and invoked as isolated, deterministic steps; they never own the displayed decision path unless the decision math is more faithfully expressed there. Where both languages could compute a scoring value, the TypeScript implementation is authoritative and any Python is a cross-check.
 - **Supabase Postgres + pgvector** for OHLC storage, pattern-vector rows, outcomes, verdicts, and calendar events. The same schema (migrations) runs against a local Supabase instance and the hosted project (Requirement 17.2).
 - **GCP** for scheduled unattended daily runs once the model is validated (Requirement 16.7). Not required for the research phase.
-- **LLM provider** accessed only behind the thin, swappable `LLM_Interface` (Requirement 2.4).
+- **LLM provider: Google Gemini Enterprise Agent Platform** (via the Google Gen AI SDK), accessed only behind the thin, swappable `LLM_Interface` (Requirement 2.4). Authenticated with Google Cloud IAM (Application Default Credentials or a service account) scoped to the project's `GCP_PROJECT_ID`/`GCP_REGION`; no standalone API key. The interface remains provider-agnostic so the backend can be swapped without touching the deterministic core.
 
 ## Architecture
 
@@ -321,6 +321,8 @@ Candidates are evaluated one at a time by re-running the gate (Requirement 13.1)
 ### 9. LLM_Interface (Requirements 2.3-2.5, 14, 15)
 
 The single, thin, swappable gateway to any LLM. All calls pass through it (Requirement 2.4).
+
+The v1 concrete implementation targets the Google Gemini Enterprise Agent Platform through the Google Gen AI SDK, authenticated via Google Cloud IAM / Application Default Credentials (no API key). Because every call passes through this thin gateway, the provider can be swapped without changing any caller. The specific Gemini model is configurable (env `GEMINI_MODEL`) and left unpinned pending a cost/availability decision.
 
 ```typescript
 type SanctionedRole = "news_filter" | "signal_rationale" | "pattern_description" | "research_assistant";

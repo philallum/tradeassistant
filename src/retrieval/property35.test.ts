@@ -58,6 +58,15 @@ function addDays(dateStr: string, days: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
+/**
+ * Derive a look-ahead-safe decision date: the day strictly after the last
+ * candle in the window, so every candle is dated strictly before it.
+ */
+function decisionAfter(window: Candle[]): string {
+  const last = window[window.length - 1]!;
+  return addDays(last.date, 1);
+}
+
 describe("Property 35: Similarity-radius silence", () => {
   it(
     "every admitted analogue has cosineDistance <= epsilon (Req 9.8, 20.1)",
@@ -84,7 +93,7 @@ describe("Property 35: Similarity-radius silence", () => {
               // Mix of similar and dissimilar patterns
               const step = i % 2 === 0 ? +0.002 : -0.003;
               const window = buildWindow(date, 50, step, 1.10, pair);
-              const vec = encodePatternVector(window, addDays(date, 1));
+              const vec = encodePatternVector(window, decisionAfter(window));
               await vectorStore.upsertVector(pair, date, vec);
               const record: AnalogueRecord = {
                 asset: pair,
@@ -146,7 +155,7 @@ describe("Property 35: Similarity-radius silence", () => {
             for (let i = 0; i < numAnalogues; i++) {
               const date = addDays("2023-01-01", i * 5);
               const window = buildWindow(date, 50, -0.003, 1.30 + i * 0.05, pair);
-              const vec = encodePatternVector(window, addDays(date, 1));
+              const vec = encodePatternVector(window, decisionAfter(window));
               await vectorStore.upsertVector(pair, date, vec);
               await analogueStore.upsertOutcome({
                 asset: pair,
@@ -207,7 +216,7 @@ describe("Property 35: Similarity-radius silence", () => {
 
       // Seed a distant analogue
       const distantWindow = buildWindow("2023-01-01", 50, -0.5, 145.0, pair);
-      const distantVec = encodePatternVector(distantWindow, "2023-02-20");
+      const distantVec = encodePatternVector(distantWindow, decisionAfter(distantWindow));
       await vectorStore.upsertVector(pair, "2023-02-20", distantVec);
       await analogueStore.upsertOutcome({
         asset: pair,

@@ -44,7 +44,7 @@ This document specifies the requirements for the research-phase and v1 dashboard
 - **Currency_Concentration_Guard**: A portfolio-level rule that limits simultaneous directional exposure to the same base or quote currency across the five pairs by keeping only the highest-Earned_Confidence setups when multiple aligned setups fire.
 - **Yield_Spread**: The 10-year government bond yield differential for a Pair (base-country 10Y minus quote-country 10Y), sourced from an additional daily yield data feed, used as a candidate macro feature.
 - **Research_Log**: The living `RESEARCH-LOG.md` document recording every experiment and gate verdict.
-- **LLM_Interface**: The thin, swappable interface through which all LLM calls pass, restricted to the four sanctioned roles.
+- **LLM_Interface**: The thin, swappable, provider-agnostic interface through which all LLM calls pass, restricted to the four sanctioned roles. The v1 concrete provider is Google's Gemini Enterprise Agent Platform accessed via the Google Gen AI SDK and authenticated with Google Cloud IAM (Application Default Credentials or a service account); no standalone API key is used. The provider can be swapped without changing callers.
 - **Confidence_Threshold**: The configurable Earned_Confidence level a firing setup must cross for the dashboard to surface a pair.
 - **Latest_Stable**: The most recent generally-available, non-prerelease (no alpha, beta, release-candidate, nightly, or canary) release of a language, runtime, or library at the time a dependency is added or last reviewed.
 - **Active_LTS**: For Node.js, the release line currently in its Active Long-Term Support phase (an even-numbered major line), used in preference to Current or odd-numbered lines for production stability.

@@ -4,7 +4,6 @@ import { retrieve } from "./retrieve.js";
 import { InMemoryAnalogueStore } from "./types.js";
 import { InMemoryPatternVectorStore } from "../encoder/types.js";
 import { encodePatternVector } from "../encoder/patternEncoder.js";
-import type { AnalogueRecord } from "./types.js";
 import type { Candle } from "../guard/types.js";
 import type { Pair } from "../ingestion/types.js";
 
@@ -100,7 +99,7 @@ describe("Property 10: Neighborhood weekly-trend regime match", () => {
                 maePips: 5,
                 atr14: 0.008,
                 matured: true,
-              } as AnalogueRecord);
+              });
             }
 
             // Seed opposite-trend analogues — should be filtered by weeklyTrendSign pre-filter
@@ -119,7 +118,7 @@ describe("Property 10: Neighborhood weekly-trend regime match", () => {
                 maePips: 10,
                 atr14: 0.008,
                 matured: true,
-              } as AnalogueRecord);
+              });
             }
 
             const results = await retrieve(

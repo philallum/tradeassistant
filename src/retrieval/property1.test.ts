@@ -49,6 +49,17 @@ function addDays(dateStr: string, days: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
+/**
+ * Derive a look-ahead-safe decision date: the day strictly after the last
+ * candle in the window. Guarantees every candle in `window` is dated strictly
+ * before the returned decision date, satisfying encodePatternVector's
+ * past-only contract.
+ */
+function decisionAfter(window: Candle[]): string {
+  const last = window[window.length - 1]!;
+  return addDays(last.date, 1);
+}
+
 describe("Property 1 (Retrieval Scope): Deterministic Reproducibility", () => {
   it(
     "calling retrieve twice with identical inputs returns identical analogue sets",
@@ -69,7 +80,9 @@ describe("Property 1 (Retrieval Scope): Deterministic Reproducibility", () => {
             for (let i = 0; i < numAnalogues; i++) {
               const date = addDays("2025-01-01", i * 4);
               const window = buildWindow(date, 50, pair, basePrice + i * 0.01);
-              const vec = encodePatternVector(window, addDays(date, 1));
+              // Encode with a decision date strictly after the last candle so the
+              // window respects the look-ahead contract.
+              const vec = encodePatternVector(window, decisionAfter(window));
               await vectorStore.upsertVector(pair, date, vec);
               const record: AnalogueRecord = {
                 asset: pair,

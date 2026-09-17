@@ -52,6 +52,15 @@ function addDays(dateStr: string, days: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
+/**
+ * Derive a look-ahead-safe decision date: the day strictly after the last
+ * candle in the window, so every candle is dated strictly before it.
+ */
+function decisionAfter(window: Candle[]): string {
+  const last = window[window.length - 1]!;
+  return addDays(last.date, 1);
+}
+
 describe("Integration: ANN retrieval ordering and metadata pre-filter (Requirement 9.1)", () => {
   it("retrieves analogues in cosine-distance ascending order (closest first)", async () => {
     const vectorStore = new InMemoryPatternVectorStore();
@@ -67,19 +76,19 @@ describe("Integration: ANN retrieval ordering and metadata pre-filter (Requireme
 
     // Analogue A: very similar to query (same uptrend)
     const windowA = buildWindow("2024-01-01", 50, +0.002, 1.10);
-    const vecA = encodePatternVector(windowA, "2024-02-20");
+    const vecA = encodePatternVector(windowA, decisionAfter(windowA));
     await vectorStore.upsertVector(PAIR, "2024-02-20", vecA);
     const distA = computeCosineDistance([...queryVec.embedding], [...vecA.embedding]);
 
     // Analogue B: moderately similar (uptrend but slightly different magnitude)
     const windowB = buildWindow("2023-01-01", 50, +0.003, 1.10);
-    const vecB = encodePatternVector(windowB, "2023-02-20");
+    const vecB = encodePatternVector(windowB, decisionAfter(windowB));
     await vectorStore.upsertVector(PAIR, "2023-02-20", vecB);
     const distB = computeCosineDistance([...queryVec.embedding], [...vecB.embedding]);
 
     // Analogue C: least similar (downtrend)
     const windowC = buildWindow("2022-01-01", 50, -0.002, 1.20);
-    const vecC = encodePatternVector(windowC, "2022-02-20");
+    const vecC = encodePatternVector(windowC, decisionAfter(windowC));
     await vectorStore.upsertVector(PAIR, "2022-02-20", vecC);
 
     // Seed matured outcomes for A and B (same weeklyTrendSign as query)
@@ -147,7 +156,7 @@ describe("Integration: ANN retrieval ordering and metadata pre-filter (Requireme
 
     // Analogue with strong downtrend — likely different weeklyTrendSign
     const downtrendWindow = buildWindow("2023-01-01", 50, -0.003, 1.30);
-    const downtrendVec = encodePatternVector(downtrendWindow, "2023-02-20");
+    const downtrendVec = encodePatternVector(downtrendWindow, decisionAfter(downtrendWindow));
     await vectorStore.upsertVector(PAIR, "2023-02-20", downtrendVec);
     await analogueStore.upsertOutcome({
       asset: PAIR,
@@ -226,7 +235,7 @@ describe("Integration: ANN retrieval ordering and metadata pre-filter (Requireme
     await vectorStore.upsertVector(PAIR, queryDate, queryVec);
 
     const analogueWindow = buildWindow("2024-01-01", 50, +0.002, 1.10);
-    const analogueVec = encodePatternVector(analogueWindow, addDays("2024-02-20", 1));
+    const analogueVec = encodePatternVector(analogueWindow, decisionAfter(analogueWindow));
     await vectorStore.upsertVector(PAIR, "2024-02-20", analogueVec);
     await analogueStore.upsertOutcome({
       asset: PAIR,

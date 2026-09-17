@@ -147,5 +147,5 @@ export async function resolve(
     perHorizon[h] = { direction, mfePips, maePips };
   }
 
-  return { perHorizon } as ForwardOutcome;
+  return { perHorizon };
 }
