@@ -133,9 +133,26 @@ flowchart TD
 - The same migrations produce the same schema locally and hosted (Requirement 17.2).
 - No public API or website is included in v1 (Requirement 17.3). A future serving layer would read storage only, requiring no change to compute or storage design (Requirement 17.4).
 
-### Scheduling (Requirement 16.7)
+### Scheduling and Deployment (Requirement 16.7)
 
 Once validated, a GCP Cloud Scheduler job triggers the same TypeScript daily-run entry point that the local dashboard uses. Because the entire compute path is deterministic and reads the same storage schema, a scheduled unattended run produces the same result as an equivalent local run.
+
+**Deployment target.** The deterministic daily-run entry point is packaged as a container and deployed to Cloud Run. The v1 scheduled refresh runs as a **Cloud Run Job** (run-to-completion batch execution) rather than a request-driven Cloud Run service, because the daily refresh is an unattended batch run, not a web endpoint. Cloud Scheduler triggers the Cloud Run Job on the daily cadence (Requirement 16.7). A Cloud Run service with a scheduled HTTP trigger remains an acceptable alternative should a serving endpoint be needed later, consistent with the reserved future serving layer (Requirement 17.4) — but v1 uses a Job.
+
+**Delivery pipeline.** Deployment is driven from the GitHub `main` branch through CI, never ad hoc from a developer machine. The flow:
+
+- Feature/dev branch → pull request → review → merge to `main`.
+- A GitHub Actions workflow on `main` runs the full quality gate (`npm run check` = lint + typecheck + the property/unit test suite) and only proceeds on green.
+- The container is built (Cloud Build) and pushed to Artifact Registry, tagged with the commit SHA.
+- That SHA-pinned image is deployed to the Cloud Run Job.
+
+Pinning deployments to commit SHAs extends the project's determinism principle (Requirement 3.1) into operations and enables exact rollback.
+
+**Authentication.** CI authenticates to Google Cloud using Workload Identity Federation (keyless OIDC from GitHub Actions) rather than long-lived service-account JSON keys. The Cloud Run Job runs as a dedicated least-privilege service account.
+
+**Secrets and configuration.** Runtime secrets (Supabase URL/keys and any database connection string) are stored in Google Secret Manager and referenced by the Cloud Run Job at runtime; they are never committed to the repo or baked into the image. Non-secret config (project, region, target model) is provided via environment variables, consistent with the project's `.env` conventions.
+
+**Supabase connectivity from Cloud Run.** The Supabase direct database host is IPv6-only, whereas Cloud Run egress is effectively IPv4 without additional VPC/IPv6 configuration. The scheduled run therefore connects to Supabase via the IPv4-reachable connection pooler (or the REST path), not the direct IPv6 database host. This preserves the compute/storage separation (Requirement 17) — the scheduled compute reads/writes the same storage schema as a local run.
 
 ## Components and Interfaces
 

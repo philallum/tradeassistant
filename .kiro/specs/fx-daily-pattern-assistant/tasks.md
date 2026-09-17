@@ -367,7 +367,11 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
     - _Requirements: 16.3, 1.3, 1.5, 21.4_
 
   - [ ] 10.3 Implement the GCP-scheduled daily refresh reusing the same entry point
-    - Add the scheduled daily-run configuration (as code/config) that triggers the same deterministic TypeScript daily-run entry point, producing the same result unattended as an equivalent local run
+    - Package the deterministic TypeScript daily-run entry point as a container and deploy it as a Cloud Run Job (run-to-completion batch), triggered on the daily cadence by Cloud Scheduler; the scheduled run reuses the exact same entry point as the local dashboard and produces the same result unattended as an equivalent local run
+    - Add the delivery pipeline as code: a GitHub Actions workflow on the `main` branch that runs the full quality gate (`npm run check`) and, only on green, builds the image via Cloud Build, pushes it to Artifact Registry tagged with the commit SHA, and deploys that SHA-pinned image to the Cloud Run Job (enabling exact rollback; extends the determinism principle to ops)
+    - Authenticate CI to Google Cloud via Workload Identity Federation (keyless OIDC), and run the Cloud Run Job as a dedicated least-privilege service account
+    - Source runtime secrets (Supabase URL/keys, DB connection) from Google Secret Manager at runtime — never committed or baked into the image; provide non-secret config (project, region, model) via environment variables per the project's `.env` conventions
+    - Connect to Supabase from Cloud Run via the IPv4-reachable connection pooler (or REST path), not the IPv6-only direct database host
     - _Requirements: 16.7_
 
   - [ ] 10.4 Write property test for the silent-by-default firing invariant
