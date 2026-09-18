@@ -106,6 +106,11 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
     - Ingest representative per-country 10Y yields; assert `(country,date)` keying, idempotent upsert, and the missing-feed unavailable path
     - _Requirements: 13.8_
 
+  - [ ] 2.9 Add strategy attribution and the realized-outcomes journal schema (follow-up migration)
+    - Add a follow-up Supabase migration (the initial schema in 2.1 is already applied): add `strategy_id text not null default 'system'` to `firing_setups` and make its primary key `(decision_date, pair, strategy_id)`; add `'too_choppy'` to the `firing_setups.suppression_reason` enum; create the new `realized_outcomes` table (per design Component 19 / Data Models) keyed by `(strategy_id, pair, decision_date)` for idempotent upsert
+    - Land this with the storage schema so `strategy_id` and `realized_outcomes` exist before the first daily run and the predicted-vs-actual corpus can accumulate from day one; the same migration runs identically local and hosted and keeps compute/storage independent of any serving layer so future strategies (LLM-taught trader, Python algo) are separate consumers of shared storage
+    - _Requirements: 25.1, 25.6, 25.7, 17.2_
+
 - [x] 3. Minimal shape-only pattern vector
   - [x] 3.1 Implement the shape-only, per-scale-normalized pattern vector encoder
     - Implement `encode()` over fixed 10/20/40 trading-day windows, per-scale independent normalization, concatenated fixed dim=70 embedding; handle degenerate (zero-variance) windows with a defined non-error result
@@ -413,6 +418,40 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
     - Add a smoke/structural test asserting compute and storage never depend on a serving layer and no public API/website exists in v1, reserving the read-only serving layer so it can be added later without rearchitecting (later phase, NOT implemented in v1)
     - _Requirements: 17.1, 17.3, 17.4_
 
+  - [ ] 11.3 Implement the External Signal Cross-Reference provider and dashboard display (outside the deterministic core)
+    - Implement a thin, swappable `ExternalSignalProvider` interface (Component 17) that fetches the CURRENT third-party technical-analysis signal (recommended direction + provider score) for each of the five pairs at daily-run time; wrap results as `ExternalReferenceSignal` with a provider provenance tag and fetch timestamp
+    - Fetch and compare entirely OUTSIDE the deterministic core: the external reference is never an input to the directional probability, Earned_Confidence, Direction_Class, Kill_Gate verdict, retrieval, or any scoring/decision path; including or omitting it must leave every computed probability and verdict identical
+    - Display the reference beside each pair's own output on the dashboard so agreement/divergence is visually apparent for human comparison; optionally log the comparison (e.g. to the Research_Log) for later divergence analysis — display/research-only, never feeding scoring
+    - Use only current signals for the live daily run; never use external references for historical backtest or Kill_Gate evaluation (look-ahead safety, reproducibility)
+    - Fail-safe: on provider unavailable/timeout/invalid response, mark the reference unavailable for that pair via a typed error and leave the system's own output unchanged
+    - _Requirements: 23_
+
+  - [ ] 11.4 Write tests for the external cross-reference boundary and fail-safe
+    - Unit/smoke test the `ExternalSignalProvider` interface (swappable provider, `ExternalReferenceSignal` shape) and the fail-safe path (unavailable/timeout/invalid → reference marked unavailable, own output unchanged)
+    - Add a boundary test asserting that including vs omitting the external reference leaves the directional probability and Kill_Gate verdict byte-for-byte identical (the external reference never reaches a scoring/decision path), and that external references are not used in any historical backtest/Kill_Gate evaluation
+    - _Requirements: 23.2, 23.3, 23.4, 23.5, 23.6_
+
+  - [ ] 11.5 Implement the Choppiness Volatility Silence Guard (deterministic dashboard-level suppressor, all pairs)
+    - Implement `ChoppinessGuard` (Component 18): compute a look-ahead-safe `Choppiness_Metric` per pair as the Kaufman Efficiency Ratio ER = |Close_T − Close_{T−w}| / Σ|Close_i − Close_{i−1}| over a fixed trailing window w (value in [0,1]; ~1 clean trend, ~0 chop), using only candles dated strictly before the Decision_Date via the shared Look-Ahead Guard
+    - Run it as a dashboard-level suppression step after per-pair firing decisions (gate-passing, confidence, news) and before final render, across all five pairs; when ER is below a configurable, backtest-tunable threshold, suppress that pair's otherwise-firing setup (hard veto — the pair stays silent) and record a `'too_choppy'` suppression reason; compose with the news and currency-concentration suppressors rather than replacing them
+    - Suppressor only: never generate a Direction_Class or signal; never feed the directional probability, Earned_Confidence, Direction_Class classification, retrieval, or the Kill_Gate verdict; no LLM input; deterministic and reproducible
+    - Persist the choppiness suppression outcome/reason alongside the other firing/suppression outcomes in `firing_setups`
+    - _Requirements: 24_
+
+  - [ ] 11.6 Write property test for the choppiness silence guard boundary and determinism
+    - **Property 41: For all pairs and Decision_Dates, the Choppiness_Guard suppresses an otherwise-firing setup if and only if the look-ahead-safe Efficiency-Ratio Choppiness_Metric is below the configurable threshold; suppression never generates a Direction_Class and leaves the directional probability, Earned_Confidence, and Kill_Gate verdict identical; and the Choppiness_Metric is deterministic (identical inputs yield identical values) and takes no LLM input.**
+    - **Validates: Requirements 24.2, 24.4, 24.5, 24.7, 24.8**
+
+  - [ ] 11.8 Implement realized-outcome journaling with Strategy_Source attribution (look-ahead-safe, idempotent)
+    - Using the `strategy_id` column and `realized_outcomes` table added by the schema migration in task 2.9, tag every surfaced/suppressed signal with a `strategyId` (default `'system'` for v1); on each daily run, write/update a `realized_outcomes` entry pairing the fired setup's prediction (strategyId, pair, decision_date, predicted direction, selected horizon, Earned_Confidence, empirical Stop_Loss/Take_Profit) with the actual matured forward outcome (terminal Direction_Class, MFE/MAE) once its Horizon window has closed
+    - Populate the realized outcome only from Matured_Outcomes using candles dated after the Decision_Date via the shared Look-Ahead Guard; make the write idempotent per (strategyId, pair, decision_date); keep this entirely outside the directional probability, Earned_Confidence, retrieval, and Kill_Gate computations so recording it leaves them unchanged
+    - _Requirements: 25.1, 25.2, 25.3, 25.4_
+
+  - [ ] 11.9 Write tests for strategy attribution and the realized-outcome journal
+    - Unit/integration test: `strategy_id` defaults to `'system'` and participates in the `firing_setups` and `realized_outcomes` keys so multiple strategies can coexist; realized outcomes are populated only from matured, strictly-after-decision-date candles; journaling is idempotent per (strategyId, pair, decision_date) (re-running a day does not duplicate)
+    - Boundary test: recording attribution and journal entries leaves the directional probability, Earned_Confidence, and Kill_Gate verdict byte-for-byte identical (the journal never feeds scoring)
+    - _Requirements: 25.1, 25.2, 25.3, 25.4, 25.7_
+
 - [ ] 12. Final checkpoint - full suite green
   - Ensure all tests pass, ask the user if questions arise.
 
@@ -424,7 +463,7 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
 - The **AI/deterministic boundary** (`LLM_Interface` + `ScoringInputGuard`, Tasks 9.1-9.2) structurally prevents any LLM output from reaching probability or verdict paths (Requirement 2).
 - Each of the 40 Correctness Properties is implemented as one property-based test at >=100 iterations (fast-check authoritative; hypothesis cross-check where the design specifies), tagged with the exact comment format.
 - Mandated named tests: deterministic reproducibility (1.10/3.4/4.6/5.8/6.15/8.6/10.6), look-ahead-guard (1.10), kill-gate fixture reproducibility (6.15), deliberately-null-feature-fails (6.16), AI-free-scoring guardrail (9.5), news fail-safe (9.10), symmetric-friction (6.12), cross-regime inclusion (6.18), similarity-radius silence (4.8), currency-concentration guard (10.9), empirical risk boundaries (10.8).
-- Requirement coverage: R1 (10.1,10.2,5.2), R2 (9.1,9.2,9.4,9.5,9.6,9.7), R3 (1.1,all determinism tests), R4 (1.9,1.10), R5 (1.7,6.5), R6 (1.2,1.6,1.7), R7 (2.x), R8 (3.x), R9 (4.x incl. 9.8/9.9 via 4.1/4.8), R10 (5.x), R11 (6.x incl. 11.13 via 6.5/6.18), R12 (6.5,7,8.1,10.1), R13 (8.x incl. 13.8 via 2.7/8.1/8.2/8.8), R14 (9.3,9.8-9.11), R15 (9.4,9.5), R16 (10.x), R17 (2.1,11.1,11.2), R18 (1.1,1.3,1.4,1.5), R19 (6.2,6.5,6.17,6.18), R20 (4.1,4.8), R21 (10.7,10.8,10.10), R22 (10.1,10.9,10.10).
+- Requirement coverage: R1 (10.1,10.2,5.2), R2 (9.1,9.2,9.4,9.5,9.6,9.7), R3 (1.1,all determinism tests), R4 (1.9,1.10), R5 (1.7,6.5), R6 (1.2,1.6,1.7), R7 (2.x), R8 (3.x), R9 (4.x incl. 9.8/9.9 via 4.1/4.8), R10 (5.x), R11 (6.x incl. 11.13 via 6.5/6.18), R12 (6.5,7,8.1,10.1), R13 (8.x incl. 13.8 via 2.7/8.1/8.2/8.8), R14 (9.3,9.8-9.11), R15 (9.4,9.5), R16 (10.x), R17 (2.1,11.1,11.2), R18 (1.1,1.3,1.4,1.5), R19 (6.2,6.5,6.17,6.18), R20 (4.1,4.8), R21 (10.7,10.8,10.10), R22 (10.1,10.9,10.10), R23 (11.3,11.4), R24 (11.5,11.6), R25 (2.9,11.8,11.9).
 
 ## Task Dependency Graph
 
@@ -435,7 +474,7 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
     { "id": 1, "tasks": ["1.2", "1.3", "1.6", "1.7", "1.9"] },
     { "id": 2, "tasks": ["1.4", "1.5", "1.8", "1.10", "2.1"] },
     { "id": 3, "tasks": ["2.2", "2.3", "2.7"] },
-    { "id": 4, "tasks": ["2.4", "2.5", "2.6", "2.8", "3.1"] },
+    { "id": 4, "tasks": ["2.4", "2.5", "2.6", "2.8", "2.9", "3.1"] },
     { "id": 5, "tasks": ["3.2", "3.3", "3.4"] },
     { "id": 6, "tasks": ["3.5", "4.1", "4.2"] },
     {
@@ -485,7 +524,10 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
     },
     { "id": 16, "tasks": ["10.2", "10.3", "10.9", "10.10"] },
     { "id": 17, "tasks": ["10.4", "10.5", "10.6", "10.8", "11.1"] },
-    { "id": 18, "tasks": ["11.2"] }
+    { "id": 18, "tasks": ["11.2"] },
+    { "id": 19, "tasks": ["11.3", "11.4"] },
+    { "id": 20, "tasks": ["11.5", "11.6"] },
+    { "id": 21, "tasks": ["11.8", "11.9"] }
   ]
 }
 ```

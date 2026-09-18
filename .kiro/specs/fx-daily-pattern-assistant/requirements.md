@@ -48,6 +48,11 @@ This document specifies the requirements for the research-phase and v1 dashboard
 - **Confidence_Threshold**: The configurable Earned_Confidence level a firing setup must cross for the dashboard to surface a pair.
 - **Latest_Stable**: The most recent generally-available, non-prerelease (no alpha, beta, release-candidate, nightly, or canary) release of a language, runtime, or library at the time a dependency is added or last reviewed.
 - **Active_LTS**: For Node.js, the release line currently in its Active Long-Term Support phase (an even-numbered major line), used in preference to Current or odd-numbered lines for production stability.
+- **External_Reference_Signal**: A third-party technical-analysis signal (recommended direction plus the provider's own confidence/score) fetched from an external forex signal API for a Pair, shown on the dashboard purely as a visual reference for human comparison. It is never an input to the directional probability, Earned_Confidence, Kill_Gate verdict, retrieval, or any scoring or decision path, and is fetched and compared outside the deterministic core.
+- **Choppiness_Metric**: A deterministic, look-ahead-safe measure of directional efficiency over a fixed trailing window for a Pair — movement without net progress (for example the Kaufman Efficiency Ratio: net price move over the window divided by the sum of absolute per-step moves, or an equivalent Choppiness Index). A low efficiency / high choppiness value indicates a thrashing, range-bound regime; it is distinct from raw volatility magnitude and from the ATR_14-scaled FLAT_Dead_Band.
+- **Choppiness_Guard**: A deterministic dashboard-level suppressor that, per Pair, silences an otherwise-firing setup when the Choppiness_Metric indicates conditions are too choppy (beyond a configurable threshold). It only suppresses; it never generates a signal and never affects the directional probability, Earned_Confidence, Direction_Class, retrieval, or the Kill_Gate verdict.
+- **Strategy_Source**: An identifier attributing a produced signal (and its recorded outcome) to the strategy that generated it — for v1 the deterministic pattern system (e.g. `system`), reserved so that future strategies such as an LLM-taught trader (`llm`) or a Python algorithmic strategy (`algo`) can run alongside and be compared without ambiguity.
+- **Realized_Outcome_Journal**: A growing record that pairs each fired setup (its Strategy_Source, Pair, Decision_Date, Direction_Class, selected Horizon, Earned_Confidence, and empirical risk boundaries) with the actual matured forward result once its Horizon window closes, forming a predicted-versus-actual corpus for later evaluation and for training or comparing additional strategies.
 
 ## Requirements
 
@@ -338,3 +343,44 @@ This document specifies the requirements for the research-phase and v1 dashboard
 3. WHEN the guard suppresses a setup, THE System SHALL record the reason of currency concentration and the competing Pairs.
 4. THE System SHALL compute the Currency_Concentration_Guard deterministically, taking no LLM input.
 5. THE System SHALL treat the maximum concurrent aligned-exposure count as configurable.
+### Requirement 23: External Signal Cross-Reference (Display/Research Only)
+
+**User Story:** As a personal trader, I want an independent third-party signal shown alongside my own output for each pair, so that I can visually compare the two, notice when they agree or diverge, and investigate divergences — without that third-party signal ever influencing my system's computation.
+
+#### Acceptance Criteria
+
+1. WHERE an External_Reference_Signal is available for a Pair on a Decision_Date, THE System SHALL display it on the dashboard alongside that Pair's own output for human comparison.
+2. THE System SHALL NOT use any External_Reference_Signal as an input to the directional probability, Earned_Confidence, Direction_Class classification, Kill_Gate verdict, retrieval, or any other scoring or decision computation.
+3. THE System SHALL fetch and compare External_Reference_Signals outside the deterministic core, such that including or omitting them leaves every computed probability and Kill_Gate verdict identical.
+4. THE System SHALL access External_Reference_Signals only through a thin, swappable provider interface so the external provider can be changed without affecting any other component.
+5. IF the external signal provider is unavailable, times out, or returns an invalid response, THEN THE System SHALL mark the reference as unavailable for that Pair and SHALL leave the System's own output unchanged.
+6. THE System SHALL use only current External_Reference_Signals for the live daily run and SHALL NOT use External_Reference_Signals as inputs to any historical backtest or Kill_Gate evaluation.
+7. WHERE the System's own output and the External_Reference_Signal are both present for a Pair, THE System SHALL present them so that agreement or divergence is visually apparent to the user.
+
+### Requirement 24: Choppiness Volatility Silence Guard
+
+**User Story:** As a trader, I want the assistant to stay silent on a pair when the market is too choppy to trade cleanly, so that I am not shown setups likely to be stopped out by directionless volatility.
+
+#### Acceptance Criteria
+
+1. THE System SHALL compute a deterministic Choppiness_Metric for each of the five Pairs over a fixed trailing window, using only candles dated strictly before the Decision_Date.
+2. WHERE a Pair's Choppiness_Metric indicates conditions are too choppy relative to a configurable threshold, THE System SHALL suppress any otherwise-firing setup for that Pair and SHALL record the choppiness suppression reason.
+3. THE System SHALL apply the Choppiness_Guard to all five Pairs.
+4. THE System SHALL treat the Choppiness_Guard as a suppressor only and SHALL NOT allow it to generate a Direction_Class or any signal.
+5. THE System SHALL NOT use the Choppiness_Metric or the Choppiness_Guard as an input to the directional probability, Earned_Confidence, Direction_Class classification, retrieval, or the Kill_Gate verdict, such that suppression leaves those computations unchanged.
+6. THE System SHALL treat the Choppiness_Guard threshold as configurable and tunable against the Kill_Gate backtest.
+7. WHEN the Choppiness_Metric is computed twice for a Pair with identical inputs, THE System SHALL return identical values.
+8. THE System SHALL compute the Choppiness_Metric and the Choppiness_Guard deterministically, taking no LLM input.
+### Requirement 25: Strategy Attribution and Realized-Outcome Journal for Future Extensibility
+
+**User Story:** As the system owner, I want every produced signal attributed to its originating strategy and every fired setup's realized outcome recorded over time, so that I can later run an LLM-taught trader and a Python algorithmic strategy alongside the existing system, compare them fairly, and train from an accumulated predicted-versus-actual corpus — without rearchitecting.
+
+#### Acceptance Criteria
+
+1. THE System SHALL attribute every surfaced or suppressed signal to a Strategy_Source identifier, defaulting to the deterministic pattern system for v1.
+2. THE System SHALL record, for each fired setup, a Realized_Outcome_Journal entry pairing the setup's prediction (Strategy_Source, Pair, Decision_Date, Direction_Class, selected Horizon, Earned_Confidence, and empirical risk boundaries) with its actual matured forward outcome once the Horizon window has closed.
+3. THE System SHALL populate the realized forward outcome for a journal entry only from Matured_Outcomes, using only candles dated after the Decision_Date, consistent with the look-ahead safety guard.
+4. THE System SHALL keep the Strategy_Source attribution and the Realized_Outcome_Journal outside the directional probability, Earned_Confidence, retrieval, and Kill_Gate verdict computations, such that recording them leaves those computations unchanged.
+5. THE System SHALL support evaluating any Strategy_Source's recorded predictions through the same Kill_Gate harness and baseline comparison used for the deterministic pattern system, so that additional strategies are validated on the same terms.
+6. THE System SHALL reserve the architecture such that an additional strategy (for example an LLM-taught trader or a Python algorithmic strategy) can be added as a separate consumer of the shared storage without changing the existing compute or storage design.
+7. WHEN a Realized_Outcome_Journal entry is written twice for the same (Strategy_Source, Pair, Decision_Date), THE System SHALL produce the same stored result without duplicating the entry.
