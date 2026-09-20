@@ -49,7 +49,19 @@ export function weeklyTrendSign(
   const lookbackIndex = Math.max(0, n - 6);
   const lookbackClose = sorted[lookbackIndex]!.close;
 
-  return currentClose - lookbackClose >= 0 ? "UP" : "DOWN";
+  // Scale-invariant tie-break (Property 9 / Requirement 8.3).
+  // A raw `diff >= 0` comparison is NOT scale-invariant when the two closes are
+  // mathematically equal but differ only by floating-point noise: multiplying both
+  // closes by a positive scalar can flip the sign of that ~1e-17 difference and
+  // therefore flip UP<->DOWN. Mirroring normalize.ts, we treat a difference that is
+  // negligible RELATIVE TO THE PRICE SCALE as a tie resolved to "UP" (preserving the
+  // documented ">= 0 => UP" semantics). Because scaling multiplies both `diff` and
+  // `scale` by the same positive factor, `diff / scale` is invariant, so the
+  // classification is exactly scale-invariant while a genuine negative move
+  // (well beyond fp noise) still yields "DOWN".
+  const diff = currentClose - lookbackClose;
+  const scale = Math.max(Math.abs(currentClose), Math.abs(lookbackClose), 1e-12);
+  return diff < 0 && Math.abs(diff) / scale >= 1e-9 ? "DOWN" : "UP";
 }
 
 /**

@@ -1,5 +1,14 @@
 {
-  "pbtResults": {},
+  "pbtResults": {
+    "6.9 Write property test for out-of-sample-only verdicts": {
+      "status": "passed",
+      "lastRunTimestamp": 1789744591183
+    },
+    "6.17 Write property test for walk-forward fold construction": {
+      "status": "passed",
+      "lastRunTimestamp": 1789745466166
+    }
+  },
   "executionHistory": {
     "1.1 Scaffold the TypeScript project on Node Active LTS with pinned latest-stable toolchain": [
       {
@@ -95,6 +104,356 @@
         "executionId": "7f77f32c-2d83-4800-b993-bb26e3d221ab",
         "chatSessionId": "sess_bb60026b-b9de-48fd-828f-221f65c97836",
         "timestamp": 1789546207347
+      }
+    ],
+    "2.9 Add strategy attribution and the realized-outcomes journal schema (follow-up migration)": [
+      {
+        "executionId": "304d4a2e-6df8-41e3-bdc0-eb500dfe976c",
+        "chatSessionId": "sess_8217eebd-54e3-4c88-9a0b-611e8807f3da",
+        "timestamp": 1789740342273
+      },
+      {
+        "executionId": "304d4a2e-6df8-41e3-bdc0-eb500dfe976c",
+        "chatSessionId": "sess_8217eebd-54e3-4c88-9a0b-611e8807f3da",
+        "timestamp": 1789740490093
+      }
+    ],
+    "5.1 Implement earned confidence with fixed-prior shrinkage": [
+      {
+        "executionId": "d4a0a148-a98d-4484-a8b5-87b8eedad68c",
+        "chatSessionId": "sess_e875ce15-c4da-4567-b1d0-2688059bf8bc",
+        "timestamp": 1789741180131
+      },
+      {
+        "executionId": "d4a0a148-a98d-4484-a8b5-87b8eedad68c",
+        "chatSessionId": "sess_e875ce15-c4da-4567-b1d0-2688059bf8bc",
+        "timestamp": 1789741465070
+      }
+    ],
+    "5.2 Implement ATR_14-scaled FLAT dead-band classification and horizon selection": [
+      {
+        "executionId": "d4a0a148-a98d-4484-a8b5-87b8eedad68c",
+        "chatSessionId": "sess_e875ce15-c4da-4567-b1d0-2688059bf8bc",
+        "timestamp": 1789741183887
+      },
+      {
+        "executionId": "d4a0a148-a98d-4484-a8b5-87b8eedad68c",
+        "chatSessionId": "sess_e875ce15-c4da-4567-b1d0-2688059bf8bc",
+        "timestamp": 1789741466278
+      }
+    ],
+    "5.3 Write property test for bounded confidence": [
+      {
+        "executionId": "d4a0a148-a98d-4484-a8b5-87b8eedad68c",
+        "chatSessionId": "sess_e875ce15-c4da-4567-b1d0-2688059bf8bc",
+        "timestamp": 1789741472995
+      },
+      {
+        "executionId": "d4a0a148-a98d-4484-a8b5-87b8eedad68c",
+        "chatSessionId": "sess_e875ce15-c4da-4567-b1d0-2688059bf8bc",
+        "timestamp": 1789742435981
+      }
+    ],
+    "5.4 Write property test for sample-size shrinkage toward neutral": [
+      {
+        "executionId": "d4a0a148-a98d-4484-a8b5-87b8eedad68c",
+        "chatSessionId": "sess_e875ce15-c4da-4567-b1d0-2688059bf8bc",
+        "timestamp": 1789741474264
+      },
+      {
+        "executionId": "d4a0a148-a98d-4484-a8b5-87b8eedad68c",
+        "chatSessionId": "sess_e875ce15-c4da-4567-b1d0-2688059bf8bc",
+        "timestamp": 1789742436812
+      }
+    ],
+    "5.5 Write property test for total, exact direction classification": [
+      {
+        "executionId": "d4a0a148-a98d-4484-a8b5-87b8eedad68c",
+        "chatSessionId": "sess_e875ce15-c4da-4567-b1d0-2688059bf8bc",
+        "timestamp": 1789741475144
+      },
+      {
+        "executionId": "d4a0a148-a98d-4484-a8b5-87b8eedad68c",
+        "chatSessionId": "sess_e875ce15-c4da-4567-b1d0-2688059bf8bc",
+        "timestamp": 1789742437269
+      }
+    ],
+    "5.6 Write property test for ATR_14-scaled FLAT band": [
+      {
+        "executionId": "d4a0a148-a98d-4484-a8b5-87b8eedad68c",
+        "chatSessionId": "sess_e875ce15-c4da-4567-b1d0-2688059bf8bc",
+        "timestamp": 1789741476652
+      },
+      {
+        "executionId": "d4a0a148-a98d-4484-a8b5-87b8eedad68c",
+        "chatSessionId": "sess_e875ce15-c4da-4567-b1d0-2688059bf8bc",
+        "timestamp": 1789742438426
+      }
+    ],
+    "5.7 Write property test for horizon selection maximizing resolution": [
+      {
+        "executionId": "d4a0a148-a98d-4484-a8b5-87b8eedad68c",
+        "chatSessionId": "sess_e875ce15-c4da-4567-b1d0-2688059bf8bc",
+        "timestamp": 1789741477658
+      },
+      {
+        "executionId": "d4a0a148-a98d-4484-a8b5-87b8eedad68c",
+        "chatSessionId": "sess_e875ce15-c4da-4567-b1d0-2688059bf8bc",
+        "timestamp": 1789742439230
+      }
+    ],
+    "5.8 Write property test for confidence determinism (Python cross-check)": [
+      {
+        "executionId": "d4a0a148-a98d-4484-a8b5-87b8eedad68c",
+        "chatSessionId": "sess_e875ce15-c4da-4567-b1d0-2688059bf8bc",
+        "timestamp": 1789742450425
+      },
+      {
+        "executionId": "d4a0a148-a98d-4484-a8b5-87b8eedad68c",
+        "chatSessionId": "sess_e875ce15-c4da-4567-b1d0-2688059bf8bc",
+        "timestamp": 1789742869225
+      }
+    ],
+    "5. Earned confidence, FLAT dead-band, and horizon selection": [
+      {
+        "executionId": "d4a0a148-a98d-4484-a8b5-87b8eedad68c",
+        "chatSessionId": "sess_e875ce15-c4da-4567-b1d0-2688059bf8bc",
+        "timestamp": 1789742869898
+      }
+    ],
+    "6.1 Implement the weekly-trend-follow baseline": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789743272973
+      },
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789743570386
+      }
+    ],
+    "6.2 Implement the walk-forward folds (sequential, non-overlapping, chronological)": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789743274365
+      },
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789743570981
+      }
+    ],
+    "6.3 Implement Gate 1 (conditional/matched-subset directional) with sample-size floor": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789743576001
+      },
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789743815913
+      }
+    ],
+    "6.4 Implement Gate 2 (risk-adjusted MFE/MAE) with symmetric pair-specific friction": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789743577051
+      },
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789743816554
+      }
+    ],
+    "6.5 Compose the walk-forward verdict and auto-append to the Research_Log": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789743822897
+      },
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789744079442
+      }
+    ],
+    "6.6 Write property test for baseline equals weekly trend sign": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789744094828
+      },
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789744773480
+      }
+    ],
+    "6.7 Write property test for the chronological split definition": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789744096021
+      },
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789744774700
+      }
+    ],
+    "6.8 Write property test for immutable recorded split dates": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789744097135
+      },
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789744775778
+      }
+    ],
+    "6.9 Write property test for out-of-sample-only verdicts": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789744098377
+      },
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789744776942
+      }
+    ],
+    "6.10 Write property test for sample-size floor gating evaluation": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789744099271
+      },
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789744778101
+      }
+    ],
+    "6.11 Write property test for Gate 1 directional threshold": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789744847713
+      },
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789745334107
+      }
+    ],
+    "6.12 Write the symmetric-friction property test (mandated named test)": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789744848634
+      },
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789745336881
+      }
+    ],
+    "6.13 Write property test for Gate 2 sequencing and risk-adjusted threshold": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789744849832
+      },
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789745337261
+      }
+    ],
+    "6.14 Write property test for verdict composition": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789744850880
+      },
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789745338054
+      }
+    ],
+    "6.15 Write the kill-gate fixture-reproducibility named test": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789744853002
+      },
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789745338813
+      }
+    ],
+    "6.17 Write property test for walk-forward fold construction": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789745364125
+      },
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789745616725
+      }
+    ],
+    "6.16 Write the deliberately-null-feature-fails named test": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789745365655
+      },
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789745618374
+      }
+    ],
+    "6.18 Write the cross-regime inclusion property test": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789745366608
+      },
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789745615469
+      }
+    ],
+    "6. Two-stage kill-gate harness (BEFORE feature discovery)": [
+      {
+        "executionId": "adcf6658-c9c1-4c2d-9a7e-d4c9aa95446f",
+        "chatSessionId": "sess_85580bc1-e5fc-45ba-8afe-79c0c52bdde1",
+        "timestamp": 1789745618877
+      }
+    ],
+    "7. Checkpoint - shape-only model provable through the gate": [
+      {
+        "executionId": "a821fbdd-d8ba-40db-96a2-6f3a74059f46",
+        "chatSessionId": "sess_b8448a4b-94a4-4b2f-bba0-e29eb6a6aa90",
+        "timestamp": 1789885214538
+      },
+      {
+        "executionId": "a821fbdd-d8ba-40db-96a2-6f3a74059f46",
+        "chatSessionId": "sess_b8448a4b-94a4-4b2f-bba0-e29eb6a6aa90",
+        "timestamp": 1789885366616
       }
     ]
   }

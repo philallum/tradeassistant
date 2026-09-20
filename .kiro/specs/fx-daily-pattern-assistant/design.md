@@ -133,9 +133,47 @@ flowchart TD
 - The same migrations produce the same schema locally and hosted (Requirement 17.2).
 - No public API or website is included in v1 (Requirement 17.3). A future serving layer would read storage only, requiring no change to compute or storage design (Requirement 17.4).
 
-### Scheduling (Requirement 16.7)
+### Scheduling and Deployment (Requirement 16.7)
 
 Once validated, a GCP Cloud Scheduler job triggers the same TypeScript daily-run entry point that the local dashboard uses. Because the entire compute path is deterministic and reads the same storage schema, a scheduled unattended run produces the same result as an equivalent local run.
+
+**Deployment target.** The deterministic daily-run entry point is packaged as a container and deployed to Cloud Run. The v1 scheduled refresh runs as a **Cloud Run Job** (run-to-completion batch execution) rather than a request-driven Cloud Run service, because the daily refresh is an unattended batch run, not a web endpoint. Cloud Scheduler triggers the Cloud Run Job on the daily cadence (Requirement 16.7). A Cloud Run service with a scheduled HTTP trigger remains an acceptable alternative should a serving endpoint be needed later, consistent with the reserved future serving layer (Requirement 17.4) — but v1 uses a Job.
+
+**Delivery pipeline.** Deployment is driven from the GitHub `main` branch through CI, never ad hoc from a developer machine. The flow:
+
+- Feature/dev branch → pull request → review → merge to `main`.
+- A GitHub Actions workflow on `main` runs the full quality gate (`npm run check` = lint + typecheck + the property/unit test suite) and only proceeds on green.
+- The container is built (Cloud Build) and pushed to Artifact Registry, tagged with the commit SHA.
+- That SHA-pinned image is deployed to the Cloud Run Job.
+
+Pinning deployments to commit SHAs extends the project's determinism principle (Requirement 3.1) into operations and enables exact rollback.
+
+**Authentication.** CI authenticates to Google Cloud using Workload Identity Federation (keyless OIDC from GitHub Actions) rather than long-lived service-account JSON keys. The Cloud Run Job runs as a dedicated least-privilege service account.
+
+**Secrets and configuration.** Runtime secrets (Supabase URL/keys and any database connection string) are stored in Google Secret Manager and referenced by the Cloud Run Job at runtime; they are never committed to the repo or baked into the image. Non-secret config (project, region, target model) is provided via environment variables, consistent with the project's `.env` conventions.
+
+**Supabase connectivity from Cloud Run.** The Supabase direct database host is IPv6-only, whereas Cloud Run egress is effectively IPv4 without additional VPC/IPv6 configuration. The scheduled run therefore connects to Supabase via the IPv4-reachable connection pooler (or the REST path), not the direct IPv6 database host. This preserves the compute/storage separation (Requirement 17) — the scheduled compute reads/writes the same storage schema as a local run.
+
+### External Data Providers & Configuration
+
+Every external provider is accessed behind a thin, swappable adapter, so the concrete vendor for each slot can change without touching any other component. The spec deliberately pins only the *roles* and the *env-var contract*; concrete vendor choices are deferred to implementation time. The candidate vendors listed below are illustrative, not commitments.
+
+Both non-secret configuration (project, region, model) and secret keys are supplied through environment variables that are read verbatim (Requirement 6.3) — nothing is defaulted or synthesized. In deployment, secrets are sourced from Google Secret Manager (see *Scheduling and Deployment*); locally they come from `.env` (gitignored), with `.env.example` as the committed template.
+
+The LLM provider (Gemini Enterprise Agent Platform) is the exception: it authenticates via Google Cloud IAM / Application Default Credentials and uses **no** standalone API key (Component 9 / Requirement 2.4).
+
+The four external data-provider slots:
+
+| Slot / Role | Requirement | v1 status | Environment variables |
+| --- | --- | --- | --- |
+| Daily OHLC price feed | Requirement 7 | REQUIRED for live scheduled runs (research/backtest can use the local `./data` CSVs) | `OHLC_PROVIDER`, `OHLC_API_KEY`, `OHLC_BASE_URL` |
+| 10Y government-bond yield feed | Requirement 13.8 | OPTIONAL (needed only when evaluating the `yieldSpread10y` candidate feature) | `YIELD_PROVIDER`, `YIELD_API_KEY`, `YIELD_BASE_URL` |
+| Economic calendar / news feed | Requirement 14 | REQUIRED for the News Filter | `NEWS_CALENDAR_PROVIDER`, `NEWS_CALENDAR_API_KEY`, `NEWS_CALENDAR_BASE_URL` |
+| External reference signal | Requirement 23 | OPTIONAL, display/research-only (never feeds scoring or the gate) | `EXTERNAL_SIGNAL_PROVIDER`, `EXTERNAL_SIGNAL_API_KEY`, `EXTERNAL_SIGNAL_BASE_URL` |
+
+Candidate vendors (illustrative, not pinned): OHLC — Twelve Data, TraderMade, FCS API, Finage, Polygon; yield — FRED, Twelve Data, TradingEconomics; news/calendar — ForexFactory, FMP (Financial Modeling Prep); external signal — FCS API, Finage.
+
+Note that the LLM slot deliberately has no API key (it uses GCP IAM / ADC), and that Supabase and GCP configuration are documented alongside the storage and deployment sections respectively.
 
 ## Components and Interfaces
 
@@ -451,6 +489,86 @@ interface SuppressedSetup {
 
 The guard groups same-day firing setups by shared base or quote currency **and** directional alignment (a directional bet on the same currency). Within each aligned group it retains only the `N` highest-`Earned_Confidence` setups (default `N = 2`, configurable via `maxConcurrentAligned`) and suppresses the rest, recording a `currency_concentration` reason and the competing pairs for each suppression (Requirements 22.1, 22.2, 22.3, 22.5). The computation is a pure function of the firing setups and their confidences, with no LLM input (Requirement 22.4).
 
+### 17. External Signal Cross-Reference (Requirement 23)
+
+A display-only component that fetches a third-party technical-analysis signal — a recommended direction plus the provider's own confidence/score — from an external forex signal API for the five pairs, and surfaces it to the dashboard purely as a visual side-by-side reference for human comparison against the system's own output (Requirements 23.1, 23.7). Its research value is in spotting agreement versus divergence: a divergence is a prompt to investigate, never a signal.
+
+This component sits entirely **outside the deterministic core**. Its output is never an input to the directional probability, `Earned_Confidence`, `Direction_Class` classification, the `Kill_Gate` verdict, retrieval, or any other scoring or decision path (Requirements 23.2, 23.3). It is **not** an LLM feature and is unrelated to the four sanctioned LLM roles. Including or omitting the external reference leaves every computed probability and verdict byte-for-byte identical — the same boundary discipline enforced by Requirement 2 and Component 9's `ScoringInputGuard`, applied here to a different external source. The reference value is display-only and is never tagged onto, nor allowed to reach, a scoring function.
+
+```typescript
+type ReferenceDirection = "BUY" | "SELL" | "HOLD";
+
+interface ExternalReferenceSignal {
+  pair: Pair;
+  decisionDate: TradingDate;
+  direction: ReferenceDirection;   // provider's recommendation
+  score?: number;                  // provider's own confidence/score, provider-defined scale
+  provider: string;                // provenance tag
+  fetchedAt: string;               // ISO timestamp (non-deterministic; display-only)
+}
+
+interface ExternalSignalProvider {
+  // Fetches the CURRENT reference signal for a pair; display/research-only.
+  // Swappable: the concrete provider can change without touching any other component. (Req 23.4)
+  fetchReference(pair: Pair): Promise<Result<ExternalReferenceSignal, ExternalSignalError>>;
+}
+```
+
+The thin `ExternalSignalProvider` interface lets the concrete provider (e.g. an FX signals API) be swapped without touching other components (Requirement 23.4). The reference is a **current** third-party opinion fetched at daily-run time; it is never used for historical backtest decisions or `Kill_Gate` evaluation, which would be look-ahead contamination and would break reproducibility (Requirement 23.6, consistent with Requirements 3.1 and 4). Because it is fetched outside the deterministic core and only displayed, the core stays pure and reproducible.
+
+On provider unavailability, timeout, or an invalid response, the reference is marked unavailable for that pair via a typed `ExternalSignalError` and the system's own output is unchanged — surfaced as "reference unavailable", never a silent substitution (Requirement 23.5). The dashboard renders the `External_Reference_Signal` beside the pair's own output so agreement or divergence is visually apparent (Requirements 23.1, 23.7). The comparison may be logged (for example to the `Research_Log`) for later human agreement/divergence analysis, but such logging is display/research-only and never feeds scoring.
+
+### 18. Choppiness Volatility Silence Guard (Requirement 24)
+
+A deterministic-core component invoked as a dashboard-level suppression step. Like the Currency Concentration Guard (Component 16) and the News Filter (Component 10), it only ever **suppresses** — it keeps the system silent on a `Pair` when current conditions are too choppy (directionless, whipsaw movement that tends to stop trades out). Suppression is a hard veto: the pair simply does not render. It is not a confidence de-weight. The guard applies to all five pairs, evaluated per-pair, and takes no LLM input (Requirement 24.8).
+
+The guard computes a `Choppiness_Metric` measuring directional **efficiency** over a fixed trailing window `w` — movement without net progress. Concretely this is the Kaufman Efficiency Ratio, `ER = |Close_T − Close_{T−w}| / Σ|Close_i − Close_{i−1}|` over the trailing window, yielding a value in `[0,1]` where `~1` is a clean, efficient trend and `~0` is pure chop (an equivalent Choppiness Index is admissible). This is **distinct from raw volatility magnitude** and is specifically **not** a duplicate of the `ATR_14`-scaled `FLAT_Dead_Band` (Component 5 / Requirement 10.4): the FLAT band scales the width of the no-signal zone by how *large* recent movement is, whereas this guard measures whether that movement is actually *going anywhere*. A pair can have wide ATR yet near-zero efficiency (loud but directionless), and it is exactly that regime this guard silences.
+
+The `Choppiness_Metric` is computed only from candles dated **strictly before** the `Decision_Date`, via the shared Look-Ahead Guard (Component 1), so no future information can leak into the suppression decision (Requirements 24.1, 24.7). Suppression fires when efficiency falls below a configurable minimum-efficiency threshold (`ER < threshold`, i.e. too choppy); the threshold is tunable against the `Kill_Gate` backtest (Requirement 24.6).
+
+```typescript
+interface ChoppinessGuard {
+  // Efficiency Ratio over a trailing window, look-ahead-safe (pre-Decision_Date candles only). (Req 24.1, 24.7)
+  efficiencyRatio(pair: Pair, decisionDate: TradingDate, window: number): number; // [0,1]
+  // Suppress the pair's otherwise-firing setup when efficiency is below the configurable threshold. (Req 24.2, 24.4)
+  assess(pair: Pair, decisionDate: TradingDate): { suppressed: boolean; reason?: "too_choppy"; efficiency: number };
+}
+```
+
+The guard is a pure **suppressor**: it never generates a `Direction_Class` or signal, and it is **not** an input to the directional probability, `Earned_Confidence`, `Direction_Class` classification, retrieval, or the `Kill_Gate` verdict (Requirements 24.4, 24.5). Suppression leaves all of those computations byte-for-byte identical — the same boundary discipline the deterministic core enforces elsewhere. Given fixed inputs the decision is fully deterministic and reproducible (Requirement 24.7).
+
+Ordering mirrors the Currency Concentration Guard: the Choppiness Volatility Silence Guard runs as a dashboard-level suppression step **after** each pair's per-pair firing decision (gate-passing, confidence, news) and **before** the final render, recording a `choppiness` / `too_choppy` reason for each suppression, analogous to how the news and currency-concentration suppressions record their reason. It **composes with** the other suppressors (news, currency-concentration) rather than replacing them: a pair renders only if it survives every suppression step.
+
+### 19. Strategy Attribution & Realized-Outcome Journal (Requirement 25)
+
+A forward-looking extensibility component that reserves two seams so future strategies — for example an LLM-taught trader or a Python algorithmic strategy — can run **alongside** the v1 deterministic pattern system, be compared against it fairly, and so that a predicted-versus-actual corpus accumulates from day one. Both seams are additive: they change no v1 computation and introduce no new dependency into the deterministic core.
+
+**Strategy_Source attribution.** Every surfaced or suppressed signal carries a `strategyId` / source tag. The v1 deterministic system uses the default `"system"`; values such as `"llm"` and `"algo"` are reserved for future strategies. This tag is **metadata only** — it never enters the directional probability, `Earned_Confidence`, retrieval, or the `Kill_Gate` verdict, so tagging a signal leaves every v1 computation byte-for-byte identical (Requirements 25.1, 25.4).
+
+**Realized_Outcome_Journal.** For each fired setup, once its `Horizon` window has matured, the system records the actual forward outcome (terminal `Direction_Class` and MFE/MAE) paired with what was predicted for that setup (direction, horizon, `Earned_Confidence`, and the empirical `Stop_Loss`/`Take_Profit`). The journal is populated **only** from `Matured_Outcomes`, using candles dated strictly after the `Decision_Date`, via the shared Look-Ahead Guard (Component 1) — no future information can leak into the recorded prediction, and no realized outcome is written before its window closes (Requirements 25.2, 25.3). Recording is idempotent per `(strategyId, pair, decision_date)`, so re-running maturation for the same setup updates in place rather than duplicating (Requirement 25.7).
+
+**Strategy-agnostic Kill_Gate.** The existing `Kill_Gate` harness scores a set of (prediction, realized-outcome) pairs against the `Weekly_Trend_Follow` baseline; it is not tied to the pattern-vector model's internals. Because of this, any `Strategy_Source`'s recorded predictions can be validated on exactly the same terms as the v1 system's. This is a clarifying design statement about the harness's existing shape — it does not change the v1 harness behavior (Requirement 25.5).
+
+**Compute/storage boundary as the extension seam.** Consistent with Requirement 17, the boundary between compute and shared Supabase storage is the extension seam: future strategies are separate **consumers** of the shared storage (reading candles/outcomes, writing their own attributed predictions and journal entries) and never modify the existing compute/storage design (Requirement 25.6).
+
+```typescript
+type StrategyId = "system" | "llm" | "algo" | (string & {}); // v1 uses "system"; others reserved
+interface RealizedOutcomeEntry {
+  strategyId: StrategyId;
+  pair: Pair;
+  decisionDate: TradingDate;
+  predictedDirection: DirectionClass;
+  horizon: 1 | 2 | 3;
+  earnedConfidence: number;
+  stopLossPips: number | null;
+  takeProfitPips: number | null;
+  realizedDirection?: DirectionClass; // filled once matured (Req 25.2, 25.3)
+  realizedMfePips?: number;
+  realizedMaePips?: number;
+  matured: boolean;
+}
+```
+
 ## Data Models
 
 All tables live in the shared Supabase schema (identical local and hosted, Requirement 17.2). `pgvector` is enabled for the pattern-vector embedding.
@@ -634,21 +752,45 @@ create table news_risk_flags (
 
 ### `firing_setups` (Requirements 21, 22)
 
-Captures the per-pair firing decision as surfaced (or suppressed) on a Decision_Date, including the empirical risk boundaries from Component 15 and a suppression reason enum that includes `currency_concentration` (Component 16). This extends the in-memory `FiringCard` representation with the persisted fields needed for auditing suppression decisions.
+Captures the per-pair firing decision as surfaced (or suppressed) on a Decision_Date, including the empirical risk boundaries from Component 15, a suppression reason enum that includes `currency_concentration` (Component 16) and `too_choppy` (Component 18), and a `strategy_id` Strategy_Source attribution (Component 19) so multiple strategies can coexist per `(decision_date, pair)`. This extends the in-memory `FiringCard` representation with the persisted fields needed for auditing suppression decisions.
 
 ```sql
 create table firing_setups (
   decision_date     date not null,
   pair              text not null,
+  strategy_id       text not null default 'system',  -- Strategy_Source attribution (Req 25.1); v1 = 'system'
   direction         text not null check (direction in ('UP','DOWN','FLAT')),
   horizon           smallint not null check (horizon in (1,2,3)),
   earned_confidence double precision not null,
   stop_loss_pips    double precision,       -- empirical Stop_Loss (75th pct MAE); null if below floor (Req 21.2, 21.5)
   take_profit_pips  double precision,       -- empirical Take_Profit (50th pct MFE); null if below floor (Req 21.2, 21.5)
   surfaced          boolean not null,        -- false when suppressed
-  suppression_reason text check (suppression_reason in ('news','currency_concentration','below_floor','not_fired')), -- (Req 22.3)
+  suppression_reason text check (suppression_reason in ('news','currency_concentration','below_floor','not_fired','too_choppy')), -- (Req 22.3)
   competing_pairs   text[],                 -- aligned same-currency pairs that outranked it, when concentration-suppressed (Req 22.3)
-  primary key (decision_date, pair)
+  primary key (decision_date, pair, strategy_id)
+);
+```
+
+### `realized_outcomes` (Requirement 25)
+
+The growing predicted-versus-actual corpus (Component 19). Each row pairs what a `Strategy_Source` predicted for a fired setup with the actual forward outcome, populated **only** from matured outcomes via the shared Look-Ahead Guard. It is a separate, consumer-friendly record: future strategies read and append to it on the same terms as the v1 system, and it never feeds the deterministic scoring path.
+
+```sql
+create table realized_outcomes (
+  strategy_id        text not null default 'system',  -- Strategy_Source (Req 25.1)
+  pair               text not null,
+  decision_date      date not null,                   -- the date the setup fired
+  predicted_direction text not null check (predicted_direction in ('UP','DOWN','FLAT')),
+  horizon            smallint not null check (horizon in (1,2,3)),
+  earned_confidence  double precision not null,
+  stop_loss_pips     double precision,                -- as surfaced (may be null below floor)
+  take_profit_pips   double precision,
+  realized_direction text check (realized_direction in ('UP','DOWN','FLAT')), -- null until matured (Req 25.2, 25.3)
+  realized_mfe_pips  double precision,
+  realized_mae_pips  double precision,
+  matured            boolean not null default false,  -- true once the horizon window has closed (Req 25.3)
+  recorded_at        timestamptz not null default now(),
+  primary key (strategy_id, pair, decision_date)      -- idempotent per strategy/pair/date (Req 25.7)
 );
 ```
 
@@ -711,7 +853,7 @@ This feature is highly amenable to property-based testing: the encoder, retrieva
 
 *For all* research-assistant proposals lacking a recorded human approval, the included feature set and recorded interpretations are identical before and after the proposal.
 
-**Validates: Requirement 2.8**
+**Validates: Requirements 2.8**
 
 ### Property 7: Direction classification is total and exact
 
@@ -723,91 +865,91 @@ This feature is highly amenable to property-based testing: the encoder, retrieva
 
 *For all* net moves and positive ATR_14 values, scaling ATR_14 by a positive factor scales the FLAT dead-band boundary by the same factor; the classification boundary is not a fixed pip constant.
 
-**Validates: Requirement 10.4**
+**Validates: Requirements 10.4**
 
 ### Property 9: Pattern vector is shape-only and scale-invariant
 
 *For all* input windows and positive price scalars, encoding the window and encoding the window with all prices multiplied by that scalar produce identical Pattern_Vectors, so absolute price level does not dominate the representation.
 
-**Validates: Requirement 8.2**
+**Validates: Requirements 8.2**
 
 ### Property 10: Neighborhood shares the query weekly-trend regime
 
 *For all* queries and backing data, every analogue in the returned neighborhood has the same Weekly_Trend_Sign as the query.
 
-**Validates: Requirement 9.2**
+**Validates: Requirements 9.2**
 
 ### Property 11: Forward outcomes capture direction and excursions per horizon
 
 *For all* resolved analogues, the forward outcome contains a terminal Direction_Class and MFE/MAE values for each of the 1-, 2-, and 3-day Horizons, computed only from candles dated after the analogue date.
 
-**Validates: Requirement 9.6**
+**Validates: Requirements 9.6**
 
 ### Property 12: Earned confidence is bounded in [0,1]
 
 *For all* Analogue_Neighborhoods and Horizons, the computed Earned_Confidence lies within the range [0,1].
 
-**Validates: Requirement 10.2**
+**Validates: Requirements 10.2**
 
 ### Property 13: Sample-size shrinkage pulls thin neighborhoods toward neutral
 
 *For all* neighborhoods, the Earned_Confidence equals `C_shrunk = (n / (n + k)) * C_raw + (k / (n + k)) * 0.5` with fixed prior weight `k = 10`, where `n` is the analogue count and `C_raw` is the raw historical resolution rate; consequently, *for all* pairs of neighborhoods with the same `C_raw` but differing analogue counts, the neighborhood with fewer analogues yields an Earned_Confidence no farther from 0.5 (neutral) than the larger one, and a neighborhood below the 30-analogue floor cannot be reported as crossing the Confidence_Threshold on sample size alone.
 
-**Validates: Requirement 10.3**
+**Validates: Requirements 10.3**
 
 ### Property 14: Selected horizon maximizes historical resolution
 
 *For all* Analogue_Neighborhoods, the resolution rate at the selected Horizon is greater than or equal to the resolution rate at every other candidate Horizon (1, 2, 3).
 
-**Validates: Requirement 10.6**
+**Validates: Requirements 10.6**
 
 ### Property 15: Baseline equals the weekly trend sign
 
 *For all* Decision_Dates and Pairs, the Weekly_Trend_Follow baseline's predicted direction equals the Weekly_Trend_Sign at that Decision_Date, defined as the 5-trading-day rolling rate of change: UP when `Close_T - Close_{T-5} >= 0`, otherwise DOWN.
 
-**Validates: Requirement 11.1**
+**Validates: Requirements 11.1**
 
 ### Property 16: Chronological split respects the 70/30 (±2pp) partition
 
 *For all* histories, the Data_Split assigns the earliest 70% (±2pp) to train/dev and the most recent 30% (±2pp) to the Out_Of_Sample_Test with no shuffling, and every train date precedes every test date.
 
-**Validates: Requirement 11.2**
+**Validates: Requirements 11.2**
 
 ### Property 17: Recorded split dates are immutable
 
 *For all* frozen Data_Splits, any attempt to change the recorded split dates is rejected and the originally recorded dates are retained.
 
-**Validates: Requirement 11.4**
+**Validates: Requirements 11.4**
 
 ### Property 18: Verdicts are computed on out-of-sample data only
 
 *For all* Kill_Gate verdicts, every date contributing to the scored metrics belongs to the Out_Of_Sample_Test partition.
 
-**Validates: Requirement 11.3**
+**Validates: Requirements 11.3**
 
 ### Property 19: Sample-size floor gates evaluation
 
 *For all* configurations whose matched Analogue_Neighborhood contains fewer than 30 analogues, the Kill_Gate withholds a pass/cut evaluation for that configuration.
 
-**Validates: Requirement 11.5**
+**Validates: Requirements 11.5**
 
 ### Property 20: Gate 1 directional threshold
 
 *For all* out-of-sample metrics, Gate_1 passes if and only if the pattern-model's directional accuracy exceeds the baseline's accuracy by at least 3 percentage points, where the baseline's accuracy is computed on the matched subset of Decision_Dates on which the model produces a firing setup (a conditional / matched-sample comparison), and that matched subset contains at least 30 samples.
 
-**Validates: Requirement 11.6**
+**Validates: Requirements 11.6**
 
 ### Property 21: Friction penalty is applied symmetrically to model and baseline
 
 *For all* excursion sets and Pairs, the pair-specific Friction_Penalty (1.5 pips for EURUSD/GBPUSD; 2.0 pips for USDJPY/USDCHF/USDCAD) is deducted from the MFE/MAE excursions of both the pattern-model outcomes and the baseline outcomes before comparison, so the same penalty applied to both sides never advantages one side over the other.
 
-**Validates: Requirement 11.7**
+**Validates: Requirements 11.7**
 
 ### Property 22: Gate 2 sequencing and risk-adjusted threshold
 
 *For all* configurations, Gate_2 is evaluated only after Gate_1 has passed, and Gate_2 passes if and only if the pattern-model's excursion-weighted hit metric over the selected Horizon is greater than or equal to the baseline's after Friction_Penalty deduction (margin ≥ 0).
 
-**Validates: Requirement 11.8**
+**Validates: Requirements 11.8**
 
 ### Property 23: Verdict composition
 
@@ -831,13 +973,13 @@ This feature is highly amenable to property-based testing: the encoder, retrieva
 
 *For all* sequences of feature inclusions, the count of included features never exceeds 12.
 
-**Validates: Requirement 13.4**
+**Validates: Requirements 13.4**
 
 ### Property 27: Structural liquidity distance is the nearest reference level
 
 *For all* prices and reference-level sets, the Structural_Liquidity_SR feature equals the minimum absolute distance to the nearest of Previous Day High/Low, Previous Week High/Low, and 20-Day High/Low.
 
-**Validates: Requirement 13.6**
+**Validates: Requirements 13.6**
 
 ### Property 28: News suppression is deterministic and never generates a signal
 
@@ -849,13 +991,13 @@ This feature is highly amenable to property-based testing: the encoder, retrieva
 
 *For all* Pairs and Decision_Dates where the news filter indicates elevated event risk, any otherwise-firing setup for that Pair is suppressed and the stated reason is recorded.
 
-**Validates: Requirement 14.4**
+**Validates: Requirements 14.4**
 
 ### Property 30: News feed failure suppresses all cards fail-safe
 
 *For all* feed-failure modes (unavailable, timeout, or failed validation) on a Decision_Date, the missing news context is flagged, an ingestion error is logged, and every one of the five Pairs is suppressed for that Decision_Date.
 
-**Validates: Requirement 14.6**
+**Validates: Requirements 14.6**
 
 ### Property 31: Firing card contains all required fields
 
@@ -867,13 +1009,13 @@ This feature is highly amenable to property-based testing: the encoder, retrieva
 
 *For all* candidate candles, ingestion accepts the candle if and only if its high is greater than or equal to its low and both open and close fall within the high-low range; otherwise it is rejected.
 
-**Validates: Requirement 7.3**
+**Validates: Requirements 7.3**
 
 ### Property 33: Idempotent ingestion
 
 *For all* source candle sets, ingesting the set once and ingesting it multiple times produce the same stored result with no duplicate (Asset, Date) rows.
 
-**Validates: Requirement 7.4**
+**Validates: Requirements 7.4**
 
 ### Property 34: Version-policy enforcement
 
@@ -915,7 +1057,7 @@ This feature is highly amenable to property-based testing: the encoder, retrieva
 
 *For all* Pairs and Decision_Dates, the Yield_Spread feature equals the base-country 10Y yield minus the quote-country 10Y yield, using only yield data dated strictly before the Decision_Date.
 
-**Validates: Requirement 13.8**
+**Validates: Requirements 13.8**
 
 ## Error Handling
 
