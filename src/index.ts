@@ -28,5 +28,47 @@ export * from "./retrieval/index.js";
 // Weekly-Trend-Follow Baseline (Requirement 11.1).
 export * from "./baseline/index.js";
 
+// Candidate Feature Computations (Requirements 13.5, 13.6, 13.8, 4.1).
+export * from "./features/index.js";
+
+// Feature Registry — one-at-a-time gated feature discovery (Requirement 13).
+export * from "./feature-registry/index.js";
+
+// LLM_Interface — role-gated, provenance-tagged AI gateway (Requirement 2).
+export * from "./llm/index.js";
+
+// News Filter — calendar ingestion, LLM risk flag, deterministic suppression,
+// and the feed fail-safe (Requirement 14).
+export * from "./news-filter/index.js";
+
+// Signal Rationale & Pattern Description (Requirement 15). Display-only,
+// outward edge of the AI / Deterministic boundary.
+export * from "./rationale/index.js";
+
+// Research Assistant — human-gated proposals (Requirement 2.8).
+export * from "./research-assistant/index.js";
+
+// Silent-by-Default Dashboard + Currency Concentration Guard — the daily-run
+// entry point, per-pair firing decision, and dashboard-level suppression
+// (Requirements 16, 22, 1, 12.3).
+export * from "./dashboard/index.js";
+
+// Empirical Analogue-Derived Risk Boundaries (Requirement 21).
+export * from "./risk-boundaries/index.js";
+
+// External Signal Cross-Reference — display/research-only, entirely outside the
+// deterministic core; never feeds scoring or the Kill_Gate (Requirement 23).
+export * from "./external-signal/index.js";
+
+// Scheduled daily-run entry point — the GCP-scheduled unattended refresh reuses
+// the same deterministic `dailyRun` path as the local dashboard (Requirement 16.7).
+export * from "./scheduled-run/index.js";
+
+// End-to-End Daily-Run Pipeline — the single deterministic path wiring
+// ingestion → encoder → retrieval → resolver → confidence → kill-gate →
+// feature registry → news filter → risk boundaries → dashboard (task 11.1;
+// Requirements 16.1, 16.7, 17.1, 3.1).
+export * from "./pipeline/index.js";
+
 
 
