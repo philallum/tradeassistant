@@ -1,0 +1,125 @@
+name: Deploy scheduled daily-run Job
+
+# Delivery pipeline for the GCP-scheduled daily refresh (Requirement 16.7).
+#
+# On every push to `main`: run the FULL quality gate (`npm run check`) and, only
+# when it is green, build the deterministic daily-run image via Cloud Build, push
+# it to Artifact Registry tagged with the commit SHA, and deploy that exact
+# SHA-pinned image to the Cloud Run Job. Pinning the deployed image to the commit
+# SHA extends the project's determinism principle to ops: any prior commit's
+# image can be redeployed for an exact rollback.
+#
+# Authentication is KEYLESS: CI authenticates to Google Cloud via Workload
+# Identity Federation (OIDC) — no long-lived service-account key is stored. The
+# Cloud Run Job itself runs as a dedicated least-privilege service account.
+#
+# Secrets (Supabase URL/keys, pooler URL) are sourced at RUNTIME from Google
+# Secret Manager via `--set-secrets`; they are never committed or baked into the
+# image. Non-secret config (project, region, model) is passed via `--set-env-vars`.
+
+on:
+  push:
+    branches: [main]
+
+# Least-privilege token permissions. `id-token: write` is required for the OIDC
+# token used by Workload Identity Federation; `contents: read` to check out.
+permissions:
+  contents: read
+  id-token: write
+
+# Non-secret configuration. GCP identifiers are safe to keep here as repository
+# or environment variables; NO secret value is present in this file.
+env:
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  GCP_REGION: ${{ vars.GCP_REGION }}
+  # Artifact Registry Docker repository (created out of band).
+  AR_REPOSITORY: ${{ vars.AR_REPOSITORY }}
+  # Cloud Run Job name and its dedicated least-privilege runtime service account.
+  CLOUD_RUN_JOB: ${{ vars.CLOUD_RUN_JOB }}
+  RUNTIME_SERVICE_ACCOUNT: ${{ vars.RUNTIME_SERVICE_ACCOUNT }}
+  # Workload Identity Federation provider + the deploy-time service account CI
+  # impersonates (both non-secret resource names).
+  WIF_PROVIDER: ${{ vars.WIF_PROVIDER }}
+  DEPLOY_SERVICE_ACCOUNT: ${{ vars.DEPLOY_SERVICE_ACCOUNT }}
+  # Non-secret runtime config for the Job (selected model id).
+  GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+
+jobs:
+  # Stage 1 — the SAME full quality gate CI runs. Deployment depends on it, so a
+  # red gate blocks the build/deploy entirely.
+  quality-gate:
+    name: Quality gate (npm run check)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node (Active LTS from .nvmrc)
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Runs lint + type-check + tests via the existing package.json script.
+      - name: Quality gate
+        run: npm run check
+
+      - name: Version-policy check
+        run: npm run version-policy
+
+  # Stage 2 — build, push (SHA-tagged), and deploy the SHA-pinned image. Runs
+  # ONLY after the quality gate passes (`needs`).
+  build-and-deploy:
+    name: Build image and deploy Cloud Run Job
+    runs-on: ubuntu-latest
+    needs: quality-gate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Keyless auth to Google Cloud via Workload Identity Federation (OIDC).
+      # Impersonates the deploy service account; no key material is stored.
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      # Fully-qualified, commit-SHA-tagged image reference in Artifact Registry.
+      # The SHA tag is what makes deploys reproducible and rollbacks exact.
+      - name: Compute image reference
+        id: image
+        run: |
+          IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}/scheduled-run:${GITHUB_SHA}"
+          echo "uri=${IMAGE}" >> "$GITHUB_OUTPUT"
+
+      # Build via Cloud Build and push the SHA-tagged image to Artifact Registry.
+      - name: Build and push image (Cloud Build)
+        run: |
+          gcloud builds submit \
+            --project "${GCP_PROJECT_ID}" \
+            --tag "${{ steps.image.outputs.uri }}" \
+            .
+
+      # Deploy the SHA-PINNED image to the Cloud Run Job. The Job runs as the
+      # dedicated least-privilege runtime service account. Non-secret config via
+      # --set-env-vars; runtime secrets via --set-secrets (Secret Manager),
+      # never baked into the image. SUPABASE_POOLER_URL routes over the
+      # IPv4-reachable pooler/REST endpoint (Cloud Run has no IPv6 egress).
+      - name: Deploy SHA-pinned image to Cloud Run Job
+        run: |
+          gcloud run jobs deploy "${CLOUD_RUN_JOB}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${GCP_REGION}" \
+            --image "${{ steps.image.outputs.uri }}" \
+            --service-account "${RUNTIME_SERVICE_ACCOUNT}" \
+            --set-env-vars "GCP_PROJECT_ID=${GCP_PROJECT_ID},GCP_REGION=${GCP_REGION},GEMINI_MODEL=${GEMINI_MODEL},SUPABASE_TARGET=hosted" \
+            --set-secrets "SUPABASE_HOSTED_URL=supabase-url:latest,SUPABASE_HOSTED_KEY=supabase-key:latest,SUPABASE_POOLER_URL=supabase-pooler-url:latest"

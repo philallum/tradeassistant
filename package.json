@@ -13,6 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "version-policy": "node scripts/version-policy.mjs",
+    "build": "tsc",
+    "start:scheduled-run": "node dist/scheduled-run/main.js",
     "check": "npm run lint && npm run typecheck && npm run test"
   },
   "devDependencies": {

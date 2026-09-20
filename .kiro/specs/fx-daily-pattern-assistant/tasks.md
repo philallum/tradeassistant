@@ -282,96 +282,96 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
 - [x] 7. Checkpoint - shape-only model provable through the gate
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 8. Feature discovery through the gate (one at a time, ceiling <=12)
-  - [ ] 8.1 Implement the Feature Registry with independent toggling and inclusion ceiling
+- [x] 8. Feature discovery through the gate (one at a time, ceiling <=12)
+  - [x] 8.1 Implement the Feature Registry with independent toggling and inclusion ceiling
     - Implement `candidates()` (%B, RSI, volumeProxyRegime, weeklyTrendContext, distanceToSma, structuralLiquiditySr, yieldSpread10y), `evaluateOneAtATime()` re-running the gate per candidate, `included()` capped at 12; retain passers, cut+log failers with metric deltas (via LivingDocs); persist to `feature_registry`
     - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5, 13.8, 12.2, 12.3_
 
-  - [ ] 8.2 Implement the candidate feature computations including Structural_Liquidity_SR distance and yield spread
+  - [x] 8.2 Implement the candidate feature computations including Structural_Liquidity_SR distance and yield spread
     - Implement %B, RSI, volume-proxy regime (regime not magnitude), weekly-trend context, distance-to-SMA, and `structuralLiquidityDistance()` = distance to nearest of Prev Day High/Low, Prev Week High/Low, and 20-Day High/Low; all under the Look-Ahead Guard
     - Implement `yieldSpread10y()` = base-country 10Y minus quote-country 10Y, using only `yields` rows dated strictly before the Decision_Date (look-ahead guard); apply the missing-yield fail-safe (feature treated as unavailable for that date, never fabricated/interpolated/future-valued)
     - _Requirements: 13.5, 13.6, 13.8, 4.1_
 
-  - [ ] 8.3 Write property test for inclusion requiring a passing verdict
+  - [x] 8.3 Write property test for inclusion requiring a passing verdict
     - **Property 25: For all candidate features, a feature is in the included set only if a PASS verdict exists for it; a feature without a PASS verdict is never included.**
     - **Validates: Requirements 12.2, 13.2**
 
-  - [ ] 8.4 Write property test for the feature ceiling
+  - [x] 8.4 Write property test for the feature ceiling
     - **Property 26: For all sequences of feature inclusions, the count of included features never exceeds 12.**
     - **Validates: Requirement 13.4**
 
-  - [ ] 8.5 Write property test for structural liquidity distance
+  - [x] 8.5 Write property test for structural liquidity distance
     - **Property 27: For all prices and reference-level sets, the Structural_Liquidity_SR feature equals the minimum absolute distance to the nearest of Previous Day High/Low, Previous Week High/Low, and 20-Day High/Low.**
     - **Validates: Requirement 13.6**
 
-  - [ ] 8.6 Write property test for reproducible verdict on independent toggle
+  - [x] 8.6 Write property test for reproducible verdict on independent toggle
     - **Property 1 (feature-toggle scope): For all features toggled independently with otherwise-unchanged config, the prior verdict is reproduced.**
     - **Validates: Requirements 3.1, 13.7**
 
-  - [ ] 8.7 Write unit tests for candidate membership, single-candidate gate run, and cut logging with deltas
+  - [x] 8.7 Write unit tests for candidate membership, single-candidate gate run, and cut logging with deltas
     - Test `candidates()` membership, one-candidate gate run, and cut logging with metric deltas
     - _Requirements: 13.1, 13.3, 13.5_
 
-  - [ ] 8.8 Write property test for the yield-spread feature definition
+  - [x] 8.8 Write property test for the yield-spread feature definition
     - **Property 40: For all Pairs and Decision_Dates, the Yield_Spread feature equals the base-country 10Y yield minus the quote-country 10Y yield, using only yield data dated strictly before the Decision_Date.**
     - **Validates: Requirement 13.8**
 
-- [ ] 9. AI layer behind the thin swappable LLM_Interface
-  - [ ] 9.1 Implement the LLM_Interface with role gating and provenance tagging
+- [x] 9. AI layer behind the thin swappable LLM_Interface
+  - [x] 9.1 Implement the LLM_Interface with role gating and provenance tagging
     - Implement `invoke<R>()` accepting only the four sanctioned roles (news_filter, signal_rationale, pattern_description, research_assistant), rejecting and recording any other role; wrap all outputs in `LlmTagged<T>` provenance markers; all LLM calls route through this interface
     - _Requirements: 2.3, 2.4, 2.5_
 
-  - [ ] 9.2 Implement the ScoringInputGuard and the AI/deterministic boundary enforcement
+  - [x] 9.2 Implement the ScoringInputGuard and the AI/deterministic boundary enforcement
     - Implement `ScoringInputGuard` that rejects any LlmTagged value reaching a scoring function, records the blocked attempt, and leaves deterministic probability/verdict computations unchanged; ensure scoring function signatures accept no LLM-derived type
     - _Requirements: 2.1, 2.2, 2.6_
 
-  - [ ] 9.3 Implement the News Filter and deterministic suppression with fail-safe
+  - [x] 9.3 Implement the News Filter and deterministic suppression with fail-safe
     - Implement `ingestCalendar()` parsing structured calendar JSON ({name, currency, impact, timestamp}) into `calendar_events`; `riskFlag()` via LLM_Interface emitting structured `RiskFlag {level, reason}`; deterministic `suppress()` consuming only the flag (never generating a Direction_Class), recording the reason; fail-safe: on feed unavailable/timeout/invalid, flag missing context, log ingestion error, and suppress all cards
     - _Requirements: 14.1, 14.2, 14.3, 14.4, 14.5, 14.6_
 
-  - [ ] 9.4 Implement signal rationale, analogue labels, and human-gated research assist
+  - [x] 9.4 Implement signal rationale, analogue labels, and human-gated research assist
     - Implement `signal_rationale` (plain-language text derived from deterministic numeric inputs, cannot alter the signal), `pattern_description` (qualitative analogue labels), and `research_assistant` (proposals only; the registry withholds acceptance until recorded human approval); exclude rationale/labels from probability and verdict computations
     - _Requirements: 15.1, 15.2, 15.3, 15.4, 2.8_
 
-  - [ ] 9.5 Write the AI-free-scoring guardrail named test
+  - [x] 9.5 Write the AI-free-scoring guardrail named test
     - **Property 4: For all LLM-tagged values, no such value reaches the directional-probability computation or the Kill_Gate verdict computation; any attempt is blocked and recorded, and the deterministic computations proceed unchanged; equivalently, generating rationale/analogue labels leaves the numeric probability and verdict identical.**
     - **Validates: Requirements 2.1, 2.2, 2.6, 2.7, 15.2, 15.4**
 
-  - [ ] 9.6 Write property test for LLM role gating
+  - [x] 9.6 Write property test for LLM role gating
     - **Property 5: For all role identifiers passed to the LLM_Interface, the call is accepted if and only if the role is one of the four sanctioned roles; any other role is rejected before invocation and the rejected role is recorded.**
     - **Validates: Requirements 2.3, 2.5**
 
-  - [ ] 9.7 Write property test for human-gated research proposals
+  - [x] 9.7 Write property test for human-gated research proposals
     - **Property 6: For all research-assistant proposals lacking a recorded human approval, the included feature set and recorded interpretations are identical before and after the proposal.**
     - **Validates: Requirement 2.8**
 
-  - [ ] 9.8 Write property test for deterministic news suppression never generating a signal
+  - [x] 9.8 Write property test for deterministic news suppression never generating a signal
     - **Property 28: For all structured risk flags, the suppression decision is a pure function of the flag and produces only a suppress/permit outcome (with a reason), never a Direction_Class.**
     - **Validates: Requirements 14.3, 14.5**
 
-  - [ ] 9.9 Write property test for elevated event risk suppressing firing setups
+  - [x] 9.9 Write property test for elevated event risk suppressing firing setups
     - **Property 29: For all Pairs and Decision_Dates where the news filter indicates elevated event risk, any otherwise-firing setup for that Pair is suppressed and the stated reason is recorded.**
     - **Validates: Requirement 14.4**
 
-  - [ ] 9.10 Write the news fail-safe named property test
+  - [x] 9.10 Write the news fail-safe named property test
     - **Property 30: For all feed-failure modes (unavailable, timeout, or failed validation) on a Decision_Date, the missing news context is flagged, an ingestion error is logged, and every one of the five Pairs is suppressed for that Decision_Date.**
     - **Validates: Requirement 14.6**
 
-  - [ ] 9.11 Write unit/smoke tests for news JSON parsing, RiskFlag shape, rationale/label generation, and the LLM-import boundary
+  - [x] 9.11 Write unit/smoke tests for news JSON parsing, RiskFlag shape, rationale/label generation, and the LLM-import boundary
     - Test calendar JSON field validation, structured RiskFlag shape, rationale/label generation from numeric inputs, and a static check that no module imports an LLM client except through LLM_Interface
     - _Requirements: 14.1, 14.2, 15.1, 15.3, 2.4_
 
-- [ ] 10. Silent-by-default dashboard and scheduled runs
-  - [ ] 10.1 Implement the daily-run entry point, silent-by-default dashboard, and Currency Concentration Guard
+- [x] 10. Silent-by-default dashboard and scheduled runs
+  - [x] 10.1 Implement the daily-run entry point, silent-by-default dashboard, and Currency Concentration Guard
     - Implement `Dashboard.dailyRun()` across all 5 pairs; a pair renders iff it is gate-passing AND Earned_Confidence >= the configurable Confidence_Threshold AND news permits; empty otherwise; never display a feature/pattern that has not passed the gate; respect news suppression; make the threshold configurable and tunable against the backtest
     - Implement the Currency Concentration Guard (Component 16) as a dashboard-level suppression step that runs AFTER per-pair firing decisions and BEFORE render: within each set of aligned same-currency (base or quote) same-day setups, keep only the top-N (default 2, configurable) highest-Earned_Confidence setups and suppress the rest with reason `'currency_concentration'` + competing pairs; deterministic, no LLM
     - _Requirements: 16.1, 16.2, 16.4, 16.5, 16.6, 1.1, 1.2, 12.3, 22_
 
-  - [ ] 10.2 Implement the firing card rendering
+  - [x] 10.2 Implement the firing card rendering
     - Render a firing card showing pair, Direction_Class, selected Horizon, Earned_Confidence, favorable-vs-adverse excursion profile, the empirical Stop_Loss and Take_Profit (from Component 15, task 10.7), and AI rationale
     - _Requirements: 16.3, 1.3, 1.5, 21.4_
 
-  - [ ] 10.3 Implement the GCP-scheduled daily refresh reusing the same entry point
+  - [x] 10.3 Implement the GCP-scheduled daily refresh reusing the same entry point
     - Package the deterministic TypeScript daily-run entry point as a container and deploy it as a Cloud Run Job (run-to-completion batch), triggered on the daily cadence by Cloud Scheduler; the scheduled run reuses the exact same entry point as the local dashboard and produces the same result unattended as an equivalent local run
     - Add the delivery pipeline as code: a GitHub Actions workflow on the `main` branch that runs the full quality gate (`npm run check`) and, only on green, builds the image via Cloud Build, pushes it to Artifact Registry tagged with the commit SHA, and deploys that SHA-pinned image to the Cloud Run Job (enabling exact rollback; extends the determinism principle to ops)
     - Authenticate CI to Google Cloud via Workload Identity Federation (keyless OIDC), and run the Cloud Run Job as a dedicated least-privilege service account
@@ -379,46 +379,46 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
     - Connect to Supabase from Cloud Run via the IPv4-reachable connection pooler (or REST path), not the IPv6-only direct database host
     - _Requirements: 16.7_
 
-  - [ ] 10.4 Write property test for the silent-by-default firing invariant
+  - [x] 10.4 Write property test for the silent-by-default firing invariant
     - **Property 24: For all Pairs and Decision_Dates, a Pair is surfaced iff it has a Kill_Gate-passing pattern AND its Earned_Confidence crosses the configurable Confidence_Threshold AND the news filter permits trading; if none satisfy all three, the dashboard is empty, and nothing unpassed by the Kill_Gate is ever displayed. In addition, the Currency_Concentration_Guard is applied as a further suppression step, so a Pair satisfying all three conditions may still be suppressed when it is an aligned same-currency setup outranked beyond the top-N by Earned_Confidence.**
     - **Validates: Requirements 1.1, 1.2, 12.3, 16.2, 16.5, 16.6, 22.1**
 
-  - [ ] 10.5 Write property test for firing card required fields
+  - [x] 10.5 Write property test for firing card required fields
     - **Property 31: For all firing setups, the rendered card includes the Pair, Direction_Class, selected Horizon, Earned_Confidence, the favorable-versus-adverse excursion profile, the empirical Stop_Loss and Take_Profit, and the AI rationale.**
     - **Validates: Requirements 1.3, 1.5, 16.3, 21.4**
 
-  - [ ] 10.6 Write property test for scheduled-run/local-run reproducibility and unit test for threshold configurability
+  - [x] 10.6 Write property test for scheduled-run/local-run reproducibility and unit test for threshold configurability
     - **Property 1 (view scope): For all identical fixed storage, a scheduled unattended run produces the same view as an equivalent local run.** Add a unit test asserting the Confidence_Threshold is configurable.
     - **Validates: Requirements 3.1, 16.4, 16.7**
 
-  - [ ] 10.7 Implement Component 15 Empirical Risk Boundaries (deterministic, no LLM)
+  - [x] 10.7 Implement Component 15 Empirical Risk Boundaries (deterministic, no LLM)
     - Implement `derive()` deriving Stop_Loss = configurable percentile (default 75th) of neighborhood MAE and Take_Profit = configurable percentile (default 50th) of neighborhood MFE at the selected horizon, computed deterministically with no LLM input; return not-actionable (null) when the neighborhood has < 30 analogues
     - _Requirements: 21_
 
-  - [ ] 10.8 Write the empirical risk boundaries property test
+  - [x] 10.8 Write the empirical risk boundaries property test
     - **Property 38: For all firing neighborhoods with at least 30 analogues, Stop_Loss equals the configured percentile (default 75th) of neighborhood MAE and Take_Profit equals the configured percentile (default 50th) of neighborhood MFE, computed deterministically with no LLM input; for neighborhoods below the floor, the boundaries are not surfaced as actionable.**
     - This is the mandated "empirical risk boundaries test"
     - **Validates: Requirements 21.1, 21.2, 21.3, 21.5**
 
-  - [ ] 10.9 Write the currency-concentration guard property test
+  - [x] 10.9 Write the currency-concentration guard property test
     - **Property 39: For all sets of same-day setups aligned on the same base or quote currency, the Currency_Concentration_Guard retains only the N highest-Earned_Confidence aligned setups (default N=2) and suppresses the rest with a recorded currency-concentration reason and competing Pairs, computed deterministically with no LLM input.**
     - This is the mandated "currency-concentration guard test"
     - **Validates: Requirements 22.1, 22.2, 22.3, 22.4**
 
-  - [ ] 10.10 Persist per-pair firing/suppression outcomes to `firing_setups`
+  - [x] 10.10 Persist per-pair firing/suppression outcomes to `firing_setups`
     - Write each pair's firing/suppression outcome (Direction_Class, horizon, Earned_Confidence, empirical Stop_Loss/Take_Profit, `surfaced` flag, `suppression_reason` incl. `'currency_concentration'`, and competing pairs) to `firing_setups` keyed by (decision_date, pair)
     - _Requirements: 21, 22_
 
 - [ ] 11. Integration, schema parity, and serving-layer architecture guard
-  - [ ] 11.1 Wire the end-to-end pipeline and add schema-parity integration test
+  - [~] 11.1 Wire the end-to-end pipeline and add schema-parity integration test
     - Wire ingestion -> encoder -> retrieval -> resolver -> confidence -> kill-gate -> feature registry -> news filter -> dashboard into a single daily-run path; add an integration test asserting the storage schema is identical across local and hosted Supabase targets
     - _Requirements: 17.2_
 
-  - [ ] 11.2 Write the serving-layer architecture-guard test (documentation/architecture guard only)
+  - [~] 11.2 Write the serving-layer architecture-guard test (documentation/architecture guard only)
     - Add a smoke/structural test asserting compute and storage never depend on a serving layer and no public API/website exists in v1, reserving the read-only serving layer so it can be added later without rearchitecting (later phase, NOT implemented in v1)
     - _Requirements: 17.1, 17.3, 17.4_
 
-  - [ ] 11.3 Implement the External Signal Cross-Reference provider and dashboard display (outside the deterministic core)
+  - [~] 11.3 Implement the External Signal Cross-Reference provider and dashboard display (outside the deterministic core)
     - Implement a thin, swappable `ExternalSignalProvider` interface (Component 17) that fetches the CURRENT third-party technical-analysis signal (recommended direction + provider score) for each of the five pairs at daily-run time; wrap results as `ExternalReferenceSignal` with a provider provenance tag and fetch timestamp
     - Fetch and compare entirely OUTSIDE the deterministic core: the external reference is never an input to the directional probability, Earned_Confidence, Direction_Class, Kill_Gate verdict, retrieval, or any scoring/decision path; including or omitting it must leave every computed probability and verdict identical
     - Display the reference beside each pair's own output on the dashboard so agreement/divergence is visually apparent for human comparison; optionally log the comparison (e.g. to the Research_Log) for later divergence analysis — display/research-only, never feeding scoring
@@ -426,33 +426,33 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
     - Fail-safe: on provider unavailable/timeout/invalid response, mark the reference unavailable for that pair via a typed error and leave the system's own output unchanged
     - _Requirements: 23_
 
-  - [ ] 11.4 Write tests for the external cross-reference boundary and fail-safe
+  - [~] 11.4 Write tests for the external cross-reference boundary and fail-safe
     - Unit/smoke test the `ExternalSignalProvider` interface (swappable provider, `ExternalReferenceSignal` shape) and the fail-safe path (unavailable/timeout/invalid → reference marked unavailable, own output unchanged)
     - Add a boundary test asserting that including vs omitting the external reference leaves the directional probability and Kill_Gate verdict byte-for-byte identical (the external reference never reaches a scoring/decision path), and that external references are not used in any historical backtest/Kill_Gate evaluation
     - _Requirements: 23.2, 23.3, 23.4, 23.5, 23.6_
 
-  - [ ] 11.5 Implement the Choppiness Volatility Silence Guard (deterministic dashboard-level suppressor, all pairs)
+  - [~] 11.5 Implement the Choppiness Volatility Silence Guard (deterministic dashboard-level suppressor, all pairs)
     - Implement `ChoppinessGuard` (Component 18): compute a look-ahead-safe `Choppiness_Metric` per pair as the Kaufman Efficiency Ratio ER = |Close_T − Close_{T−w}| / Σ|Close_i − Close_{i−1}| over a fixed trailing window w (value in [0,1]; ~1 clean trend, ~0 chop), using only candles dated strictly before the Decision_Date via the shared Look-Ahead Guard
     - Run it as a dashboard-level suppression step after per-pair firing decisions (gate-passing, confidence, news) and before final render, across all five pairs; when ER is below a configurable, backtest-tunable threshold, suppress that pair's otherwise-firing setup (hard veto — the pair stays silent) and record a `'too_choppy'` suppression reason; compose with the news and currency-concentration suppressors rather than replacing them
     - Suppressor only: never generate a Direction_Class or signal; never feed the directional probability, Earned_Confidence, Direction_Class classification, retrieval, or the Kill_Gate verdict; no LLM input; deterministic and reproducible
     - Persist the choppiness suppression outcome/reason alongside the other firing/suppression outcomes in `firing_setups`
     - _Requirements: 24_
 
-  - [ ] 11.6 Write property test for the choppiness silence guard boundary and determinism
+  - [~] 11.6 Write property test for the choppiness silence guard boundary and determinism
     - **Property 41: For all pairs and Decision_Dates, the Choppiness_Guard suppresses an otherwise-firing setup if and only if the look-ahead-safe Efficiency-Ratio Choppiness_Metric is below the configurable threshold; suppression never generates a Direction_Class and leaves the directional probability, Earned_Confidence, and Kill_Gate verdict identical; and the Choppiness_Metric is deterministic (identical inputs yield identical values) and takes no LLM input.**
     - **Validates: Requirements 24.2, 24.4, 24.5, 24.7, 24.8**
 
-  - [ ] 11.8 Implement realized-outcome journaling with Strategy_Source attribution (look-ahead-safe, idempotent)
+  - [~] 11.8 Implement realized-outcome journaling with Strategy_Source attribution (look-ahead-safe, idempotent)
     - Using the `strategy_id` column and `realized_outcomes` table added by the schema migration in task 2.9, tag every surfaced/suppressed signal with a `strategyId` (default `'system'` for v1); on each daily run, write/update a `realized_outcomes` entry pairing the fired setup's prediction (strategyId, pair, decision_date, predicted direction, selected horizon, Earned_Confidence, empirical Stop_Loss/Take_Profit) with the actual matured forward outcome (terminal Direction_Class, MFE/MAE) once its Horizon window has closed
     - Populate the realized outcome only from Matured_Outcomes using candles dated after the Decision_Date via the shared Look-Ahead Guard; make the write idempotent per (strategyId, pair, decision_date); keep this entirely outside the directional probability, Earned_Confidence, retrieval, and Kill_Gate computations so recording it leaves them unchanged
     - _Requirements: 25.1, 25.2, 25.3, 25.4_
 
-  - [ ] 11.9 Write tests for strategy attribution and the realized-outcome journal
+  - [~] 11.9 Write tests for strategy attribution and the realized-outcome journal
     - Unit/integration test: `strategy_id` defaults to `'system'` and participates in the `firing_setups` and `realized_outcomes` keys so multiple strategies can coexist; realized outcomes are populated only from matured, strictly-after-decision-date candles; journaling is idempotent per (strategyId, pair, decision_date) (re-running a day does not duplicate)
     - Boundary test: recording attribution and journal entries leaves the directional probability, Earned_Confidence, and Kill_Gate verdict byte-for-byte identical (the journal never feeds scoring)
     - _Requirements: 25.1, 25.2, 25.3, 25.4, 25.7_
 
-- [ ] 12. Final checkpoint - full suite green
+- [~] 12. Final checkpoint - full suite green
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
