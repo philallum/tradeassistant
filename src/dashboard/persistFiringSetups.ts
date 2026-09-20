@@ -46,10 +46,10 @@ export const SYSTEM_STRATEGY_ID = "system" as const;
  * `firing_setups.suppression_reason` SQL check constraint. `null` accompanies a
  * surfaced pair (Requirements 22.3, 21.5, 16.6, 16.2).
  *
- * NOTE: 'too_choppy' also exists in the SQL enum (Component 18, Requirement
- * 24), but the choppiness suppressor is wired in a later task; this persistence
- * layer emits it only when a caller supplies it via the {@link PairOutcome}
- * override, so the type includes it for forward-compatibility.
+ * 'too_choppy' is recorded for a pair the Choppiness Volatility Silence Guard
+ * hard-vetoed (Component 18, Requirement 24); it is read from the DashboardView's
+ * own suppressions, and may also be supplied via a {@link PairOutcomeOverride}
+ * for an out-of-band suppressor.
  */
 export type SuppressionReason =
   | "news"
@@ -199,7 +199,8 @@ export interface PersistFiringSetupsOptions {
  *   1. news suppression (checked first — it vetoes before the firing test),
  *   2. gate / confidence / FLAT → 'not_fired',
  *   3. currency-concentration guard → 'currency_concentration' (+ competing pairs),
- *   4. below-floor boundaries on a pair that otherwise fired → 'below_floor'.
+ *   4. choppiness guard → 'too_choppy',
+ *   5. below-floor boundaries on a pair that otherwise fired → 'below_floor'.
  * An explicit override (e.g. 'too_choppy') takes precedence over all of these.
  */
 function classifyPair(
@@ -207,6 +208,7 @@ function classifyPair(
   evaluation: PairEvaluation | undefined,
   surfacedPairs: ReadonlySet<Pair>,
   suppressedByGuard: ReadonlyMap<Pair, readonly Pair[]>,
+  choppyPairs: ReadonlySet<Pair>,
   override: PairOutcomeOverride | undefined,
   confidenceThreshold: number,
 ): { surfaced: boolean; reason: SuppressionReason | null; competingPairs: readonly Pair[] } {
@@ -224,6 +226,12 @@ function classifyPair(
   const competing = suppressedByGuard.get(pair);
   if (competing) {
     return { surfaced: false, reason: "currency_concentration", competingPairs: competing };
+  }
+
+  // (3) Choppiness Volatility Silence Guard suppression — it fired and survived
+  // the concentration guard but was hard-vetoed as too choppy (Requirement 24).
+  if (choppyPairs.has(pair)) {
+    return { surfaced: false, reason: "too_choppy", competingPairs: [] };
   }
 
   // From here the pair did NOT surface and was not guard-suppressed. Attribute
@@ -299,8 +307,13 @@ export async function persistFiringSetups(
   }
 
   const suppressedByGuard = new Map<Pair, readonly Pair[]>();
+  const choppyPairs = new Set<Pair>();
   for (const suppressed of view.suppressed) {
-    suppressedByGuard.set(suppressed.pair, suppressed.competingPairs);
+    if (suppressed.reason === "currency_concentration") {
+      suppressedByGuard.set(suppressed.pair, suppressed.competingPairs);
+    } else if (suppressed.reason === "too_choppy") {
+      choppyPairs.add(suppressed.pair);
+    }
   }
 
   const overrideByPair = new Map<Pair, PairOutcomeOverride>();
@@ -319,6 +332,7 @@ export async function persistFiringSetups(
       evaluation,
       surfacedPairs,
       suppressedByGuard,
+      choppyPairs,
       overrideByPair.get(pair),
       config.confidenceThreshold,
     );

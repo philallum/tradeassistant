@@ -14,7 +14,15 @@
 //      firing decisions and BEFORE the final render, de-duplicating aligned
 //      same-currency setups by conviction (Design Component 16).
 //
-//   3. RENDER: the surviving setups become FiringCards; if none survive, the
+//   3. CHOPPINESS VOLATILITY SILENCE GUARD (Requirement 24): runs after the
+//      currency-concentration guard and BEFORE the final render, hard-vetoing an
+//      otherwise-firing pair whose look-ahead-safe Efficiency-Ratio
+//      Choppiness_Metric is below the configurable threshold (Design Component
+//      18). It COMPOSES with the news and currency-concentration suppressors
+//      rather than replacing them: a pair renders only if it survives every
+//      suppression step. It only ever suppresses — it never generates a signal.
+//
+//   4. RENDER: the surviving setups become FiringCards; if none survive, the
 //      dashboard is empty (silent by default, Requirement 16.2).
 //
 // This module is deterministic (Requirement 3.1): identical `PairEvaluation`
@@ -26,10 +34,14 @@
 import type { Pair } from "../ingestion/types.js";
 import { PAIRS } from "../ingestion/types.js";
 import type { TradingDate } from "../guard/types.js";
+import type { Candle } from "../guard/types.js";
 import { applyCurrencyConcentrationGuard } from "./currencyConcentrationGuard.js";
+import { applyChoppinessGuard } from "./choppinessGuard.js";
 import {
+  DEFAULT_CHOPPINESS_CONFIG,
   DEFAULT_DASHBOARD_CONFIG,
   type DashboardConfig,
+  type DashboardSuppression,
   type DashboardView,
   type FiringCard,
   type FiringSetup,
@@ -127,18 +139,25 @@ function toFiringCard(setup: FiringSetup, evaluation: PairEvaluation): FiringCar
  * five pairs (Design Component 11; Requirements 16.1, 16.2, 16.5, 16.6, 1.1,
  * 12.3, 22).
  *
- * @param decisionDate The Decision_Date being evaluated.
- * @param evaluations  The per-pair deterministic evaluations. Any of the five
- *                     pairs missing from the input is treated as non-firing.
- * @param config       Optional dashboard config; defaults to the configured
- *                     Confidence_Threshold and `maxConcurrentAligned = 2`.
+ * @param decisionDate  The Decision_Date being evaluated.
+ * @param evaluations   The per-pair deterministic evaluations. Any of the five
+ *                      pairs missing from the input is treated as non-firing.
+ * @param config        Optional dashboard config; defaults to the configured
+ *                      Confidence_Threshold, `maxConcurrentAligned = 2`, and the
+ *                      default Choppiness Guard window/threshold.
+ * @param candlesByPair Optional per-pair daily candles used by the Choppiness
+ *                      Volatility Silence Guard (Requirement 24). When omitted,
+ *                      or when a pair has no entry, that pair is not assessed for
+ *                      choppiness (the guard has no basis to silence it).
  * @returns The DashboardView: firing cards (empty ⇒ silent) plus the
- *          currency-concentration suppressions applied before render.
+ *          currency-concentration AND choppiness suppressions applied before
+ *          render.
  */
 export function dailyRun(
   decisionDate: TradingDate,
   evaluations: readonly PairEvaluation[],
   config: DashboardConfig = DEFAULT_DASHBOARD_CONFIG,
+  candlesByPair: ReadonlyMap<Pair, readonly Candle[]> = new Map(),
 ): DashboardView {
   // Index evaluations by pair for a deterministic, pair-ordered pass.
   const byPair = new Map<Pair, PairEvaluation>();
@@ -160,11 +179,30 @@ export function dailyRun(
 
   // Stage 2: Currency Concentration Guard (after firing decisions, before
   // render) — de-duplicate aligned same-currency setups by conviction (Req 22).
-  const { kept, suppressed } = applyCurrencyConcentrationGuard(firing, decisionDate, {
+  const concentration = applyCurrencyConcentrationGuard(firing, decisionDate, {
     maxConcurrentAligned: config.maxConcurrentAligned,
   });
 
-  // Stage 3: render the survivors. Empty ⇒ silent (Requirement 16.2).
+  // Stage 3: Choppiness Volatility Silence Guard (after the concentration
+  // guard, before render) — hard-veto any survivor whose look-ahead-safe
+  // Efficiency-Ratio Choppiness_Metric is below the configurable threshold
+  // (Req 24). It COMPOSES with the currency-concentration and news suppressors:
+  // it runs on the concentration-guard survivors, and its suppressions are
+  // recorded alongside the others.
+  const choppiness = applyChoppinessGuard(
+    concentration.kept,
+    candlesByPair,
+    decisionDate,
+    config.choppiness ?? DEFAULT_CHOPPINESS_CONFIG,
+  );
+
+  const kept = choppiness.kept;
+  const suppressed: DashboardSuppression[] = [
+    ...concentration.suppressed,
+    ...choppiness.suppressed,
+  ];
+
+  // Stage 4: render the survivors. Empty ⇒ silent (Requirement 16.2).
   const cards: FiringCard[] = kept.map((setup) => {
     const evaluation = firingEvaluations.get(setup.pair);
     // `evaluation` is always present: `kept` is a subset of `firing`, and every
@@ -190,7 +228,11 @@ export function dailyRun(
  * evaluations produced by the compute pipeline (task 11.1).
  */
 export interface Dashboard {
-  dailyRun(decisionDate: TradingDate, evaluations: readonly PairEvaluation[]): DashboardView;
+  dailyRun(
+    decisionDate: TradingDate,
+    evaluations: readonly PairEvaluation[],
+    candlesByPair?: ReadonlyMap<Pair, readonly Candle[]>,
+  ): DashboardView;
 }
 
 /**
@@ -200,8 +242,8 @@ export interface Dashboard {
  */
 export function createDashboard(config: DashboardConfig = DEFAULT_DASHBOARD_CONFIG): Dashboard {
   return {
-    dailyRun(decisionDate, evaluations) {
-      return dailyRun(decisionDate, evaluations, config);
+    dailyRun(decisionDate, evaluations, candlesByPair) {
+      return dailyRun(decisionDate, evaluations, config, candlesByPair);
     },
   };
 }

@@ -958,6 +958,16 @@
         "executionId": "27a5913c-5810-4d62-bea6-1e31ec79bd22",
         "chatSessionId": "sess_3d8d7085-aff8-4456-ad11-273d714a3662",
         "timestamp": 1789894476704
+      },
+      {
+        "executionId": "63896240-45b7-419b-a179-56b35a109484",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789926994029
+      },
+      {
+        "executionId": "63896240-45b7-419b-a179-56b35a109484",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789927739926
       }
     ],
     "11.2 Write the serving-layer architecture-guard test (documentation/architecture guard only)": [
@@ -965,6 +975,16 @@
         "executionId": "27a5913c-5810-4d62-bea6-1e31ec79bd22",
         "chatSessionId": "sess_3d8d7085-aff8-4456-ad11-273d714a3662",
         "timestamp": 1789894477468
+      },
+      {
+        "executionId": "63896240-45b7-419b-a179-56b35a109484",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789927748508
+      },
+      {
+        "executionId": "63896240-45b7-419b-a179-56b35a109484",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789928009245
       }
     ],
     "11.3 Implement the External Signal Cross-Reference provider and dashboard display (outside the deterministic core)": [
@@ -972,6 +992,16 @@
         "executionId": "27a5913c-5810-4d62-bea6-1e31ec79bd22",
         "chatSessionId": "sess_3d8d7085-aff8-4456-ad11-273d714a3662",
         "timestamp": 1789894480906
+      },
+      {
+        "executionId": "63896240-45b7-419b-a179-56b35a109484",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789928019158
+      },
+      {
+        "executionId": "63896240-45b7-419b-a179-56b35a109484",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789928500327
       }
     ],
     "11.4 Write tests for the external cross-reference boundary and fail-safe": [
@@ -979,6 +1009,16 @@
         "executionId": "27a5913c-5810-4d62-bea6-1e31ec79bd22",
         "chatSessionId": "sess_3d8d7085-aff8-4456-ad11-273d714a3662",
         "timestamp": 1789894481879
+      },
+      {
+        "executionId": "63896240-45b7-419b-a179-56b35a109484",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789928504683
+      },
+      {
+        "executionId": "63896240-45b7-419b-a179-56b35a109484",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789928888355
       }
     ],
     "11.5 Implement the Choppiness Volatility Silence Guard (deterministic dashboard-level suppressor, all pairs)": [
@@ -986,6 +1026,16 @@
         "executionId": "27a5913c-5810-4d62-bea6-1e31ec79bd22",
         "chatSessionId": "sess_3d8d7085-aff8-4456-ad11-273d714a3662",
         "timestamp": 1789894482320
+      },
+      {
+        "executionId": "63896240-45b7-419b-a179-56b35a109484",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789928895104
+      },
+      {
+        "executionId": "63896240-45b7-419b-a179-56b35a109484",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789929494038
       }
     ],
     "11.6 Write property test for the choppiness silence guard boundary and determinism": [
@@ -993,6 +1043,16 @@
         "executionId": "27a5913c-5810-4d62-bea6-1e31ec79bd22",
         "chatSessionId": "sess_3d8d7085-aff8-4456-ad11-273d714a3662",
         "timestamp": 1789894482936
+      },
+      {
+        "executionId": "63896240-45b7-419b-a179-56b35a109484",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789929498525
+      },
+      {
+        "executionId": "63896240-45b7-419b-a179-56b35a109484",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789929916309
       }
     ],
     "11.8 Implement realized-outcome journaling with Strategy_Source attribution (look-ahead-safe, idempotent)": [
@@ -1000,6 +1060,16 @@
         "executionId": "27a5913c-5810-4d62-bea6-1e31ec79bd22",
         "chatSessionId": "sess_3d8d7085-aff8-4456-ad11-273d714a3662",
         "timestamp": 1789894483360
+      },
+      {
+        "executionId": "63896240-45b7-419b-a179-56b35a109484",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789929920953
+      },
+      {
+        "executionId": "63896240-45b7-419b-a179-56b35a109484",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789930192072
       }
     ],
     "11.9 Write tests for strategy attribution and the realized-outcome journal": [
@@ -1007,6 +1077,16 @@
         "executionId": "27a5913c-5810-4d62-bea6-1e31ec79bd22",
         "chatSessionId": "sess_3d8d7085-aff8-4456-ad11-273d714a3662",
         "timestamp": 1789894483597
+      },
+      {
+        "executionId": "63896240-45b7-419b-a179-56b35a109484",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789930196415
+      },
+      {
+        "executionId": "63896240-45b7-419b-a179-56b35a109484",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789930764408
       }
     ],
     "12. Final checkpoint - full suite green": [
@@ -1014,6 +1094,16 @@
         "executionId": "27a5913c-5810-4d62-bea6-1e31ec79bd22",
         "chatSessionId": "sess_3d8d7085-aff8-4456-ad11-273d714a3662",
         "timestamp": 1789894484044
+      },
+      {
+        "executionId": "e4363e3d-057a-4148-afaa-a5daedd13f68",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789933120305
+      },
+      {
+        "executionId": "e4363e3d-057a-4148-afaa-a5daedd13f68",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789933308266
       }
     ],
     "8. Feature discovery through the gate (one at a time, ceiling <=12)": [
@@ -1035,6 +1125,13 @@
         "executionId": "46617863-504f-44ca-b3f6-420d2fd3bbb1",
         "chatSessionId": "sess_9ef2cc82-e397-471c-af13-3e86cda36e92",
         "timestamp": 1789926227236
+      }
+    ],
+    "11. Integration, schema parity, and serving-layer architecture guard": [
+      {
+        "executionId": "63896240-45b7-419b-a179-56b35a109484",
+        "chatSessionId": "sess_c92b5239-b80e-4bf5-aae8-4b3366376da2",
+        "timestamp": 1789930766183
       }
     ]
   }

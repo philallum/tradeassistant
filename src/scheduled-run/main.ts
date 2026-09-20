@@ -23,21 +23,38 @@
 import { loadScheduledRunConfig } from "./config.js";
 import type { PairEvaluationLoader, DashboardViewPersister } from "./scheduledRun.js";
 import { runScheduledDaily } from "./scheduledRun.js";
+import { makePipelineLoader } from "../pipeline/index.js";
+import type { PipelineStores } from "../pipeline/index.js";
+import type { SupabaseConfig } from "../storage/supabaseConfig.js";
 
 /**
- * INTEGRATION POINT (task 11.1): load the deterministic per-pair evaluations
- * for the Decision_Date from Supabase over the IPv4 pooler/REST connection.
- *
- * Until the end-to-end pipeline is wired, this fails fast: no evaluations are
- * fabricated, so a live scheduled run cannot silently emit a bogus view.
+ * STORAGE-ADAPTER SEAM: build the Supabase-backed compute PORTs
+ * (CandleStore / PatternVectorStore / AnalogueStore) from the resolved
+ * connection. The end-to-end pipeline (task 11.1) is fully wired and reads only
+ * through these ports (Requirement 17.1); the concrete Supabase adapters are
+ * implemented in a later storage task. Until then this fails fast — no data is
+ * fabricated, so a live scheduled run cannot silently emit a bogus view. Wiring
+ * the adapters replaces ONLY this function; the pipeline, the scheduled runner,
+ * and the shared `dailyRun` entry point require no changes.
  */
-const loadEvaluations: PairEvaluationLoader = () => {
+function buildSupabaseStores(supabase: SupabaseConfig): PipelineStores {
   throw new Error(
-    "Pipeline not yet wired (task 11.1): connect the end-to-end compute pipeline " +
-      "(ingestion → encoder → retrieval → resolver → confidence → kill-gate → news → " +
-      "risk-boundaries) to load PairEvaluation[] from Supabase over the IPv4 pooler/REST path. " +
-      "The scheduled runner and the shared dailyRun entry point require no changes.",
+    `Supabase storage adapters not yet implemented for target "${supabase.target}": ` +
+      "provide CandleStore / PatternVectorStore / AnalogueStore bound to the IPv4 " +
+      "pooler/REST connection. The end-to-end pipeline (task 11.1) is wired and reads " +
+      "only through these ports.",
   );
+}
+
+/**
+ * Load the deterministic per-pair evaluations for the Decision_Date by running
+ * the wired end-to-end pipeline (task 11.1) over the Supabase-backed storage
+ * ports. Because the pipeline is a pure function of the stored inputs, this
+ * reproduces an equivalent local run (Requirement 16.7).
+ */
+const loadEvaluations: PairEvaluationLoader = (decisionDate, supabase) => {
+  const stores = buildSupabaseStores(supabase);
+  return makePipelineLoader(stores)(decisionDate, supabase);
 };
 
 /**

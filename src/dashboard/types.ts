@@ -70,6 +70,31 @@ export interface SuppressedSetup {
 }
 
 /**
+ * A setup suppressed by the Choppiness Volatility Silence Guard — Design
+ * Component 18 (Requirement 24). Records the fixed `too_choppy` reason and the
+ * look-ahead-safe Efficiency-Ratio `Choppiness_Metric` that fell below the
+ * configurable threshold (Requirements 24.1, 24.2). There is deliberately NO
+ * Direction_Class-producing field: the guard is a suppressor, never a signal
+ * source (Requirements 24.4, 24.5).
+ */
+export interface ChoppinessSuppressedSetup {
+  readonly pair: Pair;
+  readonly reason: "too_choppy";
+  /**
+   * The look-ahead-safe Efficiency-Ratio Choppiness_Metric that triggered the
+   * suppression, in `[0,1]` (~1 clean trend, ~0 chop) (Requirement 24.1).
+   */
+  readonly efficiency: number;
+}
+
+/**
+ * Any dashboard-level suppression recorded on a {@link DashboardView}: either a
+ * Currency Concentration Guard suppression or a Choppiness Guard suppression.
+ * The two compose — a pair renders only if it survives every suppressor.
+ */
+export type DashboardSuppression = SuppressedSetup | ChoppinessSuppressedSetup;
+
+/**
  * The result of applying the Currency Concentration Guard to a set of firing
  * setups: the retained setups and the suppressed ones (Requirement 22.2).
  */
@@ -134,8 +159,12 @@ export interface DashboardView {
   readonly decisionDate: TradingDate;
   /** The firing cards to render, in deterministic order. Empty ⇒ silent. */
   readonly cards: readonly FiringCard[];
-  /** Currency-concentration suppressions applied before render (Requirement 22.3). */
-  readonly suppressed: readonly SuppressedSetup[];
+  /**
+   * Dashboard-level suppressions applied before render: currency-concentration
+   * suppressions (Requirement 22.3) and choppiness suppressions (Requirement
+   * 24.2). Both compose — a pair renders only if it survives every suppressor.
+   */
+  readonly suppressed: readonly DashboardSuppression[];
 }
 
 /**
@@ -153,6 +182,33 @@ export interface DashboardConfig {
    * Concentration Guard retains per group (default 2, Requirement 22.5).
    */
   readonly maxConcurrentAligned: number;
+  /**
+   * The Choppiness Volatility Silence Guard configuration — Component 18
+   * (Requirement 24). Configurable and tunable against the Kill_Gate backtest
+   * (Requirement 24.6). Optional: when omitted, {@link DEFAULT_CHOPPINESS_CONFIG}
+   * is used, so existing callers that predate the guard keep working unchanged.
+   */
+  readonly choppiness?: ChoppinessConfig;
+}
+
+/**
+ * Configuration for the Choppiness Volatility Silence Guard — Component 18
+ * (Requirements 24.1, 24.2, 24.6). Both knobs are configurable and tunable
+ * against the Kill_Gate backtest.
+ */
+export interface ChoppinessConfig {
+  /**
+   * The trailing window `w` (in trading days) over which the Efficiency-Ratio
+   * Choppiness_Metric is computed (Requirement 24.1).
+   */
+  readonly window: number;
+  /**
+   * The minimum-efficiency threshold in `[0,1]`. A pair whose look-ahead-safe
+   * Efficiency Ratio is strictly below this value is too choppy and its
+   * otherwise-firing setup is suppressed (`ER < threshold`) (Requirements 24.2,
+   * 24.6).
+   */
+  readonly minEfficiency: number;
 }
 
 /** The default Confidence_Threshold. Configurable per {@link DashboardConfig}. */
@@ -164,10 +220,31 @@ export const DEFAULT_CONFIDENCE_THRESHOLD = 0.55 as const;
  */
 export const DEFAULT_MAX_CONCURRENT_ALIGNED = 2 as const;
 
+/**
+ * The default trailing window for the Efficiency-Ratio Choppiness_Metric, in
+ * trading days. Aligned with the ATR_14 lookback so the two volatility views
+ * (magnitude vs. efficiency) share a comparable horizon (Requirement 24.1).
+ */
+export const DEFAULT_CHOPPINESS_WINDOW = 14 as const;
+
+/**
+ * The default minimum-efficiency threshold. A pair whose look-ahead-safe
+ * Efficiency Ratio is below this is treated as too choppy to trade cleanly and
+ * its otherwise-firing setup is suppressed. Backtest-tunable (Requirement 24.6).
+ */
+export const DEFAULT_CHOPPINESS_MIN_EFFICIENCY = 0.3 as const;
+
+/** The default Choppiness Guard configuration (Requirement 24.6). */
+export const DEFAULT_CHOPPINESS_CONFIG: ChoppinessConfig = {
+  window: DEFAULT_CHOPPINESS_WINDOW,
+  minEfficiency: DEFAULT_CHOPPINESS_MIN_EFFICIENCY,
+};
+
 /** The default dashboard configuration. */
 export const DEFAULT_DASHBOARD_CONFIG: DashboardConfig = {
   confidenceThreshold: DEFAULT_CONFIDENCE_THRESHOLD,
   maxConcurrentAligned: DEFAULT_MAX_CONCURRENT_ALIGNED,
+  choppiness: DEFAULT_CHOPPINESS_CONFIG,
 };
 
 // --- Currency decomposition -----------------------------------------------

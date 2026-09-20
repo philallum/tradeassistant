@@ -15,6 +15,16 @@ export {
   currencyConcentrationGuard,
 } from "./currencyConcentrationGuard.js";
 export {
+  applyChoppinessGuard,
+  assessChoppiness,
+  efficiencyRatio,
+  efficiencyRatioFromCloses,
+  createChoppinessGuard,
+  type ChoppinessGuard,
+  type ChoppinessAssessment,
+  type ChoppinessResult,
+} from "./choppinessGuard.js";
+export {
   dailyRun,
   createDashboard,
   type Dashboard,
@@ -35,3 +45,12 @@ export {
   type PairOutcomeOverride,
   type PersistFiringSetupsOptions,
 } from "./persistFiringSetups.js";
+export {
+  journalRealizedOutcomes,
+  InMemoryRealizedOutcomeStore,
+  type StrategyId,
+  type RealizedOutcomeEntry,
+  type RealizedOutcomeStore,
+  type FiredSetupPrediction,
+  type JournalRealizedOutcomesOptions,
+} from "./realizedOutcomeJournal.js";

@@ -9,9 +9,11 @@ import {
   persistFiringSetups,
   SYSTEM_STRATEGY_ID,
 } from "./persistFiringSetups.js";
+import { DEFAULT_DASHBOARD_CONFIG } from "./types.js";
 import type { Confidence, Horizon } from "../confidence/types.js";
 import type { DirectionClass } from "../retrieval/types.js";
 import type { Pair } from "../ingestion/types.js";
+import type { Candle } from "../guard/types.js";
 
 const DECISION_DATE = "2024-03-15";
 
@@ -146,6 +148,33 @@ describe("persistFiringSetups", () => {
     expect(row?.surfaced).toBe(false);
     expect(row?.suppressionReason).toBe("currency_concentration");
     expect(row?.competingPairs.length).toBeGreaterThan(0);
+  });
+
+  it("records 'too_choppy' from a Choppiness-Guard suppression in the view", async () => {
+    const store = new InMemoryFiringSetupStore();
+    const config = {
+      ...DEFAULT_DASHBOARD_CONFIG,
+      choppiness: { window: 4, minEfficiency: 0.3 },
+    };
+    const evaluations = [evaluation("EURUSD")];
+    // A choppy close series (returns to origin) ⇒ efficiency below threshold.
+    const chop: Candle[] = [1, 2, 1, 2, 1].map((close, i) => ({
+      asset: "EURUSD",
+      date: `2024-03-0${i + 1}`,
+      open: close,
+      high: close,
+      low: close,
+      close,
+    }));
+    const candlesByPair = new Map<Pair, readonly Candle[]>([["EURUSD", chop]]);
+    const view = dailyRun(DECISION_DATE, evaluations, config, candlesByPair);
+
+    await persistFiringSetups(store, view, evaluations, { config });
+
+    const row = await store.get(DECISION_DATE, "EURUSD", SYSTEM_STRATEGY_ID);
+    expect(row?.surfaced).toBe(false);
+    expect(row?.suppressionReason).toBe("too_choppy");
+    expect(row?.competingPairs).toEqual([]);
   });
 
   it("honours a 'too_choppy' override regardless of firing outcome", async () => {

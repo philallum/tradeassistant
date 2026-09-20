@@ -409,16 +409,16 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
     - Write each pair's firing/suppression outcome (Direction_Class, horizon, Earned_Confidence, empirical Stop_Loss/Take_Profit, `surfaced` flag, `suppression_reason` incl. `'currency_concentration'`, and competing pairs) to `firing_setups` keyed by (decision_date, pair)
     - _Requirements: 21, 22_
 
-- [ ] 11. Integration, schema parity, and serving-layer architecture guard
-  - [~] 11.1 Wire the end-to-end pipeline and add schema-parity integration test
+- [x] 11. Integration, schema parity, and serving-layer architecture guard
+  - [x] 11.1 Wire the end-to-end pipeline and add schema-parity integration test
     - Wire ingestion -> encoder -> retrieval -> resolver -> confidence -> kill-gate -> feature registry -> news filter -> dashboard into a single daily-run path; add an integration test asserting the storage schema is identical across local and hosted Supabase targets
     - _Requirements: 17.2_
 
-  - [~] 11.2 Write the serving-layer architecture-guard test (documentation/architecture guard only)
+  - [x] 11.2 Write the serving-layer architecture-guard test (documentation/architecture guard only)
     - Add a smoke/structural test asserting compute and storage never depend on a serving layer and no public API/website exists in v1, reserving the read-only serving layer so it can be added later without rearchitecting (later phase, NOT implemented in v1)
     - _Requirements: 17.1, 17.3, 17.4_
 
-  - [~] 11.3 Implement the External Signal Cross-Reference provider and dashboard display (outside the deterministic core)
+  - [x] 11.3 Implement the External Signal Cross-Reference provider and dashboard display (outside the deterministic core)
     - Implement a thin, swappable `ExternalSignalProvider` interface (Component 17) that fetches the CURRENT third-party technical-analysis signal (recommended direction + provider score) for each of the five pairs at daily-run time; wrap results as `ExternalReferenceSignal` with a provider provenance tag and fetch timestamp
     - Fetch and compare entirely OUTSIDE the deterministic core: the external reference is never an input to the directional probability, Earned_Confidence, Direction_Class, Kill_Gate verdict, retrieval, or any scoring/decision path; including or omitting it must leave every computed probability and verdict identical
     - Display the reference beside each pair's own output on the dashboard so agreement/divergence is visually apparent for human comparison; optionally log the comparison (e.g. to the Research_Log) for later divergence analysis — display/research-only, never feeding scoring
@@ -426,33 +426,33 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
     - Fail-safe: on provider unavailable/timeout/invalid response, mark the reference unavailable for that pair via a typed error and leave the system's own output unchanged
     - _Requirements: 23_
 
-  - [~] 11.4 Write tests for the external cross-reference boundary and fail-safe
+  - [x] 11.4 Write tests for the external cross-reference boundary and fail-safe
     - Unit/smoke test the `ExternalSignalProvider` interface (swappable provider, `ExternalReferenceSignal` shape) and the fail-safe path (unavailable/timeout/invalid → reference marked unavailable, own output unchanged)
     - Add a boundary test asserting that including vs omitting the external reference leaves the directional probability and Kill_Gate verdict byte-for-byte identical (the external reference never reaches a scoring/decision path), and that external references are not used in any historical backtest/Kill_Gate evaluation
     - _Requirements: 23.2, 23.3, 23.4, 23.5, 23.6_
 
-  - [~] 11.5 Implement the Choppiness Volatility Silence Guard (deterministic dashboard-level suppressor, all pairs)
+  - [x] 11.5 Implement the Choppiness Volatility Silence Guard (deterministic dashboard-level suppressor, all pairs)
     - Implement `ChoppinessGuard` (Component 18): compute a look-ahead-safe `Choppiness_Metric` per pair as the Kaufman Efficiency Ratio ER = |Close_T − Close_{T−w}| / Σ|Close_i − Close_{i−1}| over a fixed trailing window w (value in [0,1]; ~1 clean trend, ~0 chop), using only candles dated strictly before the Decision_Date via the shared Look-Ahead Guard
     - Run it as a dashboard-level suppression step after per-pair firing decisions (gate-passing, confidence, news) and before final render, across all five pairs; when ER is below a configurable, backtest-tunable threshold, suppress that pair's otherwise-firing setup (hard veto — the pair stays silent) and record a `'too_choppy'` suppression reason; compose with the news and currency-concentration suppressors rather than replacing them
     - Suppressor only: never generate a Direction_Class or signal; never feed the directional probability, Earned_Confidence, Direction_Class classification, retrieval, or the Kill_Gate verdict; no LLM input; deterministic and reproducible
     - Persist the choppiness suppression outcome/reason alongside the other firing/suppression outcomes in `firing_setups`
     - _Requirements: 24_
 
-  - [~] 11.6 Write property test for the choppiness silence guard boundary and determinism
+  - [x] 11.6 Write property test for the choppiness silence guard boundary and determinism
     - **Property 41: For all pairs and Decision_Dates, the Choppiness_Guard suppresses an otherwise-firing setup if and only if the look-ahead-safe Efficiency-Ratio Choppiness_Metric is below the configurable threshold; suppression never generates a Direction_Class and leaves the directional probability, Earned_Confidence, and Kill_Gate verdict identical; and the Choppiness_Metric is deterministic (identical inputs yield identical values) and takes no LLM input.**
     - **Validates: Requirements 24.2, 24.4, 24.5, 24.7, 24.8**
 
-  - [~] 11.8 Implement realized-outcome journaling with Strategy_Source attribution (look-ahead-safe, idempotent)
+  - [x] 11.8 Implement realized-outcome journaling with Strategy_Source attribution (look-ahead-safe, idempotent)
     - Using the `strategy_id` column and `realized_outcomes` table added by the schema migration in task 2.9, tag every surfaced/suppressed signal with a `strategyId` (default `'system'` for v1); on each daily run, write/update a `realized_outcomes` entry pairing the fired setup's prediction (strategyId, pair, decision_date, predicted direction, selected horizon, Earned_Confidence, empirical Stop_Loss/Take_Profit) with the actual matured forward outcome (terminal Direction_Class, MFE/MAE) once its Horizon window has closed
     - Populate the realized outcome only from Matured_Outcomes using candles dated after the Decision_Date via the shared Look-Ahead Guard; make the write idempotent per (strategyId, pair, decision_date); keep this entirely outside the directional probability, Earned_Confidence, retrieval, and Kill_Gate computations so recording it leaves them unchanged
     - _Requirements: 25.1, 25.2, 25.3, 25.4_
 
-  - [~] 11.9 Write tests for strategy attribution and the realized-outcome journal
+  - [x] 11.9 Write tests for strategy attribution and the realized-outcome journal
     - Unit/integration test: `strategy_id` defaults to `'system'` and participates in the `firing_setups` and `realized_outcomes` keys so multiple strategies can coexist; realized outcomes are populated only from matured, strictly-after-decision-date candles; journaling is idempotent per (strategyId, pair, decision_date) (re-running a day does not duplicate)
     - Boundary test: recording attribution and journal entries leaves the directional probability, Earned_Confidence, and Kill_Gate verdict byte-for-byte identical (the journal never feeds scoring)
     - _Requirements: 25.1, 25.2, 25.3, 25.4, 25.7_
 
-- [~] 12. Final checkpoint - full suite green
+- [x] 12. Final checkpoint - full suite green
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

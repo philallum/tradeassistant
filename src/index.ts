@@ -56,9 +56,19 @@ export * from "./dashboard/index.js";
 // Empirical Analogue-Derived Risk Boundaries (Requirement 21).
 export * from "./risk-boundaries/index.js";
 
+// External Signal Cross-Reference — display/research-only, entirely outside the
+// deterministic core; never feeds scoring or the Kill_Gate (Requirement 23).
+export * from "./external-signal/index.js";
+
 // Scheduled daily-run entry point — the GCP-scheduled unattended refresh reuses
 // the same deterministic `dailyRun` path as the local dashboard (Requirement 16.7).
 export * from "./scheduled-run/index.js";
+
+// End-to-End Daily-Run Pipeline — the single deterministic path wiring
+// ingestion → encoder → retrieval → resolver → confidence → kill-gate →
+// feature registry → news filter → risk boundaries → dashboard (task 11.1;
+// Requirements 16.1, 16.7, 17.1, 3.1).
+export * from "./pipeline/index.js";
 
 
 
