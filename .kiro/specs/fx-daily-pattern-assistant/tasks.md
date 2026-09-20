@@ -106,7 +106,7 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
     - Ingest representative per-country 10Y yields; assert `(country,date)` keying, idempotent upsert, and the missing-feed unavailable path
     - _Requirements: 13.8_
 
-  - [ ] 2.9 Add strategy attribution and the realized-outcomes journal schema (follow-up migration)
+  - [x] 2.9 Add strategy attribution and the realized-outcomes journal schema (follow-up migration)
     - Add a follow-up Supabase migration (the initial schema in 2.1 is already applied): add `strategy_id text not null default 'system'` to `firing_setups` and make its primary key `(decision_date, pair, strategy_id)`; add `'too_choppy'` to the `firing_setups.suppression_reason` enum; create the new `realized_outcomes` table (per design Component 19 / Data Models) keyed by `(strategy_id, pair, decision_date)` for idempotent upsert
     - Land this with the storage schema so `strategy_id` and `realized_outcomes` exist before the first daily run and the predicted-vs-actual corpus can accumulate from day one; the same migration runs identically local and hosted and keeps compute/storage independent of any serving layer so future strategies (LLM-taught trader, Python algo) are separate consumers of shared storage
     - _Requirements: 25.1, 25.6, 25.7, 17.2_
@@ -169,117 +169,117 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks are never
     - This is the mandated "similarity-radius silence test"
     - **Validates: Requirements 9.8, 9.9, 20.2, 20.3**
 
-- [ ] 5. Earned confidence, FLAT dead-band, and horizon selection
-  - [ ] 5.1 Implement earned confidence with fixed-prior shrinkage
+- [x] 5. Earned confidence, FLAT dead-band, and horizon selection
+  - [x] 5.1 Implement earned confidence with fixed-prior shrinkage
     - Implement `earnedConfidence()` = `(n/(n+k))*C_raw + (k/(n+k))*0.5` with k=10, constrained to [0,1]; a sub-30-analogue neighborhood cannot cross the threshold on sample size alone
     - _Requirements: 10.1, 10.2, 10.3, 10.7_
 
-  - [ ] 5.2 Implement ATR_14-scaled FLAT dead-band classification and horizon selection
+  - [x] 5.2 Implement ATR_14-scaled FLAT dead-band classification and horizon selection
     - Compute ATR_14; implement `classify()` returning exactly one Direction_Class using the ATR_14-scaled dead-band (not a fixed pip count); implement `selectHorizon()` picking the horizon with strongest historical resolution
     - _Requirements: 1.4, 10.4, 10.5, 10.6_
 
-  - [ ] 5.3 Write property test for bounded confidence
+  - [x] 5.3 Write property test for bounded confidence
     - **Property 12: For all Analogue_Neighborhoods and Horizons, the computed Earned_Confidence lies within the range [0,1].**
     - **Validates: Requirement 10.2**
 
-  - [ ] 5.4 Write property test for sample-size shrinkage toward neutral
+  - [x] 5.4 Write property test for sample-size shrinkage toward neutral
     - **Property 13: For all neighborhoods, Earned_Confidence equals C_shrunk = (n/(n+k))*C_raw + (k/(n+k))*0.5 with k=10; for pairs of neighborhoods with the same C_raw but differing analogue counts, the one with fewer analogues yields a confidence no farther from 0.5 than the larger one, and a sub-30-analogue neighborhood cannot be reported as crossing the Confidence_Threshold on sample size alone.**
     - **Validates: Requirement 10.3**
 
-  - [ ] 5.5 Write property test for total, exact direction classification
+  - [x] 5.5 Write property test for total, exact direction classification
     - **Property 7: For all net forward moves and ATR_14 values, classification returns exactly one Direction_Class; the move classifies FLAT if and only if it lies within the ATR_14-scaled dead-band, and UP or DOWN by the sign of the move otherwise.**
     - **Validates: Requirements 1.4, 10.5**
 
-  - [ ] 5.6 Write property test for ATR_14-scaled FLAT band
+  - [x] 5.6 Write property test for ATR_14-scaled FLAT band
     - **Property 8: For all net moves and positive ATR_14 values, scaling ATR_14 by a positive factor scales the FLAT dead-band boundary by the same factor; the classification boundary is not a fixed pip constant.**
     - **Validates: Requirement 10.4**
 
-  - [ ] 5.7 Write property test for horizon selection maximizing resolution
+  - [x] 5.7 Write property test for horizon selection maximizing resolution
     - **Property 14: For all Analogue_Neighborhoods, the resolution rate at the selected Horizon is greater than or equal to the resolution rate at every other candidate Horizon (1, 2, 3).**
     - **Validates: Requirement 10.6**
 
-  - [ ] 5.8 Write property test for confidence determinism (Python cross-check)
+  - [x] 5.8 Write property test for confidence determinism (Python cross-check)
     - **Property 1 (confidence scope): For all identical inputs, earnedConfidence returns identical values.** Implement the authoritative test in fast-check and a `hypothesis` cross-check of the shrinkage formula distribution.
     - **Validates: Requirements 3.1, 10.7**
 
-- [ ] 6. Two-stage kill-gate harness (BEFORE feature discovery)
-  - [ ] 6.1 Implement the weekly-trend-follow baseline
+- [x] 6. Two-stage kill-gate harness (BEFORE feature discovery)
+  - [x] 6.1 Implement the weekly-trend-follow baseline
     - Implement `Baseline.predict()` returning the 5-trading-day rolling ROC sign (UP if Close*T - Close*{T-5} >= 0, else DOWN)
     - _Requirements: 11.1_
 
-  - [ ] 6.2 Implement the walk-forward folds (sequential, non-overlapping, chronological)
+  - [x] 6.2 Implement the walk-forward folds (sequential, non-overlapping, chronological)
     - Implement `walkForwardFolds()` producing sequential, non-overlapping, chronologically ordered train/test folds (default ~3y train / ~1y test, rolling forward by the test period) where every train window strictly precedes its test window; the out-of-sample set is the union of the test folds
     - Persist folds to `walk_forward_folds` with frozen boundaries (`frozen=true`) and reject attempts to change recorded fold dates (change-rejection)
     - _Requirements: 11.2, 11.4, 19.1, 19.2_
 
-  - [ ] 6.3 Implement Gate 1 (conditional/matched-subset directional) with sample-size floor
+  - [x] 6.3 Implement Gate 1 (conditional/matched-subset directional) with sample-size floor
     - Compute metrics on the Out_Of_Sample_Test only; evaluate only where the matched neighborhood has >=30 analogues; Gate 1 passes iff model accuracy exceeds baseline accuracy by >=3pp, where baseline accuracy is computed on the model's firing subset of Decision_Dates and that subset has >=30 samples
     - _Requirements: 11.3, 11.5, 11.6_
 
-  - [ ] 6.4 Implement Gate 2 (risk-adjusted MFE/MAE) with symmetric pair-specific friction
+  - [x] 6.4 Implement Gate 2 (risk-adjusted MFE/MAE) with symmetric pair-specific friction
     - Evaluate Gate 2 only after Gate 1 passes; deduct Friction_Penalty (1.5 pips EURUSD/GBPUSD; 2.0 pips USDJPY/USDCHF/USDCAD) from MFE/MAE of BOTH model and baseline; pass iff model excursion-weighted hit metric >= baseline's after deduction
     - _Requirements: 11.7, 11.8_
 
-  - [ ] 6.5 Compose the walk-forward verdict and auto-append to the Research_Log
+  - [x] 6.5 Compose the walk-forward verdict and auto-append to the Research_Log
     - Evaluate both gates per fold; a config PASSES only if it passes BOTH Gate 1 and Gate 2 on EVERY qualifying fold (matched-firing subset >=30-sample floor); folds below the floor are skipped and recorded; a single failing qualifying fold makes the verdict CUT
     - Persist per-fold verdicts + metrics to `gate_fold_verdicts` and the aggregate verdict to `gate_verdicts`; auto-append the aggregate + per-fold verdicts and accuracy-vs-baseline and risk-adjusted-vs-baseline metrics to `RESEARCH-LOG.md` (via LivingDocs), and log cuts with metrics
     - _Requirements: 11.2, 11.9, 11.10, 11.11, 11.13, 19, 5.4, 5.5, 12.1_
 
-  - [ ] 6.6 Write property test for baseline equals weekly trend sign
+  - [x] 6.6 Write property test for baseline equals weekly trend sign
     - **Property 15: For all Decision*Dates and Pairs, the Weekly_Trend_Follow baseline's predicted direction equals the Weekly_Trend_Sign, defined as the 5-trading-day rolling ROC: UP when Close_T - Close*{T-5} >= 0, otherwise DOWN.**
     - **Validates: Requirement 11.1**
 
-  - [ ] 6.7 Write property test for the chronological split definition
+  - [x] 6.7 Write property test for the chronological split definition
     - **Property 16: For all histories, the Data_Split assigns the earliest 70% (±2pp) to train/dev and the most recent 30% (±2pp) to the Out_Of_Sample_Test with no shuffling, and every train date precedes every test date.**
     - Note: retained for the split definition; the primary evaluation partition is now the walk-forward folds (see 6.2, and Property 36 in 6.17)
     - **Validates: Requirement 11.2**
 
-  - [ ] 6.8 Write property test for immutable recorded split dates
+  - [x] 6.8 Write property test for immutable recorded split dates
     - **Property 17: For all frozen Data_Splits, any attempt to change the recorded split dates is rejected and the originally recorded dates are retained.**
     - **Validates: Requirement 11.4**
 
-  - [ ] 6.9 Write property test for out-of-sample-only verdicts
+  - [x] 6.9 Write property test for out-of-sample-only verdicts
     - **Property 18: For all Kill_Gate verdicts, every date contributing to the scored metrics belongs to the Out_Of_Sample_Test partition.**
     - **Validates: Requirement 11.3**
 
-  - [ ] 6.10 Write property test for sample-size floor gating evaluation
+  - [x] 6.10 Write property test for sample-size floor gating evaluation
     - **Property 19: For all configurations whose matched Analogue_Neighborhood contains fewer than 30 analogues, the Kill_Gate withholds a pass/cut evaluation for that configuration.**
     - **Validates: Requirement 11.5**
 
-  - [ ] 6.11 Write property test for Gate 1 directional threshold
+  - [x] 6.11 Write property test for Gate 1 directional threshold
     - **Property 20: For all out-of-sample metrics, Gate_1 passes if and only if the pattern-model's directional accuracy exceeds the baseline's accuracy by at least 3 percentage points, where the baseline's accuracy is computed on the matched subset of Decision_Dates on which the model fires, and that matched subset contains at least 30 samples.**
     - **Validates: Requirement 11.6**
 
-  - [ ] 6.12 Write the symmetric-friction property test (mandated named test)
+  - [x] 6.12 Write the symmetric-friction property test (mandated named test)
     - **Property 21: For all excursion sets and Pairs, the pair-specific Friction_Penalty (1.5 pips EURUSD/GBPUSD; 2.0 pips USDJPY/USDCHF/USDCAD) is deducted from the MFE/MAE excursions of both the pattern-model outcomes and the baseline outcomes before comparison, so the same penalty applied to both sides never advantages one side over the other.**
     - **Validates: Requirement 11.7**
 
-  - [ ] 6.13 Write property test for Gate 2 sequencing and risk-adjusted threshold
+  - [x] 6.13 Write property test for Gate 2 sequencing and risk-adjusted threshold
     - **Property 22: For all configurations, Gate_2 is evaluated only after Gate_1 has passed, and Gate_2 passes if and only if the pattern-model's excursion-weighted hit metric over the selected Horizon is >= the baseline's after Friction_Penalty deduction (margin >= 0).**
     - **Validates: Requirement 11.8**
 
-  - [ ] 6.14 Write property test for verdict composition
+  - [x] 6.14 Write property test for verdict composition
     - **Property 23: For all configurations, the Kill_Gate verdict is PASS if and only if both Gate_1 and Gate_2 pass; otherwise it is CUT, and the corresponding verdict and metrics are logged.**
     - **Validates: Requirements 11.9, 11.10**
 
-  - [ ] 6.15 Write the kill-gate fixture-reproducibility named test
+  - [x] 6.15 Write the kill-gate fixture-reproducibility named test
     - **Property 1 (kill-gate scope): the harness reproduces known metrics on a fixed fixture.** Assert deterministic metrics on a recorded fixture.
     - **Validates: Requirements 3.1, 11.12**
 
-  - [ ] 6.16 Write the deliberately-null-feature-fails named test
+  - [x] 6.16 Write the deliberately-null-feature-fails named test
     - A feature/pattern with no predictive signal must FAIL both gates (verifies Properties 20, 22, 23 discriminate signal from noise)
     - _Requirements: 11.6, 11.8, 11.9, 11.10_
 
-  - [ ] 6.17 Write property test for walk-forward fold construction
+  - [x] 6.17 Write property test for walk-forward fold construction
     - **Property 36: For all histories, the Walk_Forward_Window folds are sequential, non-overlapping, chronologically ordered with every train window preceding its test window, and the out-of-sample set equals the union of the test folds.**
     - **Validates: Requirements 11.2, 19.1**
 
-  - [ ] 6.18 Write the cross-regime inclusion property test
+  - [x] 6.18 Write the cross-regime inclusion property test
     - **Property 37: For all candidate configurations, a feature/config is admitted only if it passes both Gate_1 and Gate_2 on every qualifying walk-forward fold; folds below the >=30-sample floor are skipped and recorded, and a single failing qualifying fold blocks inclusion.**
     - This is the mandated "cross-regime inclusion test": a feature passing recent data but failing an earlier-regime fold must NOT be included
     - **Validates: Requirements 11.13, 19.3, 19.5**
 
-- [ ] 7. Checkpoint - shape-only model provable through the gate
+- [x] 7. Checkpoint - shape-only model provable through the gate
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 8. Feature discovery through the gate (one at a time, ceiling <=12)

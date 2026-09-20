@@ -67,3 +67,50 @@ describe("Database Schema Migrations (Requirements 7.2, 7.3, 8.4, 13.8, 17.1, 17
     expect(sql).toMatch(/create table if not exists version_ledger/i);
   });
 });
+
+describe("Strategy Attribution & Realized-Outcome Journal Migration (Requirements 25.1, 25.6, 25.7, 17.2)", () => {
+  const migrationPath = resolve(
+    process.cwd(),
+    "supabase/migrations/20260916000001_strategy_attribution_realized_outcomes.sql",
+  );
+
+  it("migration file exists and is non-empty", () => {
+    const sql = readFileSync(migrationPath, "utf8");
+    expect(sql.length).toBeGreaterThan(0);
+  });
+
+  it("adds strategy_id Strategy_Source attribution to firing_setups (Req 25.1)", () => {
+    const sql = readFileSync(migrationPath, "utf8");
+    expect(sql).toMatch(
+      /alter table firing_setups\s+add column if not exists strategy_id text not null default 'system'/i,
+    );
+  });
+
+  it("repoints firing_setups primary key to (decision_date, pair, strategy_id)", () => {
+    const sql = readFileSync(migrationPath, "utf8");
+    expect(sql).toMatch(/drop constraint if exists firing_setups_pkey/i);
+    expect(sql).toMatch(
+      /add constraint firing_setups_pkey primary key\s*\(decision_date,\s*pair,\s*strategy_id\)/i,
+    );
+  });
+
+  it("adds too_choppy to the firing_setups suppression_reason check (Req 22.3)", () => {
+    const sql = readFileSync(migrationPath, "utf8");
+    expect(sql).toMatch(/drop constraint if exists firing_setups_suppression_reason_check/i);
+    expect(sql).toMatch(/'too_choppy'/i);
+    expect(sql).toMatch(
+      /check\s*\(suppression_reason in \('news',\s*'currency_concentration',\s*'below_floor',\s*'not_fired',\s*'too_choppy'\)\)/i,
+    );
+  });
+
+  it("creates realized_outcomes keyed by (strategy_id, pair, decision_date) for idempotent upsert (Req 25.7)", () => {
+    const sql = readFileSync(migrationPath, "utf8");
+    expect(sql).toMatch(/create table if not exists realized_outcomes/i);
+    expect(sql).toMatch(/predicted_direction\s+text not null check/i);
+    expect(sql).toMatch(/realized_direction\s+text check/i);
+    expect(sql).toMatch(/matured\s+boolean not null default false/i);
+    expect(sql).toMatch(
+      /primary key\s*\(strategy_id,\s*pair,\s*decision_date\)/i,
+    );
+  });
+});
