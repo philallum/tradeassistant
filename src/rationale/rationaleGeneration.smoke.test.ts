@@ -32,14 +32,18 @@ function makeLlm(): { llm: LlmInterface; complete: ReturnType<typeof vi.fn> } {
     pattern_description: ["label-a", "label-b"],
     research_assistant: "",
   };
-  const complete = vi.fn(
-    <R extends SanctionedRole>(role: R, input: RoleInput[R]): Promise<RoleOutput[R]> => {
-      void input;
-      return Promise.resolve(canned[role]);
-    },
-  );
+  // The generic implementation is declared separately so `vi.fn` does not have
+  // to infer (and collapse) the generic call signature — under Vitest 5's
+  // typings a `Mock` wrapping a generic function is no longer assignable back to
+  // the generic `LlmProvider["complete"]`. We spy on the concrete impl and cast
+  // the spy to the provider's signature at the boundary; behavior is unchanged.
+  const impl = <R extends SanctionedRole>(role: R, input: RoleInput[R]): Promise<RoleOutput[R]> => {
+    void input;
+    return Promise.resolve(canned[role]);
+  };
+  const complete = vi.fn(impl);
   const llm = new LlmInterface({
-    provider: { complete } satisfies LlmProvider,
+    provider: { complete: complete as unknown as LlmProvider["complete"] } satisfies LlmProvider,
     rejectionRecorder: new InMemoryRoleRejectionRecorder(),
     clock: fixedClock,
   });

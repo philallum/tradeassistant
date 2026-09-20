@@ -36,13 +36,18 @@ function fakeProvider(): { provider: LlmProvider; complete: ReturnType<typeof vi
     pattern_description: [],
     research_assistant: "Consider adding RSI as a candidate feature.",
   };
-  const complete = vi.fn(
-    <R extends SanctionedRole>(role: R, input: RoleInput[R]): Promise<RoleOutput[R]> => {
-      void input;
-      return Promise.resolve(canned[role]);
-    },
-  );
-  return { provider: { complete }, complete };
+  // The generic implementation is declared separately so `vi.fn` does not have
+  // to infer (and collapse) the generic call signature — under Vitest 5's
+  // typings a `Mock` wrapping a generic function is no longer assignable back to
+  // the generic `LlmProvider["complete"]`. We spy on the concrete impl and cast
+  // the spy to the provider's signature at the boundary; behavior is unchanged.
+  const impl = <R extends SanctionedRole>(role: R, input: RoleInput[R]): Promise<RoleOutput[R]> => {
+    void input;
+    return Promise.resolve(canned[role]);
+  };
+  const complete = vi.fn(impl);
+  const provider: LlmProvider = { complete: complete as unknown as LlmProvider["complete"] };
+  return { provider, complete };
 }
 
 const fixedClock: Clock = { now: () => "2020-01-01T00:00:00.000Z" };
