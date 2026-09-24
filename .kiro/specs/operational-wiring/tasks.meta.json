@@ -1,0 +1,159 @@
+{
+  "pbtResults": {
+    "1.8 Write property test — CSV import is idempotent": {
+      "status": "passed",
+      "lastRunTimestamp": 1790079139536
+    }
+  },
+  "executionHistory": {
+    "1.1 Implement `parseCsvCandles` tab-separated parser and `RawCandle` mapping": [
+      {
+        "executionId": "a50ea997-fa33-4ee0-9f4c-8524d532d5c9",
+        "chatSessionId": "sess_212d4bb5-85af-4cfd-ae72-bbe3741b7042",
+        "timestamp": 1789939116940
+      },
+      {
+        "executionId": "a50ea997-fa33-4ee0-9f4c-8524d532d5c9",
+        "chatSessionId": "sess_212d4bb5-85af-4cfd-ae72-bbe3741b7042",
+        "timestamp": 1789939290745
+      }
+    ],
+    "1.7 Implement `CsvLoader.loadFile` / `loadAll` delegation to `OhlcIngestion.ingest`": [
+      {
+        "executionId": "d1b47e61-e1a5-424a-beb1-1fd48d8d66d6",
+        "chatSessionId": "sess_86b623e3-8524-4cb7-95a3-9f9aba9467c0",
+        "timestamp": 1789939344627
+      },
+      {
+        "executionId": "d1b47e61-e1a5-424a-beb1-1fd48d8d66d6",
+        "chatSessionId": "sess_86b623e3-8524-4cb7-95a3-9f9aba9467c0",
+        "timestamp": 1789970578630
+      }
+    ],
+    "1.9 Write unit tests — coverage pass-through and empty-file reporting": [
+      {
+        "executionId": "8625388b-6b65-4fce-bbf8-244742d47afb",
+        "chatSessionId": "sess_4455dd3f-4093-4d87-87be-c1b7e3407af5",
+        "timestamp": 1789970615050
+      },
+      {
+        "executionId": "8625388b-6b65-4fce-bbf8-244742d47afb",
+        "chatSessionId": "sess_4455dd3f-4093-4d87-87be-c1b7e3407af5",
+        "timestamp": 1789970733804
+      }
+    ],
+    "1.10 Record the `Data_Source_Role` decision and enforce run cadence": [
+      {
+        "executionId": "43f3afeb-e500-4aec-9b82-7d3dc8ab9767",
+        "chatSessionId": "sess_de042b95-c1ac-46c6-ac1a-45d8d0f51400",
+        "timestamp": 1789970925870
+      },
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078454427
+      },
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078841377
+      }
+    ],
+    "1.2 Write property test — CSV parsing is line-ending independent": [
+      {
+        "executionId": "4e631418-eb38-4b20-a1e9-426eac7cebd7",
+        "chatSessionId": "sess_585e2cdd-efbf-4cec-9815-a3e798da9213",
+        "timestamp": 1789974304160
+      },
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078449789
+      },
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078842165
+      }
+    ],
+    "1.3 Write property test — CSV mapping excludes Volume and tick count": [
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078450951
+      },
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078838973
+      }
+    ],
+    "1.4 Write property test — CSV timestamp is passed through verbatim": [
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078452051
+      },
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078837737
+      }
+    ],
+    "1.5 Write property test — a malformed header aborts the file and feeds nothing": [
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078453026
+      },
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078840955
+      }
+    ],
+    "1.6 Write property test — a malformed row causes no partial ingest": [
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078847090
+      },
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790079166490
+      }
+    ],
+    "1.8 Write property test — CSV import is idempotent": [
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078847730
+      },
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790079166005
+      }
+    ],
+    "1. CsvLoader — parse `data/*.csv` and feed existing ingestion (Req 1)": [
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790079166989
+      }
+    ],
+    "2. Supabase storage adapters — implement the three PORTs (shared seam, design Component 3)": [
+      {
+        "executionId": "4efc730d-31cd-4378-a126-a005ebb07a9d",
+        "chatSessionId": "sess_9f227bee-16d3-40cb-864a-58e61e62fe04",
+        "timestamp": 1790079238613
+      },
+      {
+        "executionId": "4efc730d-31cd-4378-a126-a005ebb07a9d",
+        "chatSessionId": "sess_9f227bee-16d3-40cb-864a-58e61e62fe04",
+        "timestamp": 1790079860617
+      }
+    ]
+  }
+}

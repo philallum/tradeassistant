@@ -24,27 +24,10 @@ import { loadScheduledRunConfig } from "./config.js";
 import type { PairEvaluationLoader, DashboardViewPersister } from "./scheduledRun.js";
 import { runScheduledDaily } from "./scheduledRun.js";
 import { makePipelineLoader } from "../pipeline/index.js";
-import type { PipelineStores } from "../pipeline/index.js";
-import type { SupabaseConfig } from "../storage/supabaseConfig.js";
-
-/**
- * STORAGE-ADAPTER SEAM: build the Supabase-backed compute PORTs
- * (CandleStore / PatternVectorStore / AnalogueStore) from the resolved
- * connection. The end-to-end pipeline (task 11.1) is fully wired and reads only
- * through these ports (Requirement 17.1); the concrete Supabase adapters are
- * implemented in a later storage task. Until then this fails fast — no data is
- * fabricated, so a live scheduled run cannot silently emit a bogus view. Wiring
- * the adapters replaces ONLY this function; the pipeline, the scheduled runner,
- * and the shared `dailyRun` entry point require no changes.
- */
-function buildSupabaseStores(supabase: SupabaseConfig): PipelineStores {
-  throw new Error(
-    `Supabase storage adapters not yet implemented for target "${supabase.target}": ` +
-      "provide CandleStore / PatternVectorStore / AnalogueStore bound to the IPv4 " +
-      "pooler/REST connection. The end-to-end pipeline (task 11.1) is wired and reads " +
-      "only through these ports.",
-  );
-}
+import {
+  buildSupabaseStores,
+  makeSupabaseViewPersister,
+} from "../storage/supabase/index.js";
 
 /**
  * Load the deterministic per-pair evaluations for the Decision_Date by running
@@ -58,15 +41,13 @@ const loadEvaluations: PairEvaluationLoader = (decisionDate, supabase) => {
 };
 
 /**
- * INTEGRATION POINT (task 10.10 / 11.1): persist the produced dashboard view
- * (firing cards + currency-concentration suppressions) to `firing_setups`.
+ * Persist the produced dashboard view (firing cards + currency-concentration /
+ * choppiness suppressions) to `firing_setups` via the Supabase connection. The
+ * persister is bound to the resolved config per run so it uses the same IPv4
+ * pooler/REST endpoint and secret key the stores use; the key is never logged.
  */
-const persistView: DashboardViewPersister = () => {
-  throw new Error(
-    "Persistence not yet wired (task 10.10): write the produced DashboardView to " +
-      "`firing_setups` via the Supabase connection.",
-  );
-};
+const persistView: DashboardViewPersister = (view, supabase) =>
+  makeSupabaseViewPersister(supabase)(view, supabase);
 
 /** Run the scheduled daily refresh and report the outcome, then exit. */
 async function main(): Promise<void> {
