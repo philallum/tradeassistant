@@ -9,9 +9,11 @@
 // adapters connect to the same REST endpoint a client library would, without
 // changing package.json.
 //
-// The `SupabaseConfig.key` is a `Secret_Key`. It is sent ONLY in the `apikey` /
-// `Authorization` request headers and is NEVER logged, echoed, or embedded in
-// an error message (design Component 3; spec Req 3.3, 6.2, 6.3).
+// `SupabaseConfig.key` (the Bearer credential) and the optional
+// `SupabaseConfig.apiKey` (the gateway `apikey`) are `Secret_Key`s. They are
+// sent ONLY in the `apikey` / `Authorization` request headers and are NEVER
+// logged, echoed, or embedded in an error message (design Component 3; spec
+// Req 3.3, 6.2, 6.3).
 
 import type { SupabaseConfig } from "../supabaseConfig.js";
 
@@ -46,6 +48,7 @@ function normalizeBaseUrl(url: string): string {
 export class SupabaseRestClient {
   readonly #baseUrl: string;
   readonly #key: string;
+  readonly #apiKey: string;
   readonly #fetch: typeof fetch;
 
   /**
@@ -57,6 +60,9 @@ export class SupabaseRestClient {
   constructor(config: SupabaseConfig, fetchImpl: typeof fetch = fetch) {
     this.#baseUrl = normalizeBaseUrl(config.url);
     this.#key = config.key;
+    // Gateway apikey: the publishable (anon) key when provided (hosted), else
+    // fall back to `key` so legacy anon/service-key setups are unchanged.
+    this.#apiKey = config.apiKey ?? config.key;
     this.#fetch = fetchImpl;
   }
 
@@ -66,10 +72,17 @@ export class SupabaseRestClient {
     return query === undefined || query === "" ? base : `${base}?${query}`;
   }
 
-  /** Headers carrying the `Secret_Key` (never logged). */
+  /**
+   * Headers carrying the `Secret_Key`(s) (never logged).
+   *
+   * `apikey` is the gateway-admission credential (publishable/anon key on
+   * hosted); `Authorization: Bearer` carries the role credential — the
+   * Scoped_Write_Credential JWT on hosted. When no separate `apiKey` was
+   * configured both default to the same `key` (legacy behavior).
+   */
   #headers(extra?: Record<string, string>): Record<string, string> {
     return {
-      apikey: this.#key,
+      apikey: this.#apiKey,
       Authorization: `Bearer ${this.#key}`,
       "Content-Type": "application/json",
       ...extra,

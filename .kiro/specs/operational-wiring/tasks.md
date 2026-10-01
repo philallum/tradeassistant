@@ -223,7 +223,7 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks and live-
     - Read Cloud Logging / command output for feedback; record only non-secret references
     - _Requirements: 3.2, 3.3, 3.4, 3.7, 3.8, 3.9_
 
-- [~] 7. DeployVerifier — live check that GitHub deploys and the Job runs (Req 4)
+- [x] 7. DeployVerifier — live check that GitHub deploys and the Job runs (Req 4)
   - [x] 7.1 Implement the success and prerequisite predicates (pure)
     - Create `src/ops/deploy-verify/verifier.ts` with `DeployVerifyResult`
     - Implement the success predicate: an execution is successful iff `succeededTaskCount === taskCount` AND `elapsedMs <= 300_000`, failure otherwise; failure states (execution failure, 300s timeout, short succeeded count) map to `ok:false` carrying the execution id + Cloud Logging reference
@@ -253,26 +253,26 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks and live-
     - Record the outcome (success/failure + Cloud Logging reference) with no `Secret_Key` value (Req 4.6)
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6_
 
-- [ ] 8. SchedulerProvisioner — one daily trigger gated on a successful verify (Req 5)
-  - [ ] 8.1 Implement the `SchedulerPlan` and the verify-gate predicate (pure)
+- [x] 8. SchedulerProvisioner — one daily trigger gated on a successful verify (Req 5)
+  - [x] 8.1 Implement the `SchedulerPlan` and the verify-gate predicate (pure)
     - Create `src/ops/scheduler/provisioner.ts` with `SchedulerPlan` (`schedule "0 17 * * *"`, `timeZone "America/New_York"`, `artifactApproach`, least-privilege `invokerServiceAccount`)
     - Implement `create(plan, verify)` to construct the create command iff `verify.ok`, otherwise refuse and surface the unmet Deploy_Verification prerequisite; configure exactly one daily job, `--max-retry-attempts=3`, and grant the invoker identity only `roles/run.invoker` on the Job
     - _Requirements: 5.1, 5.2, 5.3, 5.6, 5.7_
 
-  - [ ] 8.2 Write property test — scheduler creation is gated on a successful verify
+  - [x] 8.2 Write property test — scheduler creation is gated on a successful verify
     - **Property 20: Scheduler creation is gated on a successful verify**
     - min 100 iterations, tagged `// Feature: operational-wiring, Property 20: ...`
     - **Validates: Requirements 5.3**
 
-  - [ ] 8.3 Write unit tests — scheduler config values
+  - [x] 8.3 Write unit tests — scheduler config values
     - Test schedule `0 17 * * *`, timezone `America/New_York` (Req 5.2), retry attempts = 3 (Req 5.6), invoker granted only `roles/run.invoker` (Req 5.7)
     - _Requirements: 5.2, 5.6, 5.7_
 
-  - [ ] 8.4 Implement `writeArtifact` — committed scheduler IaC artifact recording the approach
+  - [x] 8.4 Implement `writeArtifact` — committed scheduler IaC artifact recording the approach
     - Emit exactly one version-controlled artifact (one of: workflow step, committed config/Terraform, or documented committed command) that records which of the three approaches was used and the exact provisioning command
     - _Requirements: 5.4_
 
-  - [ ] 8.5 LIVE CLOUD: create the daily Cloud Scheduler job
+  - [x] 8.5 LIVE CLOUD: create the daily Cloud Scheduler job
     - **This is a LIVE operator-approved cloud operation — NOT a property test.** Follow the Live Cloud Execution Protocol.
     - Reconcile project + account first; refuse to create unless DeployVerifier (task 7.5) reported success (Req 5.3)
     - Show the exact `gcloud scheduler jobs create http` command for approval: exactly one daily job, `America/New_York` timezone so DST resolves automatically (Req 5.1, 5.2), invoker granted only `roles/run.invoker` (Req 5.7), `--max-retry-attempts=3` (Req 5.6)
@@ -280,7 +280,46 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks and live-
     - Read Cloud Logging for feedback; record only non-secret references
     - _Requirements: 5.1, 5.2, 5.3, 5.5, 5.6, 5.7_
 
-- [ ] 9. Final checkpoint — cloud half
+- [x] 10. Hosted Supabase backfill execution (Req 7)
+  - [x] 10.1 Implement the hosted-seeding entry seam and the pure coverage-complete predicate
+    - Add a thin entry that runs the existing `StagedRunner.backfill("backfill")` with `PipelineStores` built from `buildSupabaseStores(supabase)` (hosted); re-implement NO ingestion/encoding/storage logic
+    - Implement the pure `isBackfillComplete(coverage)` predicate: true iff all five `PAIRS` have a non-zero stored candle count
+    - _Requirements: 7.3, 7.5_
+
+  - [x] 10.2 Write property test — backfill coverage verification requires all pairs non-zero
+    - **Property 25: Backfill coverage verification requires all pairs non-zero**
+    - min 100 iterations, tagged `// Feature: operational-wiring, Property 25: ...`
+    - **Validates: Requirements 7.5**
+
+  - [x] 10.3 LIVE CLOUD/DATA: run the backfill against hosted Supabase
+    - **This is a LIVE operator-approved operation — NOT a property test.** Follow the Live Cloud Execution Protocol.
+    - Reconcile the resolved target against `SUPABASE_TARGET=hosted` and the active project against `GCP_PROJECT_ID` first; abort on mismatch (Req 7.1)
+    - Confirm the hosted `candles`, `pattern_vectors`, and `analogue_outcomes` tables exist before seeding; surface any missing table as a prerequisite rather than failing mid-write (Req 7.2)
+    - Run `StagedRunner.backfill("backfill")` against the hosted stores, loading all five pairs via the existing ingestion module and building the Pattern_Vectors (Req 7.3); idempotent on re-run (Req 7.4)
+    - Verify completion via the per-pair coverage summary — all five pairs non-zero (Req 7.5); record only non-secret references, never the Supabase key (Req 7.6)
+    - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
+
+- [ ] 12. Least-privilege hosted write credential + RLS (Req 8)
+  - [x] 12.1 Write the RLS + pipeline_writer migration
+    - Add `supabase/migrations/20260916000002_rls_pipeline_writer_scoped_write.sql`: enable RLS on the five compute-written tables, create the least-privilege `pipeline_writer` role (SELECT/INSERT/UPDATE only, no DELETE), and RLS policies scoped to it; idempotent/re-runnable, applies identically local + hosted
+    - _Requirements: 8.1, 8.2_
+
+  - [x] 12.2 Implement the Job write-credential selector + property test
+    - Add the pure selector that resolves the Job's write credential to the Scoped_Write_Credential (never the service-role or anon key); keep it name/config-only, no secret value in any shape or log
+    - **Property 26: The write-credential selector never resolves to the service-role key for the Job** — min 100 iterations, tagged `// Feature: operational-wiring, Property 26: ...`
+    - **Validates: Requirements 8.3, 8.4, 8.5, 8.8**
+
+  - [x] 12.3 Wire the scoped write credential into config + deploy injection
+    - Ensure the Job's storage config resolves the Scoped_Write_Credential and that the `supabase-key` secret / `--set-secrets` injection carries it; place no secret value in `deploy.yml` (Req 8.6); keep the publishable key as the read-only path (Req 8.5)
+    - _Requirements: 8.5, 8.6_
+
+  - [ ] 12.4 LIVE CLOUD/DATA: create the role + credential, apply the migration, set the secret, verify scope
+    - **This is a LIVE operator-approved operation — NOT a property test.** Follow the Live Cloud Execution Protocol.
+    - Reconcile target/project first; apply the migration to hosted (create `pipeline_writer` + RLS); mint the Scoped_Write_Credential (signed JWT, role claim = pipeline_writer) without echoing it or the JWT secret (Req 8.8); set the `supabase-key` Secret Manager secret to it and redeploy so the Job uses it (Req 8.3, 8.6); reserve the service-role key for operator use only (Req 8.4)
+    - Verify scope: an INSERT/UPDATE on the five tables succeeds and a DELETE / out-of-scope write is denied (Req 8.7); record only non-secret references
+    - _Requirements: 8.1, 8.3, 8.4, 8.6, 8.7, 8.8_
+
+- [ ] 13. Final checkpoint — cloud half
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
@@ -289,7 +328,8 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks and live-
 - **LIVE CLOUD EXECUTION tasks (6.10, 7.5, 8.5) are not property tests.** They perform real, cost-incurring operations in `trade-assistant-508806` under the Live Cloud Execution Protocol: reconcile project/account → show the exact `gcloud` command and get operator approval → pipe secret values via `--data-file=-` on stdin (never echo/commit) → read Cloud Logging for feedback. No secret value is ever printed, logged, committed, or passed as an argument.
 - The Supabase adapters (task 2) are the shared seam that replaces the two throwing stubs in `src/scheduled-run/main.ts`; they unblock both the local StagedRunner and the deployed Job used by DeployVerifier.
 - Dependency order: local half CsvLoader → Supabase adapters → StagedRunner (backfill → backtest → forward-look); cloud half OperationalSafety → SecretManager → DeployVerifier → Scheduler. CsvLoader (task 1) and the OperationalSafety guard (task 5) have no dependencies and start first.
-- Requirement coverage: Req 1 (tasks 1.1–1.10), Req 2 (tasks 3.1–3.10), Req 3 (tasks 6.1–6.10), Req 4 (tasks 7.1–7.5), Req 5 (tasks 8.1–8.5), Req 6 (tasks 5.1–5.5). Every design Property 1–24 is covered by a tagged property test (Properties 1–11 local; 12–24 cloud pure logic).
+- Requirement coverage: Req 1 (tasks 1.1–1.10), Req 2 (tasks 3.1–3.10), Req 3 (tasks 6.1–6.10), Req 4 (tasks 7.1–7.5), Req 5 (tasks 8.1–8.5), Req 6 (tasks 5.1–5.5), Req 7 (tasks 10.1–10.3), Req 8 (tasks 12.1–12.4). Every design Property 1–26 is covered by a tagged property test (Properties 1–11 local; 12–24 cloud pure logic; Property 25 hosted-backfill coverage predicate; Property 26 Job write-credential selector).
+- The live-op list now also includes 12.4 (create the pipeline_writer role + Scoped_Write_Credential, apply the RLS migration to hosted, set the `supabase-key` secret, verify scope) and 10.3 (hosted backfill), alongside 6.10, 7.5, and 8.5.
 
 ## Task Dependency Graph
 
@@ -307,7 +347,12 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks and live-
     { "id": 8, "tasks": ["7.5"] },
     { "id": 9, "tasks": ["8.1", "8.4"] },
     { "id": 10, "tasks": ["8.2", "8.3"] },
-    { "id": 11, "tasks": ["8.5"] }
+    { "id": 11, "tasks": ["8.5"] },
+    { "id": 12, "tasks": ["10.1"] },
+    { "id": 13, "tasks": ["10.2", "10.3"] },
+    { "id": 14, "tasks": ["12.1", "12.2"] },
+    { "id": 15, "tasks": ["12.3"] },
+    { "id": 16, "tasks": ["12.4"] }
   ]
 }
 ```

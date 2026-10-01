@@ -15,6 +15,8 @@ The five gaps and their dependency structure:
   - **Secret Manager** (Requirement 3) — create and populate the GCP secrets the running Job pulls at runtime. *Must exist before* deploy verification can succeed.
   - **Deploy Verification** (Requirement 4) — a real, live check that GitHub deploys to GCP and the Job executes successfully. *Depends on* Secret Manager; *must precede* scheduling.
   - **Cloud Scheduler** (Requirement 5) — a daily trigger for the deployed Job, timed to Session_Close. *Depends on* a verified, successful deploy.
+  - **Hosted Backfill Execution** (Requirement 7) — actually run the backfill against hosted Supabase so the scheduled Job has candle history to evaluate. *Depends on* the Supabase adapters and the Backfill_Stage.
+  - **Least-Privilege Hosted Write Access** (Requirement 8) — the deployed Job must write candles, vectors, and firing setups under Row-Level Security with a scoped, non-service-role credential, rather than an RLS-restricted anon key (which cannot write) or an RLS-bypassing service-role key (over-privileged).
 
 An **Operational safety** requirement (Requirement 6) governs the live cloud commands the operator runs in this spec: secret values are never committed or echoed, and every create/deploy/cost-incurring command is shown to the operator before execution.
 
@@ -38,6 +40,10 @@ Terms defined in the parent spec (`fx-daily-pattern-assistant/requirements.md`) 
 - **Deploy_Verification**: A real, live post-deploy check performed against the actual GCP project that executes the Cloud_Run_Job once and asserts success via the job execution status and Cloud Logging, confirming GitHub actually deploys to Google Cloud and the Job runs.
 - **Scheduler_Job**: A Google Cloud Scheduler job that triggers the Cloud_Run_Job daily, timed relative to the 17:00 America/New_York Session_Close (22:00 UTC during US Eastern Standard Time).
 - **Live_Cloud_Command**: Any operator-run command that creates, modifies, deploys, executes, or otherwise incurs cost against the live GCP project (secret creation, IAM grants, deploy verification runs, scheduler creation).
+- **Hosted_Candle_Seeding**: The one-time live operation that runs the existing Backfill_Stage against the hosted Supabase backend (`SUPABASE_TARGET=hosted`), populating the `candles`, `pattern_vectors`, and matured `analogue_outcomes` tables from the `data/*.csv` CSV_Candle_Files so the scheduled daily Cloud_Run_Job evaluates real candle history rather than an empty database.
+- **Pipeline_Writer_Role**: A dedicated least-privilege Postgres role the deployed Cloud_Run_Job authenticates as, holding only `INSERT`/`UPDATE`/`SELECT` on the five compute-written tables (`candles`, `pattern_vectors`, `analogue_outcomes`, `firing_setups`, `realized_outcomes`) and no `DELETE` or access to any other table or schema. Reached through PostgREST via a signed JWT whose `role` claim selects it; Row-Level Security still applies.
+- **Scoped_Write_Credential**: The signed JWT (role claim = Pipeline_Writer_Role, signed with the project JWT secret) the Cloud_Run_Job presents as its Bearer credential — NOT the service-role (`sb_secret_`) key. It is the value of the `supabase-key` Secret Manager secret the Job reads.
+- **Service_Role_Key**: The RLS-bypassing Supabase secret key (`sb_secret_...`), reserved for operator-run one-off operations (e.g. the Hosted_Candle_Seeding backfill); never deployed into the Cloud_Run_Job and never committed.
 
 ## Requirements
 
@@ -129,3 +135,30 @@ Terms defined in the parent spec (`fx-daily-pattern-assistant/requirements.md`) 
 4. THE System SHALL reconcile the active gcloud project and account against the expected target (`GCP_PROJECT_ID`) before running any Live_Cloud_Command, consistent with Requirement 3.7.
 5. IF a Live_Cloud_Command would delete, overwrite, or reduce the permissions of an existing cloud resource, THEN THE System SHALL present a distinguishable warning identifying the affected resource and effect to the operator and SHALL NOT execute the command until the operator approves.
 6. IF the active gcloud project or account does not match the expected target, THEN THE System SHALL abort the Live_Cloud_Command and surface the mismatch rather than executing against an unintended project or identity.
+
+### Requirement 7: Hosted Supabase Backfill Execution
+
+**User Story:** As the system owner, I want the historical backfill actually executed against hosted Supabase, so that the scheduled daily Cloud_Run_Job evaluates real candle history instead of an empty database.
+
+#### Acceptance Criteria
+
+1. THE System SHALL reconcile the resolved storage target against `SUPABASE_TARGET=hosted` and the active gcloud project against `GCP_PROJECT_ID` before writing any data, and IF the resolved target is not the hosted backend THEN THE System SHALL abort Hosted_Candle_Seeding and surface the discrepancy, consistent with Requirement 6.4.
+2. THE System SHALL confirm the hosted `candles`, `pattern_vectors`, and `analogue_outcomes` tables exist before seeding, and IF a required table is absent THEN THE System SHALL surface that missing prerequisite rather than failing mid-write.
+3. WHEN Hosted_Candle_Seeding runs, THE System SHALL execute the existing Backfill_Stage (Requirement 2.2) against the hosted Supabase stores with Data_Source_Role = backfill, loading all five pairs from the CSV_Candle_Files through the existing ingestion module and building and storing the Pattern_Vectors, and SHALL NOT re-implement ingestion, encoding, or storage logic.
+4. WHEN Hosted_Candle_Seeding is run two or more times over an unchanged set of CSV_Candle_Files, THE System SHALL produce identical stored results with no duplicated candles, relying on the existing idempotent `(Asset, Date)` upsert (Requirement 1.6, parent Requirement 7.4).
+5. WHEN seeding completes, THE System SHALL emit the per-pair coverage summary (stored candle count, earliest stored date, and latest stored date per Pair) and SHALL treat Hosted_Candle_Seeding as complete only WHERE every one of the five pairs has a non-zero stored candle count.
+6. THE System SHALL record only non-secret references (coverage counts and dates) from Hosted_Candle_Seeding and SHALL NOT echo, log, or commit the Supabase key, consistent with Requirements 6.2 and 6.3.
+### Requirement 8: Least-Privilege Hosted Write Credential and Row-Level Security
+
+**User Story:** As the system owner, I want the deployed Job to write to hosted Supabase under Row-Level Security with a scoped, non-service-role credential, so that the daily run can persist its results while a compromise of the Job cannot read or destroy unrelated data.
+
+#### Acceptance Criteria
+
+1. THE System SHALL enable Row-Level Security on each compute-written table — `candles`, `pattern_vectors`, `analogue_outcomes`, `firing_setups`, and `realized_outcomes` — via a version-controlled, idempotent migration applied identically to the local and hosted targets (parent Requirement 17.2).
+2. THE System SHALL define, in that same migration, a dedicated Pipeline_Writer_Role granted only `INSERT`, `UPDATE`, and `SELECT` on those five tables, with Row-Level Security policies scoped to that role, and SHALL NOT grant it `DELETE` or any access to other tables or schemas.
+3. THE deployed Cloud_Run_Job SHALL authenticate to hosted Supabase using the Scoped_Write_Credential (a signed JWT whose `role` claim selects the Pipeline_Writer_Role) and SHALL NOT use the Service_Role_Key.
+4. THE System SHALL reserve the Service_Role_Key for operator-run one-off operations only, and SHALL NOT store it as the Cloud_Run_Job's `supabase-key` secret, in `deploy.yml`, or in any committed file.
+5. THE System SHALL keep the publishable (anon) key as a read-only credential reserved for the future read-only serving layer (parent Requirement 17.3) and SHALL NOT use it for the Job's write path.
+6. THE System SHALL set the `supabase-key` Secret Manager secret to the Scoped_Write_Credential and SHALL inject it into the Job via `--set-secrets`, placing no secret value in `deploy.yml`, consistent with Requirement 3.6.
+7. WHEN the write path is exercised under the Scoped_Write_Credential, THE System SHALL permit an `INSERT`/`UPDATE` on the five compute-written tables and SHALL deny a `DELETE` or any write to a table outside that set, confirming the scope.
+8. THE System SHALL NOT echo, log, or commit the Scoped_Write_Credential, the Service_Role_Key, or the project JWT secret at any point, consistent with Requirements 6.2 and 6.3.

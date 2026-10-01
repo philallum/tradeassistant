@@ -1,0 +1,23 @@
+{
+  "description": "Single committed, version-controlled artifact provisioning the daily Session_Close Scheduler_Job that triggers the Cloud_Run_Job (spec Req 5.4).",
+  "artifactApproach": "committed-config",
+  "artifactApproachLabel": "committed configuration or Terraform file",
+  "schedulerJobName": "scheduled-daily-run-session-close",
+  "schedule": "0 17 * * *",
+  "timeZone": "America/New_York",
+  "maxRetryAttempts": 3,
+  "invokerServiceAccount": "scheduler-invoker@trade-assistant-508806.iam.gserviceaccount.com",
+  "invokerRole": "roles/run.invoker",
+  "commands": [
+    {
+      "kind": "grant-invoker",
+      "affectedResource": "Cloud Run Job \"scheduled-daily-run\" (grant roles/run.invoker to scheduler-invoker@trade-assistant-508806.iam.gserviceaccount.com)",
+      "command": "gcloud run jobs add-iam-policy-binding scheduled-daily-run --member=serviceAccount:scheduler-invoker@trade-assistant-508806.iam.gserviceaccount.com --role=roles/run.invoker --project=trade-assistant-508806 --region=europe-west1"
+    },
+    {
+      "kind": "create-job",
+      "affectedResource": "Cloud Scheduler job \"scheduled-daily-run-session-close\"",
+      "command": "gcloud scheduler jobs create http scheduled-daily-run-session-close --schedule=0 17 * * * --time-zone=America/New_York --uri=https://europe-west1-run.googleapis.com/v2/projects/trade-assistant-508806/locations/europe-west1/jobs/scheduled-daily-run:run --http-method=POST --oauth-service-account-email=scheduler-invoker@trade-assistant-508806.iam.gserviceaccount.com --max-retry-attempts=3 --project=trade-assistant-508806 --location=europe-west1"
+    }
+  ]
+}

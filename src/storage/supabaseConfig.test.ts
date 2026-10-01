@@ -109,6 +109,48 @@ describe("loadSupabaseConfig — validation errors", () => {
   });
 });
 
+describe("loadSupabaseConfig — optional gateway apiKey (spec Req 8.5)", () => {
+  it("resolves apiKey from SUPABASE_PUBLISHABLE_KEY on the hosted target", () => {
+    const cfg = loadSupabaseConfig(
+      fullEnv({
+        [SUPABASE_ENV.target]: "hosted",
+        SUPABASE_PUBLISHABLE_KEY: "sb_publishable_xyz",
+      }),
+    );
+    expect(cfg).toEqual({
+      target: "hosted",
+      url: "https://proj.supabase.co",
+      key: "hosted-service-key",
+      apiKey: "sb_publishable_xyz",
+    });
+  });
+
+  it("omits apiKey when SUPABASE_PUBLISHABLE_KEY is absent (legacy single-key behavior)", () => {
+    const cfg = loadSupabaseConfig(fullEnv({ [SUPABASE_ENV.target]: "hosted" }));
+    expect(cfg.apiKey).toBeUndefined();
+  });
+
+  it("treats an empty-string publishable key as absent", () => {
+    const cfg = loadSupabaseConfig(
+      fullEnv({
+        [SUPABASE_ENV.target]: "hosted",
+        SUPABASE_PUBLISHABLE_KEY: "   ",
+      }),
+    );
+    expect(cfg.apiKey).toBeUndefined();
+  });
+
+  it("never resolves a gateway apiKey for the local target", () => {
+    const cfg = loadSupabaseConfig(
+      fullEnv({
+        [SUPABASE_ENV.target]: "local",
+        SUPABASE_PUBLISHABLE_KEY: "sb_publishable_xyz",
+      }),
+    );
+    expect(cfg.apiKey).toBeUndefined();
+  });
+});
+
 describe("tryLoadSupabaseConfig — non-throwing variant", () => {
   it("returns ok with config for a valid environment", () => {
     const res = tryLoadSupabaseConfig(fullEnv());
