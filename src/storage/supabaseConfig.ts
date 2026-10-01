@@ -19,8 +19,27 @@ export interface SupabaseConfig {
   readonly target: SupabaseTarget;
   /** Base API URL for the selected Supabase instance. */
   readonly url: string;
-  /** Service/API key for the selected Supabase instance (secret). */
+  /**
+   * The credential sent as `Authorization: Bearer` and, by default, also as the
+   * gateway `apikey` header (secret). On the hosted target under the new
+   * asymmetric-key model this is the Scoped_Write_Credential — a signed JWT
+   * whose `role` claim selects the Pipeline_Writer_Role (spec Req 8.3).
+   */
   readonly key: string;
+  /**
+   * Optional gateway `apikey` value (secret), distinct from {@link key}.
+   *
+   * Supabase's API gateway (Kong) authenticates the request by matching the
+   * `apikey` header against a recognized publishable/anon key BEFORE PostgREST
+   * resolves the Postgres role from the `Authorization: Bearer` JWT. A scoped
+   * role JWT (e.g. `pipeline_writer`) is NOT a recognized gateway api key, so it
+   * must travel ONLY in `Bearer`, with the publishable (anon) key supplied here
+   * as `apikey` (spec Req 8.5 — the publishable key is the gateway-admission
+   * credential and never the write path; the write role comes from the Bearer
+   * JWT). When absent, the client falls back to using {@link key} for both
+   * headers, preserving the legacy anon/service-key behavior unchanged.
+   */
+  readonly apiKey?: string;
 }
 
 /** A minimal read-only view over environment variables (injectable for tests). */
@@ -38,10 +57,17 @@ export const SUPABASE_ENV = {
   local: {
     url: "SUPABASE_LOCAL_URL",
     key: "SUPABASE_LOCAL_KEY",
+    // Local Supabase accepts the anon/service key as both apikey and Bearer, so
+    // no separate gateway apikey is needed; left undefined.
+    apiKey: undefined,
   },
   hosted: {
     url: "SUPABASE_HOSTED_URL",
     key: "SUPABASE_HOSTED_KEY",
+    // Gateway apikey for the hosted target: the publishable (anon) key. Required
+    // alongside the Scoped_Write_Credential Bearer JWT so the gateway admits the
+    // request before PostgREST resolves the pipeline_writer role (spec Req 8.5).
+    apiKey: "SUPABASE_PUBLISHABLE_KEY",
   },
 } as const;
 
@@ -104,7 +130,17 @@ export function loadSupabaseConfig(
   const url = requireValue(env, names.url, target, "URL");
   const key = requireValue(env, names.key, target, "key");
 
-  return { target, url, key };
+  // Optional gateway apikey (publishable key on hosted). Read verbatim; when the
+  // env var is unset/empty the field is omitted so the client falls back to
+  // using `key` for both headers (legacy anon/service-key behavior).
+  const apiKeyName = names.apiKey;
+  const rawApiKey = apiKeyName === undefined ? undefined : env[apiKeyName];
+  const apiKey =
+    rawApiKey === undefined || rawApiKey.trim() === "" ? undefined : rawApiKey;
+
+  return apiKey === undefined
+    ? { target, url, key }
+    : { target, url, key, apiKey };
 }
 
 /**

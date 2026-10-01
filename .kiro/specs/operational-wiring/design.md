@@ -451,6 +451,37 @@ export interface GcloudRunner {
 
 Redaction rule: the command string shown to the operator and written to any log substitutes a `Secret_Key`'s value with a `<from .env: NAME>` placeholder (spec Req 6.2, 6.3). The actual value only ever travels on stdin into `gcloud`.
 
+### 8. Hosted Backfill Execution — reuses `src/staged-runner/` + `src/storage/supabase/`
+
+This introduces NO new module logic. Hosted_Candle_Seeding (spec Req 7) is the operational act of running the existing `StagedRunner.backfill("backfill")` with its `PipelineStores` bound to the Supabase adapters via `buildSupabaseStores(supabase)` (Component 3), so candles, pattern vectors, and matured outcomes land in the hosted backend. The only new code is a thin entry seam and a pure coverage-complete predicate:
+
+```typescript
+// seeding-complete predicate (pure) — spec Req 7.5
+export function isBackfillComplete(coverage: readonly PerPairCoverage[]): boolean;
+// true iff every one of the five PAIRS has a non-zero stored candle count
+```
+
+It runs under the same **Live Cloud Execution Protocol** as the other live operations: reconcile `SUPABASE_TARGET=hosted` + `GCP_PROJECT_ID` first (spec Req 7.1), confirm the required tables exist (spec Req 7.2), run the existing Backfill_Stage (spec Req 7.3, idempotent per spec Req 7.4), then verify coverage shows all five pairs non-zero (spec Req 7.5), recording only non-secret references (spec Req 7.6).
+
+### 9. Least-Privilege Hosted Write Access — RLS + scoped write credential (spec Req 8)
+
+The deployed Cloud_Run_Job writes `candles`, `pattern_vectors`, `analogue_outcomes`, `firing_setups`, and `realized_outcomes`. Today it authenticates with `SUPABASE_HOSTED_KEY`, which holds the publishable (anon) key — RLS-restricted and unable to write under Supabase's default posture (the hosted backfill confirmed this). The fix is defense-in-depth, not a key swap:
+
+- A new idempotent migration enables Row-Level Security on the five compute-written tables and defines a dedicated `pipeline_writer` Postgres role granted only `INSERT`/`UPDATE`/`SELECT` on exactly those tables, with policies scoped to that role (spec Req 8.1, 8.2). No `DELETE`, no other tables/schemas.
+- The Job presents a Scoped_Write_Credential: a signed JWT whose `role` claim is `pipeline_writer`, signed with the project JWT secret. PostgREST resolves the role from the JWT and enforces RLS against it (spec Req 8.3). The existing `SupabaseRestClient` already sends the configured key as both `apikey` and `Authorization: Bearer`, so wiring is minimal — the configured credential becomes the scoped JWT.
+- The `supabase-key` Secret Manager secret is set to the Scoped_Write_Credential (spec Req 8.6); the service-role key is reserved for operator one-offs and never deployed (spec Req 8.4); the publishable key remains the read-only credential for the future serving layer (spec Req 8.5, parent Req 17.3).
+
+```sql
+-- scoped write role + RLS (shape; see migration for the committed form)
+alter table candles enable row level security;
+create role pipeline_writer nologin;         -- reached via the JWT role claim
+grant select, insert, update on candles to pipeline_writer;
+create policy pipeline_writer_rw on candles for all to pipeline_writer using (true) with check (true);
+-- ...repeated for pattern_vectors, analogue_outcomes, firing_setups, realized_outcomes
+```
+
+**Security note (deliberate residual risk):** the Scoped_Write_Credential is a long-lived bearer JWT (fixed `role` claim) signed with the project JWT secret, so it must be rotated like any secret and the JWT secret must stay confidential. It is materially stronger than the service-role key — it is RLS-bound, cannot `DELETE`, and cannot touch tables outside the five — but it is not a short-lived token. Rotation and the one-time role/credential creation are operator steps under the Live Cloud Execution Protocol.
+
 ## Data Models
 
 The wiring introduces almost no new persistent data — it feeds and reads the existing tables. New/updated shapes:
@@ -620,6 +651,18 @@ The **live cloud effects** — actually creating secrets (3.2), granting/verifyi
 
 **Validates: Requirements 3.7, 6.4, 6.6**
 
+### Property 25: Backfill coverage verification requires all pairs non-zero
+
+*For any* per-pair coverage summary, the seeding-complete predicate `isBackfillComplete` returns true if and only if every one of the five PAIRS has a non-zero stored candle count; a zero count for any pair yields false.
+
+**Validates: Requirements 7.5**
+
+### Property 26: The write-credential selector never resolves to the service-role key for the Job
+
+*For any* resolved Job storage configuration, the credential selected for the deployed Cloud_Run_Job's write path is the Scoped_Write_Credential and never the Service_Role_Key or the publishable (anon) key, and no secret value appears on any output surface.
+
+**Validates: Requirements 8.3, 8.4, 8.5, 8.8**
+
 ## Error Handling
 
 The wiring's error handling is uniformly **fail-loud, never fabricate** — mirroring the existing `src/scheduled-run/main.ts` stubs that throw rather than emit bogus data.
@@ -670,6 +713,10 @@ SecretManagerProvisioner, DeployVerifier, and SchedulerProvisioner are verified 
 4. **Check the feedback.** After each cloud op, the operator/tooling reads Cloud Logging (and, for verify, the execution's task counts) to confirm the effect (spec Req 4.3), recording only non-secret references (spec Req 4.6).
 
 The chain is ordered by construction: SecretManagerProvisioner must complete (secrets created + accessor grant verified) before DeployVerifier can pass, and DeployVerifier must pass before SchedulerProvisioner will create the daily job (spec Req 4.5, 5.3).
+
+**Hosted_Candle_Seeding** (spec Req 7) is verified under this same protocol: it reconciles the resolved target against `SUPABASE_TARGET=hosted` + `GCP_PROJECT_ID` (spec Req 7.1), confirms the hosted `candles`/`pattern_vectors`/`analogue_outcomes` tables exist (spec Req 7.2), runs the existing `StagedRunner.backfill("backfill")` against the hosted stores (spec Req 7.3, idempotent per spec Req 7.4), and verifies the per-pair coverage shows all five pairs non-zero (spec Req 7.5) — recording only non-secret references, never the Supabase key (spec Req 7.6). It is not property-tested beyond the pure `isBackfillComplete` coverage predicate (Property 25); the seeding effect itself is a one-time live operation, not an input-varying computation.
+
+The **least-privilege hosted write path** (spec Req 8) is verified the same way: the pure write-credential selector is property-tested (Property 26, validating 8.3/8.4/8.5/8.8 with a fake env/config and no network), while the live RLS enforcement — that under the Scoped_Write_Credential an `INSERT`/`UPDATE` on the five compute-written tables succeeds and a `DELETE` or out-of-scope write is denied (spec Req 8.7) — is confirmed by a live assertion under the operator-approval protocol, not a property test, consistent with how the other external-service effects (7.5, 8.5, 10.3) are handled.
 
 ### Security
 

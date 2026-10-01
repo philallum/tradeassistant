@@ -3,6 +3,10 @@
     "1.8 Write property test — CSV import is idempotent": {
       "status": "passed",
       "lastRunTimestamp": 1790079139536
+    },
+    "12.2 Implement the Job write-credential selector + property test": {
+      "status": "passed",
+      "lastRunTimestamp": 1790867849775
     }
   },
   "executionHistory": {
@@ -546,6 +550,116 @@
         "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
         "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
         "timestamp": 1790847177731
+      }
+    ],
+    "8.1 Implement the `SchedulerPlan` and the verify-gate predicate (pure)": [
+      {
+        "executionId": "90ca1bc7-e878-4db2-b265-5ce09d23c82c",
+        "chatSessionId": "sess_eb242250-5e10-4f45-a2e8-9f1ec1d7d3e8",
+        "timestamp": 1790862748294
+      },
+      {
+        "executionId": "90ca1bc7-e878-4db2-b265-5ce09d23c82c",
+        "chatSessionId": "sess_eb242250-5e10-4f45-a2e8-9f1ec1d7d3e8",
+        "timestamp": 1790863824989
+      }
+    ],
+    "8.4 Implement `writeArtifact` — committed scheduler IaC artifact recording the approach": [
+      {
+        "executionId": "90ca1bc7-e878-4db2-b265-5ce09d23c82c",
+        "chatSessionId": "sess_eb242250-5e10-4f45-a2e8-9f1ec1d7d3e8",
+        "timestamp": 1790862750828
+      },
+      {
+        "executionId": "90ca1bc7-e878-4db2-b265-5ce09d23c82c",
+        "chatSessionId": "sess_eb242250-5e10-4f45-a2e8-9f1ec1d7d3e8",
+        "timestamp": 1790863826062
+      }
+    ],
+    "8.2 Write property test — scheduler creation is gated on a successful verify": [
+      {
+        "executionId": "90ca1bc7-e878-4db2-b265-5ce09d23c82c",
+        "chatSessionId": "sess_eb242250-5e10-4f45-a2e8-9f1ec1d7d3e8",
+        "timestamp": 1790863831467
+      },
+      {
+        "executionId": "90ca1bc7-e878-4db2-b265-5ce09d23c82c",
+        "chatSessionId": "sess_eb242250-5e10-4f45-a2e8-9f1ec1d7d3e8",
+        "timestamp": 1790863929197
+      }
+    ],
+    "8.3 Write unit tests — scheduler config values": [
+      {
+        "executionId": "90ca1bc7-e878-4db2-b265-5ce09d23c82c",
+        "chatSessionId": "sess_eb242250-5e10-4f45-a2e8-9f1ec1d7d3e8",
+        "timestamp": 1790863832758
+      },
+      {
+        "executionId": "90ca1bc7-e878-4db2-b265-5ce09d23c82c",
+        "chatSessionId": "sess_eb242250-5e10-4f45-a2e8-9f1ec1d7d3e8",
+        "timestamp": 1790863929966
+      }
+    ],
+    "8.5 LIVE CLOUD: create the daily Cloud Scheduler job": [
+      {
+        "executionId": "90ca1bc7-e878-4db2-b265-5ce09d23c82c",
+        "chatSessionId": "sess_eb242250-5e10-4f45-a2e8-9f1ec1d7d3e8",
+        "timestamp": 1790864056667
+      },
+      {
+        "executionId": "90ca1bc7-e878-4db2-b265-5ce09d23c82c",
+        "chatSessionId": "sess_eb242250-5e10-4f45-a2e8-9f1ec1d7d3e8",
+        "timestamp": 1790864507070
+      }
+    ],
+    "8. SchedulerProvisioner — one daily trigger gated on a successful verify (Req 5)": [
+      {
+        "executionId": "90ca1bc7-e878-4db2-b265-5ce09d23c82c",
+        "chatSessionId": "sess_eb242250-5e10-4f45-a2e8-9f1ec1d7d3e8",
+        "timestamp": 1790864508168
+      }
+    ],
+    "12.1 Write the RLS + pipeline_writer migration": [
+      {
+        "executionId": "2be5183b-7185-4c0b-af8b-1da5e9deeb63",
+        "chatSessionId": "sess_388e7a48-f342-4317-af2a-d7381b3c518f",
+        "timestamp": 1790867647155
+      },
+      {
+        "executionId": "2be5183b-7185-4c0b-af8b-1da5e9deeb63",
+        "chatSessionId": "sess_388e7a48-f342-4317-af2a-d7381b3c518f",
+        "timestamp": 1790867883950
+      }
+    ],
+    "12.2 Implement the Job write-credential selector + property test": [
+      {
+        "executionId": "2be5183b-7185-4c0b-af8b-1da5e9deeb63",
+        "chatSessionId": "sess_388e7a48-f342-4317-af2a-d7381b3c518f",
+        "timestamp": 1790867648336
+      },
+      {
+        "executionId": "2be5183b-7185-4c0b-af8b-1da5e9deeb63",
+        "chatSessionId": "sess_388e7a48-f342-4317-af2a-d7381b3c518f",
+        "timestamp": 1790867885153
+      }
+    ],
+    "12.3 Wire the scoped write credential into config + deploy injection": [
+      {
+        "executionId": "2be5183b-7185-4c0b-af8b-1da5e9deeb63",
+        "chatSessionId": "sess_388e7a48-f342-4317-af2a-d7381b3c518f",
+        "timestamp": 1790867889356
+      },
+      {
+        "executionId": "2be5183b-7185-4c0b-af8b-1da5e9deeb63",
+        "chatSessionId": "sess_388e7a48-f342-4317-af2a-d7381b3c518f",
+        "timestamp": 1790868090715
+      }
+    ],
+    "12.4 LIVE CLOUD/DATA: create the role + credential, apply the migration, set the secret, verify scope": [
+      {
+        "executionId": "2be5183b-7185-4c0b-af8b-1da5e9deeb63",
+        "chatSessionId": "sess_388e7a48-f342-4317-af2a-d7381b3c518f",
+        "timestamp": 1790868113418
       }
     ]
   }
