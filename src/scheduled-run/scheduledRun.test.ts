@@ -133,8 +133,8 @@ describe("resolveDecisionDate", () => {
   });
 });
 
-describe("resolveSupabaseOverIpv4 — IPv4 pooler/REST path (never IPv6-only direct host)", () => {
-  it("overrides the resolved URL with SUPABASE_POOLER_URL when set", () => {
+describe("resolveSupabaseOverIpv4 — PostgREST/HTTPS path (IPv4-reachable, never a Postgres DSN)", () => {
+  it("overrides the resolved URL with SUPABASE_POOLER_URL when it is an http(s) REST URL", () => {
     const cfg = resolveSupabaseOverIpv4({
       [SCHEDULED_RUN_ENV.supabasePoolerUrl]: "https://pooler.example.supabase.co:6543",
       SUPABASE_TARGET: "hosted",
@@ -142,6 +142,22 @@ describe("resolveSupabaseOverIpv4 — IPv4 pooler/REST path (never IPv6-only dir
       SUPABASE_HOSTED_KEY: "k",
     });
     expect(cfg.url).toBe("https://pooler.example.supabase.co:6543");
+    expect(cfg.key).toBe("k");
+  });
+
+  it("IGNORES a postgresql:// pooler DSN and keeps the hosted REST URL", () => {
+    // Regression: the Supabase pooler secret is a Postgres connection string
+    // with embedded credentials. It is NOT a PostgREST endpoint; feeding it to
+    // the REST client makes fetch throw "URL that includes credentials". The
+    // override must be ignored so the IPv4-reachable HTTPS REST URL is used.
+    const cfg = resolveSupabaseOverIpv4({
+      [SCHEDULED_RUN_ENV.supabasePoolerUrl]:
+        "postgresql://postgres.ref:p%40ss@aws-1-eu-west-1.pooler.supabase.com:5432/postgres",
+      SUPABASE_TARGET: "hosted",
+      SUPABASE_HOSTED_URL: "https://project.supabase.co",
+      SUPABASE_HOSTED_KEY: "k",
+    });
+    expect(cfg.url).toBe("https://project.supabase.co");
     expect(cfg.key).toBe("k");
   });
 
