@@ -223,29 +223,29 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks and live-
     - Read Cloud Logging / command output for feedback; record only non-secret references
     - _Requirements: 3.2, 3.3, 3.4, 3.7, 3.8, 3.9_
 
-- [ ] 7. DeployVerifier — live check that GitHub deploys and the Job runs (Req 4)
-  - [ ] 7.1 Implement the success and prerequisite predicates (pure)
+- [~] 7. DeployVerifier — live check that GitHub deploys and the Job runs (Req 4)
+  - [x] 7.1 Implement the success and prerequisite predicates (pure)
     - Create `src/ops/deploy-verify/verifier.ts` with `DeployVerifyResult`
     - Implement the success predicate: an execution is successful iff `succeededTaskCount === taskCount` AND `elapsedMs <= 300_000`, failure otherwise; failure states (execution failure, 300s timeout, short succeeded count) map to `ok:false` carrying the execution id + Cloud Logging reference
     - Implement `checkPrerequisites(runtimeServiceAccount)`: block verification whenever the required secrets OR the accessor grant is absent, surfacing the specific missing item rather than an ambiguous execution failure
     - _Requirements: 4.2, 4.4, 4.5_
 
-  - [ ] 7.2 Write property test — the deploy-verify success predicate
+  - [x] 7.2 Write property test — the deploy-verify success predicate
     - **Property 17: The deploy-verify success predicate**
     - min 100 iterations, tagged `// Feature: operational-wiring, Property 17: ...`
     - **Validates: Requirements 4.2**
 
-  - [ ] 7.3 Write property test — a failed execution maps to a failing result carrying its identifiers
+  - [x] 7.3 Write property test — a failed execution maps to a failing result carrying its identifiers
     - **Property 18: A failed execution maps to a failing result carrying its identifiers**
     - min 100 iterations, tagged `// Feature: operational-wiring, Property 18: ...`
     - **Validates: Requirements 4.4**
 
-  - [ ] 7.4 Write property test — a missing verify prerequisite is surfaced specifically
+  - [x] 7.4 Write property test — a missing verify prerequisite is surfaced specifically
     - **Property 19: A missing verify prerequisite is surfaced specifically**
     - min 100 iterations, tagged `// Feature: operational-wiring, Property 19: ...`
     - **Validates: Requirements 4.5**
 
-  - [ ] 7.5 LIVE CLOUD: execute the deployed Cloud Run Job and verify via Cloud Logging
+  - [x] 7.5 LIVE CLOUD: execute the deployed Cloud Run Job and verify via Cloud Logging
     - **This is a LIVE operator-approved cloud operation — NOT a property test.** Follow the Live Cloud Execution Protocol against the actual project and deployed Job (no mock/emulator/dry-run, Req 4.1).
     - Reconcile project + account first; confirm the Req 3 prerequisites (secrets + accessor grant) before executing, surfacing any missing prerequisite (Req 4.5)
     - Show the exact `gcloud run jobs execute <job> --wait` command for approval; execute once and wait up to 300s; treat success as succeeded-task-count == task-count (Req 4.2)

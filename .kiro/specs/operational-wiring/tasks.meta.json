@@ -487,6 +487,66 @@
         "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
         "timestamp": 1790846123411
       }
+    ],
+    "7.1 Implement the success and prerequisite predicates (pure)": [
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790846397235
+      },
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790846551460
+      }
+    ],
+    "7.2 Write property test — the deploy-verify success predicate": [
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790846557290
+      },
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790846695139
+      }
+    ],
+    "7.3 Write property test — a failed execution maps to a failing result carrying its identifiers": [
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790846558418
+      },
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790846696373
+      }
+    ],
+    "7.4 Write property test — a missing verify prerequisite is surfaced specifically": [
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790846559365
+      },
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790846697153
+      }
+    ],
+    "7.5 LIVE CLOUD: execute the deployed Cloud Run Job and verify via Cloud Logging": [
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790846986060
+      },
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790847177731
+      }
     ]
   }
 }
