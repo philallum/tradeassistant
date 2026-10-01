@@ -90,57 +90,57 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks and live-
     - Verify `makeSupabaseViewPersister` by writing a `DashboardView` and reading `firing_setups` back
     - _Requirements: (parent Req 17.2 shared-schema interchangeability)_
 
-- [ ] 3. StagedRunner — backfill / backtest / forward-look over existing modules (Req 2)
-  - [ ] 3.1 Implement `StagedRunner` scaffold and `backfill` stage
+- [x] 3. StagedRunner — backfill / backtest / forward-look over existing modules (Req 2)
+  - [x] 3.1 Implement `StagedRunner` scaffold and `backfill` stage
     - Create `src/staged-runner/types.ts` (`StageName`, `StageResult` with `missingPrerequisite`, `StagedRunnerDeps`) and `src/staged-runner/stagedRunner.ts`
     - Implement `backfill(role)`: load candles via `CsvLoader` (and the live API providers where `role="feed"`) through `OhlcIngestion.ingest` (which upserts via the `CandleStore` PORT), then build + upsert `Pattern_Vectors` via the existing `encodePatternVector` through the `PatternVectorStore` PORT; matured `AnalogueStore` outcomes are populated by the existing resolver, not re-implemented here
     - _Requirements: 2.1, 2.2_
 
-  - [ ] 3.2 Write property test — stored vectors correspond to stored candles after backfill
+  - [x] 3.2 Write property test — stored vectors correspond to stored candles after backfill
     - **Property 7: Stored pattern vectors correspond to stored candles after backfill** (against in-memory stores)
     - min 100 iterations, tagged `// Feature: operational-wiring, Property 7: ...`
     - **Validates: Requirements 2.2**
 
-  - [ ] 3.3 Implement `backtest` stage wiring to the existing kill-gate
+  - [x] 3.3 Implement `backtest` stage wiring to the existing kill-gate
     - Call `walkForwardFolds(pair, history)` then `composeGateVerdict(configId, folds)` (or `evaluateAndRecordVerdict`) from `src/kill-gate`; NEVER re-derive gate math
     - Append the per-fold verdicts and metrics to `RESEARCH-LOG.md` via the existing living-docs writer (parent Req 11.9–11.11, 19.4)
     - Abort with `ok:false` + named `missingPrerequisite` if no candles/vectors are stored, leaving stored data unchanged
     - _Requirements: 2.3, 2.4, 2.7_
 
-  - [ ] 3.4 Implement `forwardLook` stage wiring to `runScheduledDaily`
+  - [x] 3.4 Implement `forwardLook` stage wiring to `runScheduledDaily`
     - Call `runScheduledDaily(config, { loadEvaluations, persistView })` (which internally calls `runDailyPipeline`) for the current/most-recent matured `Decision_Date`; do NOT duplicate the pipeline or `dailyRun` firing logic
     - Abort with `ok:false` + named `missingPrerequisite` if vectors/matured outcomes are missing, leaving stored data unchanged
     - _Requirements: 2.5, 2.7_
 
-  - [ ] 3.5 Write property test — forward-look is deterministic
+  - [x] 3.5 Write property test — forward-look is deterministic
     - **Property 10: Forward-look is deterministic** (invoke `forwardLook` twice on identical stored inputs + Decision_Date, deep-compare `DashboardView`s)
     - min 100 iterations, tagged `// Feature: operational-wiring, Property 10: ...`
     - **Validates: Requirements 2.8, 5.5**
 
-  - [ ] 3.6 Implement `runAll` composed ordered run
+  - [x] 3.6 Implement `runAll` composed ordered run
     - Compose `backfill` → `backtest` → `forwardLook` in order (each consumes the prior stage's stored output), stopping at the first failed stage so no subsequent stage runs
     - _Requirements: 2.6, 2.9_
 
-  - [ ] 3.7 Write property test — composed run runs stages in dependency order
+  - [x] 3.7 Write property test — composed run runs stages in dependency order
     - **Property 8: The composed run always runs stages in dependency order**
     - min 100 iterations, tagged `// Feature: operational-wiring, Property 8: ...`
     - **Validates: Requirements 2.6**
 
-  - [ ] 3.8 Write property test — a missing prerequisite aborts a stage without mutating stored data
+  - [x] 3.8 Write property test — a missing prerequisite aborts a stage without mutating stored data
     - **Property 9: A missing prerequisite aborts a stage without mutating stored data**
     - min 100 iterations, tagged `// Feature: operational-wiring, Property 9: ...`
     - **Validates: Requirements 2.7**
 
-  - [ ] 3.9 Write property test — a failed stage stops the composed run
+  - [x] 3.9 Write property test — a failed stage stops the composed run
     - **Property 11: A failed stage stops the composed run** (fake stage forced to fail; assert no later stage side effects occur)
     - min 100 iterations, tagged `// Feature: operational-wiring, Property 11: ...`
     - **Validates: Requirements 2.9**
 
-  - [ ] 3.10 Write unit tests — stage delegation and standalone invocation
+  - [x] 3.10 Write unit tests — stage delegation and standalone invocation
     - Test backtest calls `walkForwardFolds`/`composeGateVerdict` and appends via a fake `RESEARCH-LOG.md` writer (Req 2.3, 2.4); test forward-look calls `runScheduledDaily`→`runDailyPipeline` with no forked logic (Req 2.5); test each stage runs standalone and `runAll` composes them (Req 2.1)
     - _Requirements: 2.1, 2.3, 2.4, 2.5_
 
-- [ ] 4. Checkpoint — local half
+- [x] 4. Checkpoint — local half
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 5. OperationalSafety guard + GcloudRunner — shared cloud dependency (Req 6, design Component 7)

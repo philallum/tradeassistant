@@ -154,6 +154,145 @@
         "chatSessionId": "sess_9f227bee-16d3-40cb-864a-58e61e62fe04",
         "timestamp": 1790079860617
       }
+    ],
+    "3.1 Implement `StagedRunner` scaffold and `backfill` stage": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790836901781
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790837701249
+      }
+    ],
+    "3.2 Write property test — stored vectors correspond to stored candles after backfill": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790837706750
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790837962772
+      }
+    ],
+    "3.3 Implement `backtest` stage wiring to the existing kill-gate": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790837707675
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790837963908
+      }
+    ],
+    "3.4 Implement `forwardLook` stage wiring to `runScheduledDaily`": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790837968106
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838108770
+      }
+    ],
+    "3.5 Write property test — forward-look is deterministic": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838109773
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838358819
+      }
+    ],
+    "3.6 Implement `runAll` composed ordered run": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838110564
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838357849
+      }
+    ],
+    "3.7 Write property test — composed run runs stages in dependency order": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838365069
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838840447
+      }
+    ],
+    "3.8 Write property test — a missing prerequisite aborts a stage without mutating stored data": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838365797
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838841710
+      }
+    ],
+    "3.9 Write property test — a failed stage stops the composed run": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838366611
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838842600
+      }
+    ],
+    "3.10 Write unit tests — stage delegation and standalone invocation": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838367763
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838843728
+      }
+    ],
+    "3. StagedRunner — backfill / backtest / forward-look over existing modules (Req 2)": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838843916
+      }
+    ],
+    "4. Checkpoint — local half": [
+      {
+        "executionId": "16cfeaca-f937-415b-8578-91a975481848",
+        "chatSessionId": "sess_5760b0b2-a459-4d00-9a38-d682e781ab26",
+        "timestamp": 1790838946445
+      },
+      {
+        "executionId": "16cfeaca-f937-415b-8578-91a975481848",
+        "chatSessionId": "sess_5760b0b2-a459-4d00-9a38-d682e781ab26",
+        "timestamp": 1790839160706
+      }
     ]
   }
 }

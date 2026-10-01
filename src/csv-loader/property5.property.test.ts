@@ -3,7 +3,7 @@ import fc from "fast-check";
 import { CSV_HEADER, CsvLoader, csvFileNameFor } from "./csvLoader.js";
 import { OhlcIngestion } from "../ingestion/ohlcIngestion.js";
 import { InMemoryCandleStore, PAIRS } from "../ingestion/types.js";
-import type { Candle, TradingDate } from "../guard/types.js";
+import type { Candle } from "../guard/types.js";
 import type { Pair } from "../ingestion/types.js";
 
 // Feature: operational-wiring, Property 5: CSV import is idempotent
@@ -186,7 +186,7 @@ describe("Property 5: CSV import is idempotent", () => {
         const seenKeys = new Set<string>();
         for (const p of PAIRS) {
           for (const c of await ingestion.getCandles(p)) {
-            const key: string = `${c.asset}:${c.date as TradingDate}`;
+            const key: string = `${c.asset}:${c.date}`;
             expect(seenKeys.has(key)).toBe(false);
             seenKeys.add(key);
           }
