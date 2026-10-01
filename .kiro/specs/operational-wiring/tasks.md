@@ -143,79 +143,79 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks and live-
 - [x] 4. Checkpoint — local half
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. OperationalSafety guard + GcloudRunner — shared cloud dependency (Req 6, design Component 7)
-  - [ ] 5.1 Implement the `GcloudRunner` choke point and `OperationalSafety` pure logic
+- [x] 5. OperationalSafety guard + GcloudRunner — shared cloud dependency (Req 6, design Component 7)
+  - [x] 5.1 Implement the `GcloudRunner` choke point and `OperationalSafety` pure logic
     - Create `src/ops/safety/` with `GcloudRunner.run(argv, opts?)` as the single seam for shelling out to `gcloud`, supplying secret values only on stdin (`--data-file=-`), never interpolated into argv
     - Implement `reconcileTarget(expectedProject)`: permit a command only when active project AND account match `GCP_PROJECT_ID`, else abort and surface the mismatch
     - Implement `confirm(presentation)`: present the exact command with secret values redacted as `<from .env: NAME>`; for a destructive/overwriting op carry a distinguishable warning naming the affected resource; do not run until the operator approves
     - Implement the redaction helper that substitutes any `Secret_Key` value with the `<from .env: NAME>` placeholder on every display/log surface
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6_
 
-  - [ ] 5.2 Write property test — no Live_Cloud_Command runs without operator approval
+  - [x] 5.2 Write property test — no Live_Cloud_Command runs without operator approval
     - **Property 21: No Live_Cloud_Command runs without operator approval**
     - min 100 iterations, tagged `// Feature: operational-wiring, Property 21: ...`
     - **Validates: Requirements 6.1**
 
-  - [ ] 5.3 Write property test — destructive commands require a distinguishable, named warning
+  - [x] 5.3 Write property test — destructive commands require a distinguishable, named warning
     - **Property 22: Destructive commands require a distinguishable, named warning before approval**
     - min 100 iterations, tagged `// Feature: operational-wiring, Property 22: ...`
     - **Validates: Requirements 6.5**
 
-  - [ ] 5.4 Write property test — no Secret_Key value ever appears on any output surface
+  - [x] 5.4 Write property test — no Secret_Key value ever appears on any output surface
     - **Property 23: No Secret_Key value ever appears on any output surface** (thread random secret values through every presentation/log/record path; assert the raw value never appears and travels only on stdin)
     - min 100 iterations, tagged `// Feature: operational-wiring, Property 23: ...`
     - **Validates: Requirements 3.3, 4.6, 6.2, 6.3**
 
-  - [ ] 5.5 Write property test — active project and account are reconciled before every Live_Cloud_Command
+  - [x] 5.5 Write property test — active project and account are reconciled before every Live_Cloud_Command
     - **Property 24: Active project and account are reconciled before every Live_Cloud_Command**
     - min 100 iterations, tagged `// Feature: operational-wiring, Property 24: ...`
     - **Validates: Requirements 3.7, 6.4, 6.6**
 
-- [ ] 6. SecretManagerProvisioner — classify, plan, provision, grant, update deploy.yml (Req 3)
-  - [ ] 6.1 Implement `classifyEnvKey` and the name-only `SecretProvisionPlan`
+- [x] 6. SecretManagerProvisioner — classify, plan, provision, grant, update deploy.yml (Req 3)
+  - [x] 6.1 Implement `classifyEnvKey` and the name-only `SecretProvisionPlan`
     - Create `src/ops/secret-manager/classify.ts`: `classifyEnvKey(name)` returns `secret` for `*_API_KEY`/`*_KEY`/`*_TOKEN`/credential JSON/credential-bearing URL, and `config` for project id, region, model id, provider names, and boolean toggles (`*_ENABLED`, `GOOGLE_GENAI_USE_VERTEXAI`)
     - Implement `plan(env)` in `src/ops/secret-manager/provisioner.ts` building `SecretProvisionPlan` from `.env` by NAME only (no value read into the plan), including `missingValues` for `Secret_Key`s with empty/absent values
     - _Requirements: 3.1, 3.9_
 
-  - [ ] 6.2 Write property test — env-key classification follows the naming convention
+  - [x] 6.2 Write property test — env-key classification follows the naming convention
     - **Property 12: Env-key classification follows the naming convention**
     - min 100 iterations, tagged `// Feature: operational-wiring, Property 12: ...`
     - **Validates: Requirements 3.1**
 
-  - [ ] 6.3 Write property test — empty or absent secret values are reported, never created
+  - [x] 6.3 Write property test — empty or absent secret values are reported, never created
     - **Property 16: Empty or absent secret values are reported, never created**
     - min 100 iterations, tagged `// Feature: operational-wiring, Property 16: ...`
     - **Validates: Requirements 3.9**
 
-  - [ ] 6.4 Implement idempotent create-or-version command construction (pure)
+  - [x] 6.4 Implement idempotent create-or-version command construction (pure)
     - Implement the pure command-planning logic in `provision(env)` that, per `Secret_Key` with a non-empty value, emits an "add new version" command when the secret already exists and a "create secret" command only when absent, so re-running is idempotent; values are marked for stdin (`--data-file=-`), never argv
     - _Requirements: 3.2, 3.8_
 
-  - [ ] 6.5 Write property test — provisioning chooses version-add over duplicate-create
+  - [x] 6.5 Write property test — provisioning chooses version-add over duplicate-create
     - **Property 15: Provisioning chooses version-add over duplicate-create**
     - min 100 iterations, tagged `// Feature: operational-wiring, Property 15: ...`
     - **Validates: Requirements 3.8**
 
-  - [ ] 6.6 Implement `updateDeployWorkflow` rewriting `deploy.yml` to the full classified key set
+  - [x] 6.6 Implement `updateDeployWorkflow` rewriting `deploy.yml` to the full classified key set
     - Rewrite `.github/workflows/deploy.yml` so `--set-secrets` maps every required `Secret_Key` (the three existing `supabase-url`/`supabase-key`/`supabase-pooler-url` plus every provider `Secret_Key` present with a value: `OHLC_API_KEY`, `YIELD_API_KEY`, `NEWS_CALENDAR_API_KEY`, `EXTERNAL_SIGNAL_API_KEY`, and any set of `TWELVE_DATA_API_KEY`/`MASSIVE_API_KEY`/`ALPHA_VANTAGE_API_KEY`/`FINNHUB_API_KEY`/`NEWS_API_KEY`) from its Secret Manager secret, and `--set-env-vars` covers every `Config_Env_Key`
     - Place NO secret value in `deploy.yml`; no `Secret_Key` under `--set-env-vars`
     - _Requirements: 3.5, 3.6_
 
-  - [ ] 6.7 Write property test — the rewritten deploy.yml covers every required key
+  - [x] 6.7 Write property test — the rewritten deploy.yml covers every required key
     - **Property 13: The rewritten deploy.yml covers every required key**
     - min 100 iterations, tagged `// Feature: operational-wiring, Property 13: ...`
     - **Validates: Requirements 3.5**
 
-  - [ ] 6.8 Write property test — the rewritten deploy.yml leaks no secret and misplaces no secret
+  - [x] 6.8 Write property test — the rewritten deploy.yml leaks no secret and misplaces no secret
     - **Property 14: The rewritten deploy.yml leaks no secret and misplaces no secret**
     - min 100 iterations, tagged `// Feature: operational-wiring, Property 14: ...`
     - **Validates: Requirements 3.6**
 
-  - [ ] 6.9 Implement `grantAndVerifyAccessor` (pure command + verify predicate)
+  - [x] 6.9 Implement `grantAndVerifyAccessor` (pure command + verify predicate)
     - Build the command to grant `roles/secretmanager.secretAccessor` to the `Runtime_Service_Account` on each secret, and the read-back check that treats provisioning complete only when the grant is present in the IAM policy
     - _Requirements: 3.4_
 
-  - [ ] 6.10 LIVE CLOUD: provision secrets, grant + verify accessor in `trade-assistant-508806`
+  - [x] 6.10 LIVE CLOUD: provision secrets, grant + verify accessor in `trade-assistant-508806`
     - **This is a LIVE operator-approved cloud operation — NOT a property test.** Follow the Live Cloud Execution Protocol.
     - Reconcile active project + account against `GCP_PROJECT_ID` first; abort on mismatch (Req 3.7)
     - For each `Secret_Key` with a non-empty `.env` value: show the exact `gcloud secrets create` / `gcloud secrets versions add --data-file=-` command for approval before running; pipe the value on stdin from `.env` — never echo, log, commit, or pass as an argument (Req 3.3, 6.2, 6.3); add a version if the secret exists (Req 3.8); report and skip empty/absent values (Req 3.9)

@@ -13,9 +13,12 @@ name: Deploy scheduled daily-run Job
 # Identity Federation (OIDC) — no long-lived service-account key is stored. The
 # Cloud Run Job itself runs as a dedicated least-privilege service account.
 #
-# Secrets (Supabase URL/keys, pooler URL) are sourced at RUNTIME from Google
-# Secret Manager via `--set-secrets`; they are never committed or baked into the
-# image. Non-secret config (project, region, model) is passed via `--set-env-vars`.
+# Secrets (Supabase URL/keys + pooler URL, and the third-party provider API
+# keys the Job reads at runtime) are sourced at RUNTIME from Google Secret
+# Manager via `--set-secrets`; they are never committed or baked into the image.
+# Each `--set-secrets` entry maps a RUNTIME_ENV_NAME to a Secret Manager
+# reference (`<secret-name>:latest`) — never a value. Non-secret config
+# (project, region, model, target) is passed via `--set-env-vars`.
 
 on:
   push:
@@ -112,8 +115,13 @@ jobs:
       # Deploy the SHA-PINNED image to the Cloud Run Job. The Job runs as the
       # dedicated least-privilege runtime service account. Non-secret config via
       # --set-env-vars; runtime secrets via --set-secrets (Secret Manager),
-      # never baked into the image. SUPABASE_POOLER_URL routes over the
+      # never baked into the image. --set-secrets injects every Secret_Key the
+      # Job reads at runtime — the Supabase URL/key/pooler-url plus the provider
+      # API keys — each as a `<secret-name>:latest` Secret Manager reference, so
+      # no value lives in this file. SUPABASE_POOLER_URL routes over the
       # IPv4-reachable pooler/REST endpoint (Cloud Run has no IPv6 egress).
+      # NOTE: this --set-secrets / --set-env-vars pair is rewritten by
+      # SecretManagerProvisioner.updateDeployWorkflow (spec Req 3.5, 3.6).
       - name: Deploy SHA-pinned image to Cloud Run Job
         run: |
           gcloud run jobs deploy "${CLOUD_RUN_JOB}" \
@@ -122,4 +130,4 @@ jobs:
             --image "${{ steps.image.outputs.uri }}" \
             --service-account "${RUNTIME_SERVICE_ACCOUNT}" \
             --set-env-vars "GCP_PROJECT_ID=${GCP_PROJECT_ID},GCP_REGION=${GCP_REGION},GEMINI_MODEL=${GEMINI_MODEL},SUPABASE_TARGET=hosted" \
-            --set-secrets "SUPABASE_HOSTED_URL=supabase-url:latest,SUPABASE_HOSTED_KEY=supabase-key:latest,SUPABASE_POOLER_URL=supabase-pooler-url:latest"
+            --set-secrets "ALPHA_VANTAGE_API_KEY=alpha-vantage-api-key:latest,EXTERNAL_SIGNAL_API_KEY=external-signal-api-key:latest,FINNHUB_API_KEY=finnhub-api-key:latest,MASSIVE_API_KEY=massive-api-key:latest,NEWS_API_KEY=news-api-key:latest,NEWS_CALENDAR_API_KEY=news-calendar-api-key:latest,SUPABASE_HOSTED_KEY=supabase-key:latest,SUPABASE_HOSTED_URL=supabase-url:latest,SUPABASE_POOLER_URL=supabase-pooler-url:latest,TWELVE_DATA_API_KEY=twelve-data-api-key:latest"
