@@ -26,7 +26,6 @@ import type { SchedulerPlan, SchedulerTarget } from "./types.js";
 import type { DeployVerifyResult } from "../deploy-verify/types.js";
 import type {
   CommandOutput,
-  CommandPresentation,
   GcloudRunner,
   OperationalSafety,
   ReconcileResult,
@@ -42,9 +41,9 @@ import type {
 class RecordingGcloudRunner implements GcloudRunner {
   readonly calls: readonly string[][] = [];
 
-  async run(argv: readonly string[]): Promise<CommandOutput> {
+  run(argv: readonly string[]): Promise<CommandOutput> {
     (this.calls as string[][]).push([...argv]);
-    return { stdout: "", stderr: "", exitCode: 0 };
+    return Promise.resolve({ stdout: "", stderr: "", exitCode: 0 });
   }
 }
 
@@ -55,12 +54,12 @@ class RecordingGcloudRunner implements GcloudRunner {
  * `create` must short-circuit BEFORE touching reconcile/confirm/runner.
  */
 class AlwaysApproveSafety implements OperationalSafety {
-  async reconcileTarget(_expectedProject: string): Promise<ReconcileResult> {
-    return { ok: true };
+  reconcileTarget(): Promise<ReconcileResult> {
+    return Promise.resolve({ ok: true });
   }
 
-  async confirm(_presentation: CommandPresentation): Promise<boolean> {
-    return true;
+  confirm(): Promise<boolean> {
+    return Promise.resolve(true);
   }
 }
 
@@ -110,9 +109,10 @@ const verifyArb: fc.Arbitrary<DeployVerifyResult> = fc
     // faithful to how the predicate produces results.
     if (v.ok) {
       const { failureReason: _drop, ...rest } = v;
-      return rest as DeployVerifyResult;
+      void _drop;
+      return rest;
     }
-    return v as DeployVerifyResult;
+    return v;
   });
 
 describe("Property 20: scheduler creation is gated on a successful verify (spec Req 5.3)", () => {

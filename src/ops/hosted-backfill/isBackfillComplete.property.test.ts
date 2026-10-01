@@ -39,7 +39,7 @@ const dateArb: fc.Arbitrary<TradingDate | null> = fc.option(
     .map(([y, m, d]) => {
       const mm = String(m).padStart(2, "0");
       const dd = String(d).padStart(2, "0");
-      return `${y}-${mm}-${dd}` as TradingDate;
+      return `${y}-${mm}-${dd}`;
     }),
   { nil: null },
 );
@@ -133,8 +133,8 @@ describe("Property 25: backfill coverage verification requires all pairs non-zer
     const allPositive: PerPairCoverage[] = PAIRS.map((pair) => ({
       pair,
       count: 1,
-      earliestDate: "2024-01-01" as TradingDate,
-      latestDate: "2024-06-01" as TradingDate,
+      earliestDate: "2024-01-01",
+      latestDate: "2024-06-01",
     }));
     expect(isBackfillComplete(allPositive)).toBe(true);
 
