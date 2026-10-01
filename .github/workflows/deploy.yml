@@ -105,11 +105,17 @@ jobs:
           echo "uri=${IMAGE}" >> "$GITHUB_OUTPUT"
 
       # Build via Cloud Build and push the SHA-tagged image to Artifact Registry.
+      # --suppress-logs: the WIF-federated deploy SA cannot STREAM from the
+      # default Cloud Build logs bucket, which would fail the step even on a
+      # successful build. Suppressing the stream makes the command wait for and
+      # report the final build result without tailing logs; full logs remain in
+      # Cloud Logging / the Cloud Build console.
       - name: Build and push image (Cloud Build)
         run: |
           gcloud builds submit \
             --project "${GCP_PROJECT_ID}" \
             --tag "${{ steps.image.outputs.uri }}" \
+            --suppress-logs \
             .
 
       # Deploy the SHA-PINNED image to the Cloud Run Job. The Job runs as the
