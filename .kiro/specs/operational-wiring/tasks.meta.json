@@ -1,0 +1,552 @@
+{
+  "pbtResults": {
+    "1.8 Write property test — CSV import is idempotent": {
+      "status": "passed",
+      "lastRunTimestamp": 1790079139536
+    }
+  },
+  "executionHistory": {
+    "1.1 Implement `parseCsvCandles` tab-separated parser and `RawCandle` mapping": [
+      {
+        "executionId": "a50ea997-fa33-4ee0-9f4c-8524d532d5c9",
+        "chatSessionId": "sess_212d4bb5-85af-4cfd-ae72-bbe3741b7042",
+        "timestamp": 1789939116940
+      },
+      {
+        "executionId": "a50ea997-fa33-4ee0-9f4c-8524d532d5c9",
+        "chatSessionId": "sess_212d4bb5-85af-4cfd-ae72-bbe3741b7042",
+        "timestamp": 1789939290745
+      }
+    ],
+    "1.7 Implement `CsvLoader.loadFile` / `loadAll` delegation to `OhlcIngestion.ingest`": [
+      {
+        "executionId": "d1b47e61-e1a5-424a-beb1-1fd48d8d66d6",
+        "chatSessionId": "sess_86b623e3-8524-4cb7-95a3-9f9aba9467c0",
+        "timestamp": 1789939344627
+      },
+      {
+        "executionId": "d1b47e61-e1a5-424a-beb1-1fd48d8d66d6",
+        "chatSessionId": "sess_86b623e3-8524-4cb7-95a3-9f9aba9467c0",
+        "timestamp": 1789970578630
+      }
+    ],
+    "1.9 Write unit tests — coverage pass-through and empty-file reporting": [
+      {
+        "executionId": "8625388b-6b65-4fce-bbf8-244742d47afb",
+        "chatSessionId": "sess_4455dd3f-4093-4d87-87be-c1b7e3407af5",
+        "timestamp": 1789970615050
+      },
+      {
+        "executionId": "8625388b-6b65-4fce-bbf8-244742d47afb",
+        "chatSessionId": "sess_4455dd3f-4093-4d87-87be-c1b7e3407af5",
+        "timestamp": 1789970733804
+      }
+    ],
+    "1.10 Record the `Data_Source_Role` decision and enforce run cadence": [
+      {
+        "executionId": "43f3afeb-e500-4aec-9b82-7d3dc8ab9767",
+        "chatSessionId": "sess_de042b95-c1ac-46c6-ac1a-45d8d0f51400",
+        "timestamp": 1789970925870
+      },
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078454427
+      },
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078841377
+      }
+    ],
+    "1.2 Write property test — CSV parsing is line-ending independent": [
+      {
+        "executionId": "4e631418-eb38-4b20-a1e9-426eac7cebd7",
+        "chatSessionId": "sess_585e2cdd-efbf-4cec-9815-a3e798da9213",
+        "timestamp": 1789974304160
+      },
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078449789
+      },
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078842165
+      }
+    ],
+    "1.3 Write property test — CSV mapping excludes Volume and tick count": [
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078450951
+      },
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078838973
+      }
+    ],
+    "1.4 Write property test — CSV timestamp is passed through verbatim": [
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078452051
+      },
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078837737
+      }
+    ],
+    "1.5 Write property test — a malformed header aborts the file and feeds nothing": [
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078453026
+      },
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078840955
+      }
+    ],
+    "1.6 Write property test — a malformed row causes no partial ingest": [
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078847090
+      },
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790079166490
+      }
+    ],
+    "1.8 Write property test — CSV import is idempotent": [
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790078847730
+      },
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790079166005
+      }
+    ],
+    "1. CsvLoader — parse `data/*.csv` and feed existing ingestion (Req 1)": [
+      {
+        "executionId": "bf2bb69e-21f1-4764-9617-164fb9506c72",
+        "chatSessionId": "sess_525b2746-9276-422f-805b-f6b1b0eab820",
+        "timestamp": 1790079166989
+      }
+    ],
+    "2. Supabase storage adapters — implement the three PORTs (shared seam, design Component 3)": [
+      {
+        "executionId": "4efc730d-31cd-4378-a126-a005ebb07a9d",
+        "chatSessionId": "sess_9f227bee-16d3-40cb-864a-58e61e62fe04",
+        "timestamp": 1790079238613
+      },
+      {
+        "executionId": "4efc730d-31cd-4378-a126-a005ebb07a9d",
+        "chatSessionId": "sess_9f227bee-16d3-40cb-864a-58e61e62fe04",
+        "timestamp": 1790079860617
+      }
+    ],
+    "3.1 Implement `StagedRunner` scaffold and `backfill` stage": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790836901781
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790837701249
+      }
+    ],
+    "3.2 Write property test — stored vectors correspond to stored candles after backfill": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790837706750
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790837962772
+      }
+    ],
+    "3.3 Implement `backtest` stage wiring to the existing kill-gate": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790837707675
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790837963908
+      }
+    ],
+    "3.4 Implement `forwardLook` stage wiring to `runScheduledDaily`": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790837968106
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838108770
+      }
+    ],
+    "3.5 Write property test — forward-look is deterministic": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838109773
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838358819
+      }
+    ],
+    "3.6 Implement `runAll` composed ordered run": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838110564
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838357849
+      }
+    ],
+    "3.7 Write property test — composed run runs stages in dependency order": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838365069
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838840447
+      }
+    ],
+    "3.8 Write property test — a missing prerequisite aborts a stage without mutating stored data": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838365797
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838841710
+      }
+    ],
+    "3.9 Write property test — a failed stage stops the composed run": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838366611
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838842600
+      }
+    ],
+    "3.10 Write unit tests — stage delegation and standalone invocation": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838367763
+      },
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838843728
+      }
+    ],
+    "3. StagedRunner — backfill / backtest / forward-look over existing modules (Req 2)": [
+      {
+        "executionId": "9bddb20a-9e1c-4a20-a259-71b1869e7192",
+        "chatSessionId": "sess_9e337ee0-e1cb-4b01-b947-89b826db3646",
+        "timestamp": 1790838843916
+      }
+    ],
+    "4. Checkpoint — local half": [
+      {
+        "executionId": "16cfeaca-f937-415b-8578-91a975481848",
+        "chatSessionId": "sess_5760b0b2-a459-4d00-9a38-d682e781ab26",
+        "timestamp": 1790838946445
+      },
+      {
+        "executionId": "16cfeaca-f937-415b-8578-91a975481848",
+        "chatSessionId": "sess_5760b0b2-a459-4d00-9a38-d682e781ab26",
+        "timestamp": 1790839160706
+      }
+    ],
+    "5.1 Implement the `GcloudRunner` choke point and `OperationalSafety` pure logic": [
+      {
+        "executionId": "d2748130-35d3-4db1-90a5-490e7307ab3a",
+        "chatSessionId": "sess_c4ba3ae2-6419-4d81-819c-3f14df88dc05",
+        "timestamp": 1790841192573
+      },
+      {
+        "executionId": "d2748130-35d3-4db1-90a5-490e7307ab3a",
+        "chatSessionId": "sess_c4ba3ae2-6419-4d81-819c-3f14df88dc05",
+        "timestamp": 1790841584614
+      }
+    ],
+    "5.2 Write property test — no Live_Cloud_Command runs without operator approval": [
+      {
+        "executionId": "ace811a7-3f52-4790-a35e-ff45bda61d1a",
+        "chatSessionId": "sess_6f70cba5-5e11-4dd7-8bb2-545863e73095",
+        "timestamp": 1790842025363
+      },
+      {
+        "executionId": "ace811a7-3f52-4790-a35e-ff45bda61d1a",
+        "chatSessionId": "sess_6f70cba5-5e11-4dd7-8bb2-545863e73095",
+        "timestamp": 1790842145178
+      }
+    ],
+    "5.3 Write property test — destructive commands require a distinguishable, named warning": [
+      {
+        "executionId": "f4527a31-6a13-465c-b141-45fb53b5e06e",
+        "chatSessionId": "sess_4c6a29b1-833c-4234-88ce-9a6e3b890f56",
+        "timestamp": 1790842167200
+      },
+      {
+        "executionId": "f4527a31-6a13-465c-b141-45fb53b5e06e",
+        "chatSessionId": "sess_4c6a29b1-833c-4234-88ce-9a6e3b890f56",
+        "timestamp": 1790842262342
+      }
+    ],
+    "5.4 Write property test — no Secret_Key value ever appears on any output surface": [
+      {
+        "executionId": "5a4fa671-9306-473d-974d-c8add1a824db",
+        "chatSessionId": "sess_b569c9e9-ee75-4401-b722-82c2f3fd9c24",
+        "timestamp": 1790842338073
+      },
+      {
+        "executionId": "5a4fa671-9306-473d-974d-c8add1a824db",
+        "chatSessionId": "sess_b569c9e9-ee75-4401-b722-82c2f3fd9c24",
+        "timestamp": 1790842510211
+      }
+    ],
+    "5.5 Write property test — active project and account are reconciled before every Live_Cloud_Command": [
+      {
+        "executionId": "c22bf9f7-7b78-4d48-b85b-43eb70a6765b",
+        "chatSessionId": "sess_43cf1a11-1126-40d4-8787-3b5f48903984",
+        "timestamp": 1790842532878
+      },
+      {
+        "executionId": "c22bf9f7-7b78-4d48-b85b-43eb70a6765b",
+        "chatSessionId": "sess_43cf1a11-1126-40d4-8787-3b5f48903984",
+        "timestamp": 1790842740339
+      }
+    ],
+    "5. OperationalSafety guard + GcloudRunner — shared cloud dependency (Req 6, design Component 7)": [
+      {
+        "executionId": "c22bf9f7-7b78-4d48-b85b-43eb70a6765b",
+        "chatSessionId": "sess_43cf1a11-1126-40d4-8787-3b5f48903984",
+        "timestamp": 1790842740963
+      }
+    ],
+    "6.1 Implement `classifyEnvKey` and the name-only `SecretProvisionPlan`": [
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790842813591
+      },
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790843551166
+      }
+    ],
+    "6.2 Write property test — env-key classification follows the naming convention": [
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790843558484
+      },
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790844178812
+      }
+    ],
+    "6.3 Write property test — empty or absent secret values are reported, never created": [
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790843559750
+      },
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790844179474
+      }
+    ],
+    "6.4 Implement idempotent create-or-version command construction (pure)": [
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790843560437
+      },
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790844180780
+      }
+    ],
+    "6.9 Implement `grantAndVerifyAccessor` (pure command + verify predicate)": [
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790843561450
+      },
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790844181723
+      }
+    ],
+    "6.5 Write property test — provisioning chooses version-add over duplicate-create": [
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790844186244
+      },
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790844595002
+      }
+    ],
+    "6.6 Implement `updateDeployWorkflow` rewriting `deploy.yml` to the full classified key set": [
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790844187435
+      },
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790844593807
+      }
+    ],
+    "6.7 Write property test — the rewritten deploy.yml covers every required key": [
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790844600348
+      },
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790844844811
+      }
+    ],
+    "6.8 Write property test — the rewritten deploy.yml leaks no secret and misplaces no secret": [
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790844601570
+      },
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790844845855
+      }
+    ],
+    "6.10 LIVE CLOUD: provision secrets, grant + verify accessor in `trade-assistant-508806`": [
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790844919946
+      },
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790846122815
+      }
+    ],
+    "6. SecretManagerProvisioner — classify, plan, provision, grant, update deploy.yml (Req 3)": [
+      {
+        "executionId": "734693ba-38da-4a30-92e7-0995da6dc531",
+        "chatSessionId": "sess_4718c736-48f2-4fa4-844a-340e12a04ef8",
+        "timestamp": 1790846123411
+      }
+    ],
+    "7.1 Implement the success and prerequisite predicates (pure)": [
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790846397235
+      },
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790846551460
+      }
+    ],
+    "7.2 Write property test — the deploy-verify success predicate": [
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790846557290
+      },
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790846695139
+      }
+    ],
+    "7.3 Write property test — a failed execution maps to a failing result carrying its identifiers": [
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790846558418
+      },
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790846696373
+      }
+    ],
+    "7.4 Write property test — a missing verify prerequisite is surfaced specifically": [
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790846559365
+      },
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790846697153
+      }
+    ],
+    "7.5 LIVE CLOUD: execute the deployed Cloud Run Job and verify via Cloud Logging": [
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790846986060
+      },
+      {
+        "executionId": "7e1031dd-9045-4dc6-96d2-28eaa5d09901",
+        "chatSessionId": "sess_01daa8ef-2236-433a-aee6-dad6dd6ce454",
+        "timestamp": 1790847177731
+      }
+    ]
+  }
+}
