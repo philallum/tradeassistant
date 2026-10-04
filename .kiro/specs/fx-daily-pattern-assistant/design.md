@@ -18,7 +18,7 @@ The design also incorporates five robustness improvements that harden the system
 - **Determinism and reproducibility** (Requirement 3): all scoring, encoding, retrieval, confidence, and gate logic are pure functions; identical inputs always produce identical outputs.
 - **Look-ahead safety** (Requirement 4): a single explicit guard function is enforced at every stage where a date boundary matters; only matured outcomes count in evaluation.
 - **Clean AI boundary** (Requirement 2): the `LLM_Interface` is the only path to any model, restricted to four sanctioned roles, and its outputs are structurally excluded from scoring code paths.
-- **Compute/storage/serving separation** (Requirement 17): compute never depends on a serving layer; the same schema runs local and hosted; a future read-only serving layer can be added without rearchitecting.
+- **Compute/storage/serving separation** (Requirement 17): compute never depends on a serving layer; the same schema runs local and hosted; the reserved read-only serving layer has now been realized — as the two read-only deployables `web/` (SPA) + Read_Proxy — added purely as downstream consumers of storage, with no change to the compute or storage design.
 - **Latest-stable, low-debt toolchain** (Requirement 18): latest-stable TS/Python, Node Active LTS, pinned dependencies, no prereleases, no deprecated APIs, enforced by an automated version-policy check.
 
 ### Technology Choices (Requirements 3, 17, 18)
@@ -120,7 +120,7 @@ flowchart TD
     subgraph PRESENT[Presentation - local dashboard v1]
         DASH[Silent-by-Default Dashboard]
     end
-    RESERVED[Future read-only Serving Layer<br/>Req 17.3/17.4 - NOT in v1]
+    RESERVED[Read-only Serving Layer - REALIZED<br/>web/ SPA + Read_Proxy<br/>Req 17.3/17.4 - reserved seam, now built as downstream consumers]
 
     COMPUTE --> STORAGE
     DASH --> STORAGE
@@ -131,13 +131,13 @@ flowchart TD
 
 - Compute reads/writes storage; the dashboard reads storage (and triggers a compute run). Neither compute nor storage depends on any serving layer (Requirement 17.1).
 - The same migrations produce the same schema locally and hosted (Requirement 17.2).
-- No public API or website is included in v1 (Requirement 17.3). A future serving layer would read storage only, requiring no change to compute or storage design (Requirement 17.4).
+- The read-only serving layer reserved by 17.3/17.4 has now been realized as two standalone read-only deployables — the `web/` SPA and the `services/read-proxy/` Read_Proxy — defined in the dashboard-ui spec. They read storage only (through dedicated read-only views and a `dashboard_reader` role) and were added as downstream consumers requiring no change to the compute or storage design, exactly as the reserved seam promised. The deterministic core (`src/`) still contains no public API or website and never imports from `web/` or `services/read-proxy/`, so compute/storage remain serving-free (Requirements 17.3, 17.4; dashboard-ui Req 20.5, 20.6).
 
 ### Scheduling and Deployment (Requirement 16.7)
 
 Once validated, a GCP Cloud Scheduler job triggers the same TypeScript daily-run entry point that the local dashboard uses. Because the entire compute path is deterministic and reads the same storage schema, a scheduled unattended run produces the same result as an equivalent local run.
 
-**Deployment target.** The deterministic daily-run entry point is packaged as a container and deployed to Cloud Run. The v1 scheduled refresh runs as a **Cloud Run Job** (run-to-completion batch execution) rather than a request-driven Cloud Run service, because the daily refresh is an unattended batch run, not a web endpoint. Cloud Scheduler triggers the Cloud Run Job on the daily cadence (Requirement 16.7). A Cloud Run service with a scheduled HTTP trigger remains an acceptable alternative should a serving endpoint be needed later, consistent with the reserved future serving layer (Requirement 17.4) — but v1 uses a Job.
+**Deployment target.** The deterministic daily-run entry point is packaged as a container and deployed to Cloud Run. The v1 scheduled refresh runs as a **Cloud Run Job** (run-to-completion batch execution) rather than a request-driven Cloud Run service, because the daily refresh is an unattended batch run, not a web endpoint. Cloud Scheduler triggers the Cloud Run Job on the daily cadence (Requirement 16.7). A Cloud Run service with a scheduled HTTP trigger remains an acceptable alternative should a serving endpoint be needed for the compute job later, consistent with the serving layer reserved by Requirement 17.4 — but the compute daily-run itself stays a Job. (The now-realized read-only serving layer — the Read_Proxy Cloud Run service and the `web/` SPA — is a separate downstream deployable and does not change this: the compute Job neither depends on nor is depended on by it.)
 
 **Delivery pipeline.** Deployment is driven from the GitHub `main` branch through CI, never ad hoc from a developer machine. The flow:
 

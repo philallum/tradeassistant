@@ -6,9 +6,9 @@
 > `BEGIN`/`END STATE` markers is machine-managed and rewritten on each update.
 
 <!-- BEGIN STATE -->
-- **Phase:** Minimal Pattern Vector (Task 3 — Multi-scale shape-only encoder & pgvector persistence)
-- **Updated:** 2026-09-16
-- **Summary:** Tasks 1.1–1.10, 2.1–2.8, and 3.1–3.5 completed. Multi-scale (10/20/40, dim=70) shape-only encoder, 5-day rolling ROC weeklyTrendSign with Look-Ahead Guard, Property 9 scale invariance, Property 1 determinism, and pgvector persistence verified.
+- **Phase:** Operational Wiring (operational-wiring spec) — cloud half; Task 12 complete, Task 13 final checkpoint pending
+- **Updated:** 2026-10-01
+- **Summary:** fx-daily-pattern-assistant foundation complete. operational-wiring Tasks 1–10 and 12 done: CsvLoader, Supabase storage adapters (three PORTs), StagedRunner (backfill/backtest/forward-look), OperationalSafety guard, SecretManagerProvisioner, DeployVerifier, SchedulerProvisioner, hosted Supabase backfill, and least-privilege hosted write access. Task 12 live: RLS on the five compute tables + least-privilege pipeline_writer role (no DELETE) + authenticator membership; Scoped_Write_Credential is an ES256 JWT signed with an operator-held BYO key (project uses asymmetric JWT keys), set as the supabase-key secret; SupabaseRestClient splits apikey (publishable) vs Bearer (scoped JWT). Verified live against trade-assistant-508806: scoped INSERT/UPDATE succeed, DELETE/out-of-scope denied; manual Cloud Run Job execution succeeded on the deployed header-split image. Remaining: Task 13 final checkpoint.
 <!-- END STATE -->
 
 ## Notes

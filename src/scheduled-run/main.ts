@@ -27,6 +27,8 @@ import { makePipelineLoader } from "../pipeline/index.js";
 import {
   buildSupabaseStores,
   makeSupabaseViewPersister,
+  makeDisplayDataPersister,
+  type DisplayOnlyWrite,
 } from "../storage/supabase/index.js";
 
 /**
@@ -41,13 +43,41 @@ const loadEvaluations: PairEvaluationLoader = (decisionDate, supabase) => {
 };
 
 /**
- * Persist the produced dashboard view (firing cards + currency-concentration /
- * choppiness suppressions) to `firing_setups` via the Supabase connection. The
- * persister is bound to the resolved config per run so it uses the same IPv4
- * pooler/REST endpoint and secret key the stores use; the key is never logged.
+ * The already-produced display-only values for the Decision_Date (Req 20.1,
+ * 20.2). These are the OUTWARD-ONLY rationale / analogue labels / research
+ * proposals and the own-vs-provider reference comparisons — all produced
+ * upstream of the firing decision and never fed back into scoring. The slot is
+ * OPTIONAL: an absent (`undefined`) value means the run produced no display
+ * values, so nothing is written to the display-only tables.
+ *
+ * It is wired here, at the composition seam, so the `dailyRun` firing logic and
+ * the pipeline stay untouched (compute/storage separation). The upstream
+ * display-only producers (rationale generation, external-signal cross-check)
+ * are connected end-to-end in a later task; until then this resolves to
+ * `undefined` and the display persister is a no-op.
  */
-const persistView: DashboardViewPersister = (view, supabase) =>
-  makeSupabaseViewPersister(supabase)(view, supabase);
+const loadDisplayOnly: (
+  decisionDate: string,
+) => DisplayOnlyWrite | undefined = () => undefined;
+
+/**
+ * Persist the produced dashboard view to `firing_setups`, then — as one
+ * OPTIONAL composition step beside the view persister — write the already-
+ * produced display-only rationale / comparison values for the Decision_Date to
+ * the `signal_rationale` and `external_reference_comparison` tables via
+ * `makeDisplayDataPersister` (Req 20.1-20.3). Both persisters are bound to the
+ * resolved config per run so they reuse the same IPv4 pooler/REST endpoint and
+ * secret key the stores use (the display writer adds NO new dependency); the key
+ * is never logged. The display step runs only when display-only values exist for
+ * the date, and never alters the firing view or the pipeline.
+ */
+const persistView: DashboardViewPersister = async (view, supabase) => {
+  await makeSupabaseViewPersister(supabase)(view, supabase);
+  const displayOnly = loadDisplayOnly(view.decisionDate);
+  if (displayOnly !== undefined) {
+    await makeDisplayDataPersister(supabase)(displayOnly);
+  }
+};
 
 /** Run the scheduled daily refresh and report the outcome, then exit. */
 async function main(): Promise<void> {

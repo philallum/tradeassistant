@@ -27,6 +27,13 @@ export {
   makeSupabaseViewPersister,
   firingSetupRows,
 } from "./viewPersister.js";
+export {
+  makeDisplayDataPersister,
+  type DisplayDataPersister,
+  type DisplayOnlyWrite,
+  type SignalRationaleWrite,
+  type ReferenceComparisonWrite,
+} from "./displayDataPersister.js";
 
 /**
  * Build the three PORT implementations from a resolved {@link SupabaseConfig}.

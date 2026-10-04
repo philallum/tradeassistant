@@ -313,7 +313,7 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks and live-
     - Ensure the Job's storage config resolves the Scoped_Write_Credential and that the `supabase-key` secret / `--set-secrets` injection carries it; place no secret value in `deploy.yml` (Req 8.6); keep the publishable key as the read-only path (Req 8.5)
     - _Requirements: 8.5, 8.6_
 
-  - [ ] 12.4 LIVE CLOUD/DATA: create the role + credential, apply the migration, set the secret, verify scope
+  - [x] 12.4 LIVE CLOUD/DATA: create the role + credential, apply the migration, set the secret, verify scope
     - **This is a LIVE operator-approved operation — NOT a property test.** Follow the Live Cloud Execution Protocol.
     - Reconcile target/project first; apply the migration to hosted (create `pipeline_writer` + RLS); mint the Scoped_Write_Credential (signed JWT, role claim = pipeline_writer) without echoing it or the JWT secret (Req 8.8); set the `supabase-key` Secret Manager secret to it and redeploy so the Job uses it (Req 8.3, 8.6); reserve the service-role key for operator use only (Req 8.4)
     - Verify scope: an INSERT/UPDATE on the five tables succeeds and a DELETE / out-of-scope write is denied (Req 8.7); record only non-secret references
