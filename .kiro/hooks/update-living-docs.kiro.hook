@@ -1,0 +1,12 @@
+{
+  "name": "Update living docs on task completion",
+  "version": "1.0.0",
+  "description": "When a spec task finishes, refresh the machine-managed STATE block in PROJECT-STATE.md so the current-state doc tracks task progress (Requirement 5.1). Research-log verdicts remain auto-appended by the in-code Living-Docs Writer when the kill-gate runs.",
+  "when": {
+    "type": "postTaskExecution"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A spec task just completed. Update PROJECT-STATE.md to reflect current project state.\n\nRules:\n- Edit ONLY the machine-managed block between the '<!-- BEGIN STATE -->' and '<!-- END STATE -->' markers in PROJECT-STATE.md. Preserve all prose and markers outside that block.\n- Keep the exact three-line format the Living-Docs Writer uses: a '- **Phase:**' line, a '- **Updated:**' line (today's date, YYYY-MM-DD), and a '- **Summary:**' line.\n- Determine the current phase/summary from the spec tasks.md files under .kiro/specs/ (which tasks are checked [x]) and the task that just completed. Be concise and factual; do not invent progress that is not reflected in the specs or code.\n- Never write any secret value, key, token, or JWT into the file. Reference credentials by name only.\n- Do not touch LESSONS.md (hand-authored constraints) or RESEARCH-LOG.md (auto-appended by the kill-gate verdict path).\n- Make the single edit and stop; do not run builds or commit."
+  }
+}

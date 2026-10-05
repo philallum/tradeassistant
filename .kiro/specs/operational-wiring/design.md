@@ -37,7 +37,7 @@ These signatures were verified against the current source; every new component b
 | Storage config | `src/storage/supabaseConfig.ts` | `loadSupabaseConfig(env?)`, `SupabaseConfig { target, url, key }` |
 | Storage PORTs | `ingestion/types.ts`, `encoder/types.ts`, `retrieval/types.ts` | `CandleStore`, `PatternVectorStore`, `AnalogueStore` (+ in-memory reference impls) |
 | Kill-gate | `src/kill-gate/index.ts` | `walkForwardFolds(...)`, `persistWalkForwardFolds(...)`, `outOfSampleTestRanges(...)`, `composeGateVerdict(configId, folds)`, `evaluateAndRecordVerdict(...)` |
-| Delivery | `.github/workflows/deploy.yml` | SHA-pinned Cloud Build → Cloud Run Job deploy via WIF (keyless OIDC); `--set-secrets` currently maps only `supabase-url`, `supabase-key`, `supabase-pooler-url` |
+| Delivery | `.github/workflows/deploy.yml` | SHA-pinned Cloud Build → Cloud Run Job deploy via WIF (keyless OIDC); `--set-secrets` maps `supabase-url`, `supabase-key` (Scoped_Write_Credential), `supabase-publishable-key`, `supabase-pooler-url`, plus the provider API keys |
 
 ## Architecture
 
@@ -465,22 +465,24 @@ It runs under the same **Live Cloud Execution Protocol** as the other live opera
 
 ### 9. Least-Privilege Hosted Write Access — RLS + scoped write credential (spec Req 8)
 
-The deployed Cloud_Run_Job writes `candles`, `pattern_vectors`, `analogue_outcomes`, `firing_setups`, and `realized_outcomes`. Today it authenticates with `SUPABASE_HOSTED_KEY`, which holds the publishable (anon) key — RLS-restricted and unable to write under Supabase's default posture (the hosted backfill confirmed this). The fix is defense-in-depth, not a key swap:
+The deployed Cloud_Run_Job writes `candles`, `pattern_vectors`, `analogue_outcomes`, `firing_setups`, and `realized_outcomes`. The motivating problem: the Job originally authenticated with `SUPABASE_HOSTED_KEY` holding the publishable (anon) key — RLS-restricted and unable to write under Supabase's default posture (the hosted backfill confirmed this). The fix is defense-in-depth, not a key swap. After this change `SUPABASE_HOSTED_KEY` holds the Scoped_Write_Credential (not the anon key):
 
-- A new idempotent migration enables Row-Level Security on the five compute-written tables and defines a dedicated `pipeline_writer` Postgres role granted only `INSERT`/`UPDATE`/`SELECT` on exactly those tables, with policies scoped to that role (spec Req 8.1, 8.2). No `DELETE`, no other tables/schemas.
-- The Job presents a Scoped_Write_Credential: a signed JWT whose `role` claim is `pipeline_writer`, signed with the project JWT secret. PostgREST resolves the role from the JWT and enforces RLS against it (spec Req 8.3). The existing `SupabaseRestClient` already sends the configured key as both `apikey` and `Authorization: Bearer`, so wiring is minimal — the configured credential becomes the scoped JWT.
-- The `supabase-key` Secret Manager secret is set to the Scoped_Write_Credential (spec Req 8.6); the service-role key is reserved for operator one-offs and never deployed (spec Req 8.4); the publishable key remains the read-only credential for the future serving layer (spec Req 8.5, parent Req 17.3).
+- A new idempotent migration enables Row-Level Security on the five compute-written tables and defines a dedicated `pipeline_writer` Postgres role granted only `INSERT`/`UPDATE`/`SELECT` on exactly those tables, with policies scoped to that role (spec Req 8.1, 8.2). No `DELETE`, no other tables/schemas. The migration also grants `pipeline_writer` membership to the PostgREST `authenticator` role; without that membership PostgREST cannot `SET ROLE pipeline_writer` and rejects the credential with `42501 permission denied to set role` (spec Req 8.3).
+- The Job presents a Scoped_Write_Credential: a signed JWT whose `role` claim is `pipeline_writer`. This hosted project uses Supabase's **new asymmetric (ES256) JWT key system**, so the credential is NOT an HS256 token signed with a shared project secret (Supabase does not expose the private half of its own generated keys). Instead an operator-controlled signing key is used: generate an EC P-256 keypair, import the **public** key as the project's active JWT signing key via the Supabase Management API (CLI 2.109.0 has no signing-keys subcommand) so it is published at the project JWKS endpoint, then sign the `pipeline_writer` JWT locally with the private key (header `kid` = the active key). PostgREST verifies the token against JWKS, resolves the role, and enforces RLS against it (spec Req 8.3).
+- Header model (asymmetric keys): the Supabase API gateway admits a request by matching the `apikey` header against a recognized publishable/anon key BEFORE PostgREST resolves the Postgres role from the `Authorization: Bearer` JWT. A scoped `pipeline_writer` JWT is NOT a recognized gateway apikey, so `SupabaseRestClient` sends the publishable key as `apikey` and the Scoped_Write_Credential JWT as `Authorization: Bearer` (via `SupabaseConfig.apiKey`, resolved from `SUPABASE_PUBLISHABLE_KEY` on hosted). When no separate `apiKey` is configured it falls back to using `key` for both headers, so local/anon setups are unchanged (spec Req 8.5).
+- The `supabase-key` Secret Manager secret is set to the Scoped_Write_Credential and injected as `SUPABASE_HOSTED_KEY` (the Bearer credential); the publishable key is injected separately as `SUPABASE_PUBLISHABLE_KEY` (from the `supabase-publishable-key` secret) to serve as the gateway `apikey` and the read-only credential for the future serving layer (spec Req 8.5, 8.6, parent Req 17.3). The service-role key is reserved for operator one-offs and never deployed (spec Req 8.4).
 
 ```sql
 -- scoped write role + RLS (shape; see migration for the committed form)
 alter table candles enable row level security;
 create role pipeline_writer nologin;         -- reached via the JWT role claim
+grant pipeline_writer to authenticator;      -- so PostgREST can SET ROLE into it
 grant select, insert, update on candles to pipeline_writer;
 create policy pipeline_writer_rw on candles for all to pipeline_writer using (true) with check (true);
 -- ...repeated for pattern_vectors, analogue_outcomes, firing_setups, realized_outcomes
 ```
 
-**Security note (deliberate residual risk):** the Scoped_Write_Credential is a long-lived bearer JWT (fixed `role` claim) signed with the project JWT secret, so it must be rotated like any secret and the JWT secret must stay confidential. It is materially stronger than the service-role key — it is RLS-bound, cannot `DELETE`, and cannot touch tables outside the five — but it is not a short-lived token. Rotation and the one-time role/credential creation are operator steps under the Live Cloud Execution Protocol.
+**Security note (deliberate residual risk):** the Scoped_Write_Credential is a long-lived bearer JWT (fixed `role` claim) signed with an operator-held ES256 private key whose public half is the project's active JWT signing key. The private key must stay confidential (it is kept outside the repo, not in `.env` as committed) and the credential must be rotated like any secret — rotation means minting a fresh JWT (and, if needed, rotating the signing key via the Management API, which supports in-use/standby/previously-used states for zero-downtime cutover). It is materially stronger than the service-role key — it is RLS-bound, cannot `DELETE`, and cannot touch tables outside the five — but it is not a short-lived token. The signing-key import, credential minting, secret set, and redeploy are operator steps under the Live Cloud Execution Protocol.
 
 ## Data Models
 
