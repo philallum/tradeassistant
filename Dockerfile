@@ -39,6 +39,14 @@ COPY --chown=node:node --from=build /app/node_modules ./node_modules
 COPY --chown=node:node --from=build /app/dist ./dist
 COPY --chown=node:node --from=build /app/package.json ./package.json
 
+# Ship the five *_D1.csv candle files so the one-shot seed Job
+# (dist/ops/seed-run) can read them during its backfill → vector-encoding stage.
+# runHostedBackfill resolves the data dir relative to dist/ops/hosted-backfill
+# as <app>/data, so the CSVs must live at /app/data. These are non-secret market
+# OHLC files; no secret is baked into the image. The scheduled daily entry
+# (default CMD) does not read these and is unaffected.
+COPY --chown=node:node data ./data
+
 # Run to completion: the Cloud Run Job executes this once per scheduled trigger.
 # This invokes the SAME deterministic `dailyRun` entry point as the local run.
 CMD ["node", "dist/scheduled-run/main.js"]
