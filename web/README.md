@@ -72,3 +72,68 @@ HTTP 200 end-to-end (rows may be empty until a run is persisted to hosted Supaba
 
 Task 17's full smoke check (serving the latest Decision_Date) still requires at least one
 persisted run in hosted Supabase.
+
+## Invoker review — Task 14 (LIVE CLOUD, Req 7, Req 9)
+
+`allUsers` `roles/run.invoker` review on the `dashboard-read-proxy` Cloud Run
+service, performed under the Live Cloud Execution Protocol (operator-approved).
+Non-secret references only.
+
+Reconciliation (performed before any live inspection):
+
+- Active gcloud project `trade-assistant-508806` matches `GCP_PROJECT_ID`; active
+  account `allum.phil@gmail.com` (sole authenticated identity).
+- Resolved Supabase target `hosted` (`SUPABASE_TARGET=hosted`), hosted project ref
+  `bffzhjnpzxxuqvmnmylk` reachable.
+- Service: `dashboard-read-proxy`, region `europe-west1`, latest ready revision
+  `dashboard-read-proxy-00002-k6c`, URL
+  `https://dashboard-read-proxy-uy5jewntfq-ew.a.run.app`, ingress `all`.
+
+Current invoker posture (inspected read-only via
+`gcloud run services get-iam-policy dashboard-read-proxy`): a single binding —
+`roles/run.invoker` → `allUsers`. No other invoker bindings exist.
+
+**Decision: RETAIN `allUsers` `roles/run.invoker`, with documented justification
+(Req 7.6).** A named least-privilege Invoker_Identity is NOT reliably workable for
+the Firebase Hosting `/api` rewrite path on this project. Firebase Hosting rewrites
+to Cloud Run issue server-side fetches that arrive unauthenticated at the Cloud Run
+IAM layer — they do not present a per-service-account OIDC token Cloud Run IAM can
+authorize as a named principal. The project has no `firebasehosting` service agent
+that could be bound as a scoped invoker (only the Firebase Admin SDK SA
+`firebase-adminsdk-fbsvc@…` and the general Firebase service agent
+`service-794110228539@gcp-sa-firebase…` exist, neither of which is the Hosting
+rewrite's edge-fetch identity). Replacing `allUsers` with a scoped service account
+would cause Cloud Run IAM to reject the Hosting rewrite (403), leaving the public
+`/api` path unreachable — so a working invoker configuration is retained (Req 7.6).
+
+Because the review does not change the posture, no permission-reducing IAM command
+was executed. For the record, the permission-reducing command that WOULD apply a
+scoped-identity replacement (NOT executed) is, with its distinguishable warning:
+
+> ⚠️ PERMISSION-REDUCING IAM CHANGE — affected resource:
+> `dashboard-read-proxy` (Cloud Run, region `europe-west1`); effect: removes the
+> public `allUsers` `roles/run.invoker` grant and replaces it with a scoped
+> service account. This would break the public `/api` rewrite on this project —
+> DO NOT RUN. Shown for provenance only; requires explicit operator approval.
+>
+> ```
+> gcloud run services remove-iam-policy-binding dashboard-read-proxy \
+>   --project trade-assistant-508806 --region europe-west1 \
+>   --member=allUsers --role=roles/run.invoker
+> gcloud run services add-iam-policy-binding dashboard-read-proxy \
+>   --project trade-assistant-508806 --region europe-west1 \
+>   --member=serviceAccount:<scoped-invoker-sa>@trade-assistant-508806.iam.gserviceaccount.com \
+>   --role=roles/run.invoker
+> ```
+
+App-level protections are preserved regardless of invoker posture (Req 7.3) — the
+IAM binding is unchanged, and the Read_Proxy request-layer enforcement
+(`services/read-proxy/src/app.ts`) is untouched: GET-only (405 on non-GET), the
+read-only select-only endpoint Allowlist (`buildQueryForPath` → 400/404 before any
+DB round-trip), the per-IP + global rate limit (429), the CSP + security headers on
+every response, and the SELECT-only Supabase read transport.
+
+End-to-end `/api` confirmation (posture unchanged, so already working): `GET
+/api/decision-dates` returns HTTP 200 through the custom domain
+`https://app.teamhandso.me`, the Firebase default domain
+`https://trade-assistant-508806.web.app`, and the direct Cloud Run URL.
