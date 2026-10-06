@@ -19,9 +19,17 @@ import { walkForwardFolds } from "../kill-gate/walkForward.js";
 import {
   composeGateVerdict,
   logGateVerdict,
+  persistGateVerdict,
   type FoldGateInput,
 } from "../kill-gate/verdict.js";
-import type { Gate1FiringSample } from "../kill-gate/types.js";
+import type {
+  Gate1FiringSample,
+  GateVerdictSplit,
+} from "../kill-gate/types.js";
+import type { FeatureRegistryRow } from "../feature-registry/types.js";
+import { SupabaseRestError } from "../storage/supabase/client.js";
+import { compareTradingDates } from "../guard/tradingDate.js";
+import type { WalkForwardFold } from "../kill-gate/types.js";
 import type { ForwardOutcome } from "../retrieval/types.js";
 import { runScheduledDaily } from "../scheduled-run/scheduledRun.js";
 import type { StageName, StageResult, StagedRunnerDeps } from "./types.js";
@@ -117,6 +125,21 @@ export async function backtest(
   // For each pair, build walk-forward folds over stored candle dates.
   // We aggregate all fold inputs across pairs into a single verdict.
   const foldInputs: FoldGateInput[] = [];
+  // Collect every constructed fold so the GateVerdictSplit can be derived from
+  // the walk-forward fold bounds already available in this stage.
+  const allFolds: WalkForwardFold[] = [];
+
+  // Monotonic fold index assigned GLOBALLY across pairs. `walkForwardFolds`
+  // restarts its per-pair `fold.foldIndex` at 0,1,2… for every pair, so reusing
+  // that raw index across multiple pairs produces DUPLICATE foldIndex values in
+  // the aggregated verdict. Because the persisted `gate_fold_verdicts` row is
+  // keyed by `(verdict_id, fold_index)`, duplicate indices collide on that PK.
+  // Assigning a globally-unique index here keeps every persisted fold row
+  // distinct. This is pure wiring: the per-fold gate evaluation inputs
+  // (firingSubset, modelOutcomes, baselineOutcomes) are independent of the
+  // index, and `composeGateVerdict` only sorts by foldIndex, so the verdict
+  // result is unchanged — only the fold_index identifiers become unique.
+  let globalFoldIndex = 0;
 
   for (const pair of PAIRS) {
     const candles = await deps.ingestion.getCandles(pair);
@@ -124,6 +147,7 @@ export async function backtest(
 
     const history: TradingDate[] = candles.map((c) => c.date);
     const folds = walkForwardFolds(pair, history);
+    allFolds.push(...folds);
 
     for (const fold of folds) {
       // Build the firing subset and outcome arrays for each fold.
@@ -191,13 +215,17 @@ export async function backtest(
       }
 
       foldInputs.push({
-        foldIndex: fold.foldIndex,
+        // Globally-unique index across pairs (see `globalFoldIndex` above) so
+        // the persisted (verdict_id, fold_index) rows never collide. The
+        // per-pair `fold.foldIndex` is intentionally NOT used here.
+        foldIndex: globalFoldIndex,
         pair,
         horizon: 1,
         firingSubset,
         modelOutcomes,
         baselineOutcomes,
       });
+      globalFoldIndex += 1;
     }
   }
 
@@ -205,7 +233,112 @@ export async function backtest(
   const verdict = composeGateVerdict(deps.configId, foldInputs);
   await logGateVerdict(deps.docs, verdict);
 
+  // Persist the verdict through the injected GateVerdictStore IN ADDITION to the
+  // Research_Log append (persistence is additive — the log is preserved). The
+  // Data_Split bounds are derived from the walk-forward fold bounds already
+  // constructed above: `testStart` from the earliest fold's test window,
+  // `testEnd` from the latest fold's test window, and `trainEnd` from the
+  // train/test boundary of that earliest fold (every fold satisfies
+  // `trainEnd < testStart`). `composeGateVerdict` remains the sole verdict
+  // producer — nothing is recomputed here.
+  const split = deriveGateVerdictSplit(allFolds);
+  if (split !== null) {
+    // Capture the persist report — its `verdictId` is the justifying id written
+    // onto any PASS→included feature_registry rows below (spec Req 2.4). A
+    // persist rejection is surfaced with the affected configId (spec Req 2.6):
+    // it is NOT swallowed and the stage does NOT return `{ ok: true }` as though
+    // the verdict were recorded.
+    let report;
+    try {
+      report = await persistGateVerdict(deps.gateVerdictStore, verdict, split);
+    } catch (err) {
+      throw withConfigIdContext(err, deps.configId);
+    }
+
+    // On a PASS, record each admitted candidate feature as an `included`
+    // feature_registry row carrying the justifying PASS verdictId (spec Req
+    // 2.4). The admitted set is injected by the caller — the stage makes NO
+    // admission decision and validates NO ceiling (spec Req 1.8). When no
+    // features are admitted (undefined/empty), nothing is upserted and this is
+    // a valid no-op.
+    if (verdict.verdict === "PASS") {
+      const admitted = deps.admittedFeatures ?? [];
+      for (const featureId of admitted) {
+        const row: FeatureRegistryRow = {
+          featureId,
+          status: "included",
+          verdictId: report.verdictId,
+        };
+        await deps.featureRegistryStore.upsert(row);
+      }
+    }
+  }
+
   return { ok: true };
+}
+
+/**
+ * Augment a {@link persistGateVerdict} failure with the affected `configId` so
+ * the surfaced error identifies which config's verdict failed to persist (spec
+ * Req 2.6). A {@link SupabaseRestError} is already secret-free (it never carries
+ * the Supabase key); it is re-raised with the `configId` appended to its message
+ * while preserving its `status` and `table`. Any other error is wrapped in an
+ * `Error` naming the `configId`, chaining the original via `cause`. In all cases
+ * the failure propagates — it is never swallowed.
+ */
+function withConfigIdContext(err: unknown, configId: string): unknown {
+  if (err instanceof SupabaseRestError) {
+    if (err.message.includes(`config_id=${configId}`)) {
+      // The adapter already named this config — do not double-annotate.
+      return err;
+    }
+    return new SupabaseRestError(
+      `${err.message} (config_id=${configId})`,
+      err.status,
+      err.table,
+    );
+  }
+  return new Error(
+    `Failed to persist gate verdict for config_id=${configId}`,
+    { cause: err },
+  );
+}
+
+/**
+ * Derive the {@link GateVerdictSplit} recorded alongside a persisted verdict
+ * from the walk-forward fold bounds constructed in the Backtest_Stage.
+ *
+ * The out-of-sample set is the union of the test windows, so:
+ *   - `testStart` is the earliest fold's `testStart` (earliest test boundary),
+ *   - `testEnd`   is the latest fold's `testEnd` (latest test boundary),
+ *   - `trainEnd`  is the earliest fold's `trainEnd` — the train/test split
+ *                 boundary adjacent to the earliest test window
+ *                 (`trainEnd < testStart` holds for every fold).
+ *
+ * Returns `null` when no folds were constructed (e.g. histories too short for a
+ * single full train/test span), in which case there is no split to record.
+ */
+function deriveGateVerdictSplit(
+  folds: readonly WalkForwardFold[],
+): GateVerdictSplit | null {
+  if (folds.length === 0) return null;
+
+  let earliest = folds[0]!;
+  let latest = folds[0]!;
+  for (const fold of folds) {
+    if (compareTradingDates(fold.testStart, earliest.testStart) < 0) {
+      earliest = fold;
+    }
+    if (compareTradingDates(fold.testEnd, latest.testEnd) > 0) {
+      latest = fold;
+    }
+  }
+
+  return {
+    trainEnd: earliest.trainEnd,
+    testStart: earliest.testStart,
+    testEnd: latest.testEnd,
+  };
 }
 
 /**
