@@ -281,19 +281,19 @@ jobs:
         run: npm install --global firebase-tools
 
       # Deploy only Hosting, from web/ (where firebase.json + .firebaserc live).
-      # Two keyless auth paths are provided belt-and-suspenders because
-      # firebase-tools versions differ in which they honor:
-      #   - GOOGLE_APPLICATION_CREDENTIALS → the WIF credentials file the auth
-      #     step wrote (Application Default Credentials), and
-      #   - FIREBASE_TOKEN → the short-lived OAuth access token the auth step
-      #     minted for the deploy service account.
-      # Neither is a long-lived stored secret. --non-interactive + --force so no
-      # prompt blocks the unattended deploy.
+      # Keyless auth via Application Default Credentials: firebase-tools reads
+      # GOOGLE_APPLICATION_CREDENTIALS (the WIF credentials file the auth step
+      # wrote) — the non-deprecated path. `FIREBASE_TOKEN` is intentionally NOT
+      # set: it is deprecated in firebase-tools and, since the auth step exports
+      # ADC, unnecessary. No long-lived secret is stored. --non-interactive +
+      # --force so no prompt blocks the unattended deploy.
+      #
+      # NOTE: the deploy service account (DEPLOY_SERVICE_ACCOUNT) must hold
+      # `roles/firebasehosting.admin`, or this step 403s on the release call.
       - name: Deploy to Firebase Hosting
         working-directory: web
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
-          FIREBASE_TOKEN: ${{ steps.auth.outputs.access_token }}
         run: |
           firebase deploy \
             --only hosting \

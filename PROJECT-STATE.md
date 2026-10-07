@@ -26,9 +26,9 @@
 > the durable "how and why" lives in the prose. Keep both honest.
 
 <!-- BEGIN STATE -->
-- **Phase:** v1 feature-complete across all four specs; the two display-only features (AI rationale + third-party reference) are wired end-to-end and verified against live APIs; frontend deploy is now automated via CI/CD and the SPA build type-checks under a clean CI install; closing out final live-cloud checkpoints and the first real kill-gate verdict.
+- **Phase:** v1 feature-complete across all four specs; display-only features wired + verified live; frontend CI/CD automated and its IAM blocker cleared (live grant applied, re-run pending); read-proxy allowlist bug fixed locally (proxy redeploy pending); closing out final live-cloud checkpoints and the first real kill-gate verdict.
 - **Updated:** 2026-10-07
-- **Summary:** Deterministic TypeScript core (fx-daily-pattern-assistant) is 100% complete and property-tested. CI red-on-dev fix this turn: the new `web` CI job surfaced a pre-existing latent bug — the SPA test files import Node built-ins (`node:fs`/`node:url`/`node:path`) but `web/` had no `@types/node` and `web/tsconfig.json` set `types: ["vite/client"]` (excluding Node types), so `tsc --noEmit` failed under CI's clean `npm ci` (it had passed locally only via a stale/hoisted `node_modules`, and the web build had never run in CI before). Fixed by adding `@types/node@22.20.2` (exact-pinned to match root + Node 22 line) to `web/` devDependencies (+ lockfile) and `"node"` to the tsconfig `types` array. Verified on a clean `web/` `npm ci`: build passes, 133 web tests pass; backend `npm run check` (682 tests) and version-policy green. These three files (`web/package.json`, `web/package-lock.json`, `web/tsconfig.json`) are edited locally but NOT yet committed/pushed. operational-wiring is done except Task 13 (final checkpoint); Task 12's subtasks are all complete though its parent checkbox is still unticked. dashboard-ui is complete except Task 17 (post-deploy read-only smoke) and Task 18 (final checkpoint). dashboard-data-activation is 100% complete. CI/CD this turn: the dashboard SPA (`web/`) now has CI coverage (new `web` job in `ci.yml`: build + Vitest) and is DEPLOYED AUTOMATICALLY to Firebase Hosting on merge to `main` via `deploy.yml` — a `dorny/paths-filter` `changes` job routes backend-only vs frontend-only commits, the backend `quality-gate`/`build-and-deploy` jobs are now gated on the `backend` filter, and new `web-quality-gate`→`deploy-frontend` jobs build/test then `firebase deploy --only hosting` KEYLESSLY, reusing the same WIF identity (OAuth access token minted via `token_format: access_token`; both `GOOGLE_APPLICATION_CREDENTIALS` and `FIREBASE_TOKEN` set belt-and-suspenders; no long-lived secret). One-time prerequisite before the first auto-deploy works: grant `roles/firebasehosting.admin` to the deploy service account (live-cloud action, NOT executed). PRIOR this turn-set: the two display-only producers that were previously stubbed off are now wired into the scheduled daily run — (1) a real Gemini `LlmProvider` (`src/llm/geminiProvider.ts`, Vertex AI generateContent over `fetch`, ADC/metadata token, no SDK so the import-boundary guard stays green) behind the single `LlmInterface`, and (2) a real FCS `ExternalSignalProvider` (`src/external-signal/fcsProvider.ts`, `/forex/latest` over `fetch`, all five pairs in ONE batched request to respect the free-plan 3-req/min limit, BUY/SELL/HOLD from daily change %). `src/scheduled-run/main.ts` replaced its `loadDisplayOnly = () => undefined` stub with a real `buildDisplayOnly` (`src/scheduled-run/displayOnly.ts`) that generates rationale/labels per firing card and the five-pair comparison, persisted via the existing `makeDisplayDataPersister`; added `src/scheduled-run/accessToken.ts` for the GCP token. Weekday gating added: scheduler cron now `0 17 * * 1-5` and an `isTradingDay` early-exit in `main.ts`. Config fixes: local `.env` `GEMINI_MODEL` corrected `gemini-3.5-flash`→`gemini-2.5-flash` (the former 404s in europe-west1); `eslint.config.js` now ignores `web/dist/**` (a pre-existing gap that failed lint on a clean tree); `.github/workflows/deploy.yml` `--set-env-vars` now also sets `GOOGLE_GENAI_USE_VERTEXAI=true` and `EXTERNAL_SIGNAL_PROVIDER=FCS` (without the latter the Job would skip FCS even with the key). Verified locally: lint + typecheck clean, 637 tests pass / 9 skipped; both adapters exercised live (Gemini returned a tagged rationale + labels; FCS returned direction/score/comparison for all five pairs). Stack: TypeScript (Node 22, ESM, zero runtime deps) + Vitest/fast-check; isolated Python cross-check (pytest/hypothesis); Supabase Postgres + pgvector; GCP Cloud Run Job + Cloud Scheduler + Secret Manager + Artifact Registry via keyless WIF; Firebase-hosted React/Vite SPA fronted by a read-only Cloud Run read-proxy. Open items: operational-wiring Task 13, dashboard-ui Tasks 17/18, RESEARCH-LOG.md still has zero logged kill-gate verdicts, and the backend changes this turn are NOT yet deployed — they require a push to `main` (plus setting the GitHub `GEMINI_MODEL` repo variable to `gemini-2.5-flash` and granting the Job runtime SA `roles/aiplatform.user`) and one Job execution before the dashboard shows the new data.
+- **Summary:** Deterministic TypeScript core (fx-daily-pattern-assistant) is 100% complete and property-tested. Frontend-deploy 403 diagnosed AND fixed this turn: the first auto-deploy run failed at `firebase deploy --only hosting` with HTTP 403 "caller does not have permission" (WIF auth itself succeeded) because the deploy service account `gh-deploy@trade-assistant-508806.iam.gserviceaccount.com` held only backend roles and NO Firebase Hosting role. LIVE CLOUD ACTION (operator-approved, executed this turn): granted `roles/firebasehosting.admin` to that SA via `gcloud projects add-iam-policy-binding` and verified the binding now appears in the SA's live IAM policy; the Firebase Hosting API was already enabled. The deploy itself has not been re-run yet, so a green hosting deploy is expected-but-unverified. Also cleaned up the workflow: removed the deprecated `FIREBASE_TOKEN` env from the `deploy-frontend` step and left only `GOOGLE_APPLICATION_CREDENTIALS` (ADC, the non-deprecated keyless path the auth step already exports); YAML re-validated. The workflow edit is in the working tree, NOT yet committed/pushed. Read-proxy bug fixed this turn: the dashboard "Pattern & Outcomes" tab showed "data service is temporarily unavailable" because two of its four reads — `/candles` and `/analogue-outcomes` — returned 502. Root cause in `services/read-proxy/src/allowlist.ts`: both endpoints mapped the public `pair` param to a DB `column: "pair"`, but their views (`v_candles`, `v_analogue_outcomes`) project the pair column as `asset`, so PostgREST rejected `pair=eq.…` with 42703 "column does not exist" and the proxy wrapped it as 502. Fixed by changing those two params to `column: "asset"` (public param name stays `pair`; frontend row types already expect `asset`, so untouched). Verified against live Supabase: the old `pair=eq.EURUSD` filter 400s on both views while the new `asset=eq.EURUSD` returns 200 (400 candles, 300 analogue rows); read-proxy builds clean and its `src` tests pass (33 passed / 6 skipped). NOT yet deployed: the fix is local only — the `dashboard-read-proxy` Cloud Run service is deployed out-of-band and must be rebuilt/redeployed for it to take effect (it is NOT covered by the `deploy.yml` backend path filter, which targets the Cloud Run Job, not this service). CI red-on-dev fix this turn: the new `web` CI job surfaced a pre-existing latent bug — the SPA test files import Node built-ins (`node:fs`/`node:url`/`node:path`) but `web/` had no `@types/node` and `web/tsconfig.json` set `types: ["vite/client"]` (excluding Node types), so `tsc --noEmit` failed under CI's clean `npm ci` (it had passed locally only via a stale/hoisted `node_modules`, and the web build had never run in CI before). Fixed by adding `@types/node@22.20.2` (exact-pinned to match root + Node 22 line) to `web/` devDependencies (+ lockfile) and `"node"` to the tsconfig `types` array. Verified on a clean `web/` `npm ci`: build passes, 133 web tests pass; backend `npm run check` (682 tests) and version-policy green. These three files (`web/package.json`, `web/package-lock.json`, `web/tsconfig.json`) are edited locally but NOT yet committed/pushed. operational-wiring is done except Task 13 (final checkpoint); Task 12's subtasks are all complete though its parent checkbox is still unticked. dashboard-ui is complete except Task 17 (post-deploy read-only smoke) and Task 18 (final checkpoint). dashboard-data-activation is 100% complete. CI/CD this turn: the dashboard SPA (`web/`) now has CI coverage (new `web` job in `ci.yml`: build + Vitest) and is DEPLOYED AUTOMATICALLY to Firebase Hosting on merge to `main` via `deploy.yml` — a `dorny/paths-filter` `changes` job routes backend-only vs frontend-only commits, the backend `quality-gate`/`build-and-deploy` jobs are now gated on the `backend` filter, and new `web-quality-gate`→`deploy-frontend` jobs build/test then `firebase deploy --only hosting` KEYLESSLY, reusing the same WIF identity (OAuth access token minted via `token_format: access_token`; both `GOOGLE_APPLICATION_CREDENTIALS` and `FIREBASE_TOKEN` set belt-and-suspenders; no long-lived secret). One-time prerequisite before the first auto-deploy works: grant `roles/firebasehosting.admin` to the deploy service account (live-cloud action, NOT executed). PRIOR this turn-set: the two display-only producers that were previously stubbed off are now wired into the scheduled daily run — (1) a real Gemini `LlmProvider` (`src/llm/geminiProvider.ts`, Vertex AI generateContent over `fetch`, ADC/metadata token, no SDK so the import-boundary guard stays green) behind the single `LlmInterface`, and (2) a real FCS `ExternalSignalProvider` (`src/external-signal/fcsProvider.ts`, `/forex/latest` over `fetch`, all five pairs in ONE batched request to respect the free-plan 3-req/min limit, BUY/SELL/HOLD from daily change %). `src/scheduled-run/main.ts` replaced its `loadDisplayOnly = () => undefined` stub with a real `buildDisplayOnly` (`src/scheduled-run/displayOnly.ts`) that generates rationale/labels per firing card and the five-pair comparison, persisted via the existing `makeDisplayDataPersister`; added `src/scheduled-run/accessToken.ts` for the GCP token. Weekday gating added: scheduler cron now `0 17 * * 1-5` and an `isTradingDay` early-exit in `main.ts`. Config fixes: local `.env` `GEMINI_MODEL` corrected `gemini-3.5-flash`→`gemini-2.5-flash` (the former 404s in europe-west1); `eslint.config.js` now ignores `web/dist/**` (a pre-existing gap that failed lint on a clean tree); `.github/workflows/deploy.yml` `--set-env-vars` now also sets `GOOGLE_GENAI_USE_VERTEXAI=true` and `EXTERNAL_SIGNAL_PROVIDER=FCS` (without the latter the Job would skip FCS even with the key). Verified locally: lint + typecheck clean, 637 tests pass / 9 skipped; both adapters exercised live (Gemini returned a tagged rationale + labels; FCS returned direction/score/comparison for all five pairs). Stack: TypeScript (Node 22, ESM, zero runtime deps) + Vitest/fast-check; isolated Python cross-check (pytest/hypothesis); Supabase Postgres + pgvector; GCP Cloud Run Job + Cloud Scheduler + Secret Manager + Artifact Registry via keyless WIF; Firebase-hosted React/Vite SPA fronted by a read-only Cloud Run read-proxy. Open items: operational-wiring Task 13, dashboard-ui Tasks 17/18, RESEARCH-LOG.md still has zero logged kill-gate verdicts, and the backend changes this turn are NOT yet deployed — they require a push to `main` (plus setting the GitHub `GEMINI_MODEL` repo variable to `gemini-2.5-flash` and granting the Job runtime SA `roles/aiplatform.user`) and one Job execution before the dashboard shows the new data.
 <!-- END STATE -->
 
 ## 1. What this project is
@@ -184,10 +184,11 @@ two documents are out of sync and should be reconciled.
   (`<name>:latest`) — no secret value in the file. FRONTEND (gated on
   `frontend`): `web-quality-gate` (build + tests) → `deploy-frontend`
   (`firebase deploy --only hosting` from `web/`), reusing the same keyless WIF
-  identity (OAuth access token via `token_format: access_token`); no stored
-  `FIREBASE_TOKEN` or SA key. A skipped path-filter gate cascades to skip its
-  dependent deploy. The deploy SA requires `roles/firebasehosting.admin` for the
-  frontend job (one-time grant, pending).
+  identity, authenticating to firebase-tools via `GOOGLE_APPLICATION_CREDENTIALS`
+  (ADC); no stored `FIREBASE_TOKEN` or SA key (the deprecated `FIREBASE_TOKEN`
+  env was removed). A skipped path-filter gate cascades to skip its dependent
+  deploy. The deploy SA was granted `roles/firebasehosting.admin` (live grant
+  applied), which the frontend job requires.
 
 ## 6. Strategic decisions
 
@@ -278,14 +279,26 @@ two documents are out of sync and should be reconciled.
   Third-party tabs stay in their empty/unavailable states. Note the AI tab is
   per-firing-card, so on a silent (no-firing) day showing "no rationale" is
   correct, not a bug.
-- **Frontend auto-deploy has an unmet one-time IAM prerequisite.** The new
-  `deploy-frontend` job will 403 until the WIF-impersonated deploy service
-  account (`DEPLOY_SERVICE_ACCOUNT`) is granted `roles/firebasehosting.admin` on
-  the project. This is a live-cloud IAM grant that has NOT been executed; the
-  backend deploy jobs are unaffected either way. Secondary note: the pipeline
-  uses the third-party `dorny/paths-filter@v3` action — if the org restricts
-  Actions to verified/first-party publishers, replace it with native per-file
-  `paths:` filters (which would require splitting into two workflow files).
+- **Read-proxy fix is local-only and the proxy has no CI/CD.** The
+  `/candles` + `/analogue-outcomes` column fix lives in
+  `services/read-proxy/src/allowlist.ts` but the deployed `dashboard-read-proxy`
+  Cloud Run service still runs the old revision, so the Pattern & Outcomes tab
+  stays broken live until the service is rebuilt/redeployed out-of-band. Unlike
+  the Cloud Run Job (backend) and the SPA (frontend), `services/read-proxy/**`
+  is NOT wired into `deploy.yml` at all — no path filter, no deploy job — and
+  has no CI coverage either. Candidate follow-up: add a `read-proxy` CI job and a
+  path-filtered deploy job so this service ships like the other two targets.
+- **Frontend auto-deploy: IAM blocker cleared; green deploy not yet verified.**
+  The first `deploy-frontend` run 403'd because the deploy SA
+  (`gh-deploy@…`, the `DEPLOY_SERVICE_ACCOUNT`) lacked a Firebase Hosting role;
+  `roles/firebasehosting.admin` has now been granted (live grant applied + binding
+  verified in the SA's IAM policy) and the deprecated `FIREBASE_TOKEN` env was
+  removed in favour of ADC. The workflow edit is not yet committed/pushed, and
+  the deploy has not been re-run, so a successful hosting publish remains
+  expected-but-unverified. Secondary note: the pipeline uses the third-party
+  `dorny/paths-filter@v3` action — if the org restricts Actions to
+  verified/first-party publishers, replace it with native per-file `paths:`
+  filters (which would require splitting into two workflow files).
 - **Live-cloud checkboxes can't be re-verified from the repo alone.** Hosted
   migrations applied, secrets provisioned, images deployed, scheduler created,
   and scoped-write verified live are all asserted via LIVE CLOUD task checkboxes.
@@ -309,21 +322,26 @@ two documents are out of sync and should be reconciled.
 ## 8. Immediate next steps
 
 1. Deploy the display-only features: set the GitHub `GEMINI_MODEL` repo variable
-   to `gemini-2.5-flash`, grant the Job runtime SA `roles/aiplatform.user`, and
-   grant the deploy SA `roles/firebasehosting.admin` (enables the new frontend
-   auto-deploy). Push to `main` to redeploy the Cloud Run Job (now wired for
-   Gemini + FCS and weekday-gated) and auto-deploy the SPA, then run one Job
-   execution (`gcloud run jobs execute scheduled-daily-run`) so `signal_rationale`
-   / `external_reference_comparison` get populated. Verify via `/api/ai-rationale`
-   and `/api/external-comparison`.
-2. Record the first real kill-gate walk-forward verdict in `RESEARCH-LOG.md`
+   to `gemini-2.5-flash` and grant the Job runtime SA `roles/aiplatform.user`.
+   (The deploy SA `roles/firebasehosting.admin` grant for frontend auto-deploy is
+   DONE.) Commit/push the workflow edits (incl. the `FIREBASE_TOKEN` removal) to
+   `main` to redeploy the Cloud Run Job (now wired for Gemini + FCS and
+   weekday-gated) and auto-deploy the SPA, then run one Job execution
+   (`gcloud run jobs execute scheduled-daily-run`) so `signal_rationale` /
+   `external_reference_comparison` get populated. Verify the SPA hosting deploy
+   went green, and `/api/ai-rationale` + `/api/external-comparison`.
+2. Redeploy the `dashboard-read-proxy` Cloud Run service so the `/candles` +
+   `/analogue-outcomes` `asset`-column fix goes live (the Pattern & Outcomes tab
+   is broken until then); optionally wire this service into CI/CD so it ships
+   like the Job and the SPA.
+3. Record the first real kill-gate walk-forward verdict in `RESEARCH-LOG.md`
    (or reconcile the DB-vs-log discrepancy above) so the core premise is
    measured in the living log.
-3. Close `operational-wiring` Task 13 (final checkpoint) and tick Task 12's
+4. Close `operational-wiring` Task 13 (final checkpoint) and tick Task 12's
    parent checkbox.
-4. Run `dashboard-ui` Task 17 (post-deploy read-only smoke against real firing
+5. Run `dashboard-ui` Task 17 (post-deploy read-only smoke against real firing
    data) and close Task 18; reconcile with `dashboard-data-activation` Task 16.
-5. Push the reconciling merge on `dev` to the remote (directly or via PR), and
+6. Push the reconciling merge on `dev` to the remote (directly or via PR), and
    rename the remote `main` → `origin` to remove the branch/remote name clash.
 
 ## Notes on maintenance

@@ -102,7 +102,9 @@ export const ENDPOINTS: readonly EndpointSpec[] = [
     path: "/analogue-outcomes",
     view: "v_analogue_outcomes",
     params: {
-      pair: { required: true, kind: "pair", column: "pair" },
+      // `v_analogue_outcomes` projects the pair column as `asset` (not `pair`),
+      // so the public `pair` param must filter on the `asset` column.
+      pair: { required: true, kind: "pair", column: "asset" },
       decisionDate: { required: false, kind: "isoDate", column: "decision_date" },
     },
     maxRows: 300,
@@ -140,7 +142,9 @@ export const ENDPOINTS: readonly EndpointSpec[] = [
     path: "/candles",
     view: "v_candles",
     params: {
-      pair: { required: true, kind: "pair", column: "pair" },
+      // `v_candles` projects the pair column as `asset` (not `pair`), so the
+      // public `pair` param must filter on the `asset` column.
+      pair: { required: true, kind: "pair", column: "asset" },
       from: { required: false, kind: "isoDate", column: "date" },
       to: { required: false, kind: "isoDate", column: "date" },
     },
