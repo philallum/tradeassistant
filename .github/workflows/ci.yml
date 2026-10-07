@@ -46,3 +46,38 @@ jobs:
 
       - name: Version-policy check
         run: npm run version-policy
+
+  # The standalone dashboard SPA under web/ has its own lockfile, Node setup, and
+  # scripts, so it is verified in a distinct job. This closes the previous gap
+  # where the frontend had NO CI coverage and a broken SPA could merge to main.
+  # type-check + production build (tsc --noEmit && vite build via `npm run build`)
+  # and the Vitest unit/property suite all run; any failure fails the pipeline.
+  web:
+    name: Web SPA — build and tests
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node (Active LTS from .nvmrc)
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `npm run build` is `tsc --noEmit && vite build` — it both type-checks and
+      # produces the static bundle, so a type error or a broken build fails here.
+      - name: Build
+        run: npm run build
+
+      - name: Tests
+        run: npm run test

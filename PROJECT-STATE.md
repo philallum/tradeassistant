@@ -26,9 +26,9 @@
 > the durable "how and why" lives in the prose. Keep both honest.
 
 <!-- BEGIN STATE -->
-- **Phase:** v1 feature-complete across all four specs; closing out final live-cloud checkpoints and recording the first real kill-gate verdict.
+- **Phase:** v1 feature-complete across all four specs; the two display-only features (AI rationale + third-party reference) are wired end-to-end and verified against live APIs; frontend deploy is now automated via CI/CD; closing out final live-cloud checkpoints and the first real kill-gate verdict.
 - **Updated:** 2026-10-07
-- **Summary:** Deterministic TypeScript core (fx-daily-pattern-assistant) is 100% complete and property-tested. operational-wiring is done except Task 13 (final checkpoint); Task 12's subtasks are all complete though its parent checkbox is still unticked. dashboard-ui is complete except Task 17 (post-deploy read-only smoke) and Task 18 (final checkpoint). dashboard-data-activation is 100% complete: Supabase persistence for gate verdicts + feature registry, a GatePassingResolver wired into the scheduled run, a live Gate_Run, and a re-run daily job that populates firing_setups. Stack: TypeScript (Node 22, ESM, zero runtime deps) + Vitest/fast-check; isolated Python cross-check (pytest/hypothesis); Supabase Postgres + pgvector; GCP Cloud Run Job + Cloud Scheduler + Secret Manager + Artifact Registry via keyless WIF; Firebase-hosted React/Vite SPA fronted by a read-only Cloud Run read-proxy. Open items: operational-wiring Task 13, dashboard-ui Tasks 17/18, and — most important — RESEARCH-LOG.md still has zero logged kill-gate verdicts, so the central premise (shape-only pattern model beats the weekly-trend baseline out-of-sample) is not yet recorded in the living research log even though a live Gate_Run is claimed complete. Living-docs automation now keeps this file current: an in-code Living-Docs Writer plus two agent hooks (a Stop-trigger hook for any meaningful change and the postTaskExecution hook at spec-task boundaries). Git state reconciled 2026-10-07: dev rebased onto remote dev and pushed; the activate/dashboard-firing branch (gatePassingResolver, Supabase gate-verdict/feature-registry stores, gate-run ops, migrations ...004/...005, dashboard-data-activation spec, PROJECT-STATE rewrite + hooks) merged into dev with two conflicts resolved (eslint ignores; supabase client — kept both insertReturning and paged select); in-progress Gemini/FCS providers + scheduled-run accessToken/displayOnly safety-committed first. Merge verified locally (typecheck + lint clean, 682 tests pass / 9 skipped). The merge commit is on dev locally but NOT yet pushed.
+- **Summary:** Deterministic TypeScript core (fx-daily-pattern-assistant) is 100% complete and property-tested. operational-wiring is done except Task 13 (final checkpoint); Task 12's subtasks are all complete though its parent checkbox is still unticked. dashboard-ui is complete except Task 17 (post-deploy read-only smoke) and Task 18 (final checkpoint). dashboard-data-activation is 100% complete. CI/CD this turn: the dashboard SPA (`web/`) now has CI coverage (new `web` job in `ci.yml`: build + Vitest) and is DEPLOYED AUTOMATICALLY to Firebase Hosting on merge to `main` via `deploy.yml` — a `dorny/paths-filter` `changes` job routes backend-only vs frontend-only commits, the backend `quality-gate`/`build-and-deploy` jobs are now gated on the `backend` filter, and new `web-quality-gate`→`deploy-frontend` jobs build/test then `firebase deploy --only hosting` KEYLESSLY, reusing the same WIF identity (OAuth access token minted via `token_format: access_token`; both `GOOGLE_APPLICATION_CREDENTIALS` and `FIREBASE_TOKEN` set belt-and-suspenders; no long-lived secret). One-time prerequisite before the first auto-deploy works: grant `roles/firebasehosting.admin` to the deploy service account (live-cloud action, NOT executed). PRIOR this turn-set: the two display-only producers that were previously stubbed off are now wired into the scheduled daily run — (1) a real Gemini `LlmProvider` (`src/llm/geminiProvider.ts`, Vertex AI generateContent over `fetch`, ADC/metadata token, no SDK so the import-boundary guard stays green) behind the single `LlmInterface`, and (2) a real FCS `ExternalSignalProvider` (`src/external-signal/fcsProvider.ts`, `/forex/latest` over `fetch`, all five pairs in ONE batched request to respect the free-plan 3-req/min limit, BUY/SELL/HOLD from daily change %). `src/scheduled-run/main.ts` replaced its `loadDisplayOnly = () => undefined` stub with a real `buildDisplayOnly` (`src/scheduled-run/displayOnly.ts`) that generates rationale/labels per firing card and the five-pair comparison, persisted via the existing `makeDisplayDataPersister`; added `src/scheduled-run/accessToken.ts` for the GCP token. Weekday gating added: scheduler cron now `0 17 * * 1-5` and an `isTradingDay` early-exit in `main.ts`. Config fixes: local `.env` `GEMINI_MODEL` corrected `gemini-3.5-flash`→`gemini-2.5-flash` (the former 404s in europe-west1); `eslint.config.js` now ignores `web/dist/**` (a pre-existing gap that failed lint on a clean tree); `.github/workflows/deploy.yml` `--set-env-vars` now also sets `GOOGLE_GENAI_USE_VERTEXAI=true` and `EXTERNAL_SIGNAL_PROVIDER=FCS` (without the latter the Job would skip FCS even with the key). Verified locally: lint + typecheck clean, 637 tests pass / 9 skipped; both adapters exercised live (Gemini returned a tagged rationale + labels; FCS returned direction/score/comparison for all five pairs). Stack: TypeScript (Node 22, ESM, zero runtime deps) + Vitest/fast-check; isolated Python cross-check (pytest/hypothesis); Supabase Postgres + pgvector; GCP Cloud Run Job + Cloud Scheduler + Secret Manager + Artifact Registry via keyless WIF; Firebase-hosted React/Vite SPA fronted by a read-only Cloud Run read-proxy. Open items: operational-wiring Task 13, dashboard-ui Tasks 17/18, RESEARCH-LOG.md still has zero logged kill-gate verdicts, and the backend changes this turn are NOT yet deployed — they require a push to `main` (plus setting the GitHub `GEMINI_MODEL` repo variable to `gemini-2.5-flash` and granting the Job runtime SA `roles/aiplatform.user`) and one Job execution before the dashboard shows the new data.
 <!-- END STATE -->
 
 ## 1. What this project is
@@ -108,6 +108,10 @@ authoritative export surface):
   Gate 2 (risk-adjusted MFE/MAE after friction); walk-forward verdict
   composition; `GateVerdictStore` port.
 - `llm/` — Role-gated, provenance-tagged LLM interface + `ScoringInputGuard`.
+  The v1 production backend `geminiProvider.ts` (Vertex AI `generateContent`
+  over built-in `fetch`, ADC/metadata bearer token, no SDK) implements the
+  `LlmProvider` port — `src/llm` is the sole SDK-aware layer and still imports
+  no SDK package, so the import-boundary smoke test stays green.
 - `news-filter/` — Calendar ingestion, LLM risk flag, deterministic
   suppression with fail-safe.
 - `rationale/` — Display-only signal rationale + pattern description.
@@ -117,11 +121,18 @@ authoritative export surface):
   journal.
 - `risk-boundaries/` — Empirical analogue-derived risk boundaries.
 - `external-signal/` — External cross-reference, display/research-only, never
-  feeds scoring.
+  feeds scoring. `fcsProvider.ts` is the real FCS adapter (`/forex/latest` over
+  `fetch`); it batches all five pairs into one request (memoized per
+  Decision_Date) to respect the FCS free-plan 3-req/min limit, deriving
+  BUY/SELL/HOLD from the daily change %.
 - `pipeline/` — End-to-end deterministic daily-run wiring; `makePipelineLoader`,
   `gatePassingResolver.ts`.
 - `scheduled-run/` — GCP-scheduled unattended daily entry (`main.ts`), reuses
-  the same daily-run path.
+  the same daily-run path. `main.ts` now builds the optional Gemini + FCS
+  collaborators from env, skips non-trading days (`isTradingDay`), and persists
+  the display-only values beside the firing view. `displayOnly.ts` composes the
+  rationale + comparison writes (fail-safe per pair); `accessToken.ts` resolves
+  the GCP token (Cloud Run metadata server in prod, `gcloud` ADC locally).
 - `csv-loader/`, `staged-runner/` — CSV backfill import + backfill/backtest/
   forward-look staged runner.
 - `storage/` — Supabase config + REST client + adapters (candle, vector,
@@ -155,14 +166,25 @@ two documents are out of sync and should be reconciled.
 
 - `make check` ≡ `npm run check` ≡ `eslint . && tsc --noEmit && vitest run`.
   `make check-all` adds the Python cross-check (`pytest python/tests`).
-- **CI** (`.github/workflows/ci.yml`): on every push/PR — Node from `.nvmrc`,
-  `npm ci`, then Lint / Type-check / Tests / Version-policy as distinct stages,
-  no `continue-on-error`. (The Python cross-check is not wired into CI.)
-- **Deploy** (`.github/workflows/deploy.yml`): on push to `main` — full quality
-  gate, then (gated on green) keyless WIF auth → Cloud Build SHA-tagged image →
-  Artifact Registry → `gcloud run jobs deploy` to the Cloud Run Job as a
-  least-privilege runtime SA. Non-secret config via `--set-env-vars`; every
-  secret via `--set-secrets` (`<name>:latest`) — no secret value in the file.
+- **CI** (`.github/workflows/ci.yml`): on every push/PR — two jobs. The
+  `quality` job runs the backend gate (Node from `.nvmrc`, `npm ci`, then
+  Lint / Type-check / Tests / Version-policy as distinct stages, no
+  `continue-on-error`). The `web` job verifies the SPA (`web/` working dir, own
+  lockfile cache: `npm ci`, `npm run build` = `tsc --noEmit && vite build`,
+  `npm run test`). (The Python cross-check is not wired into CI.)
+- **Deploy** (`.github/workflows/deploy.yml`): on push to `main`, a two-target
+  path-filtered pipeline. A `changes` job (`dorny/paths-filter@v3`) emits
+  `backend`/`frontend` flags. BACKEND (gated on `backend`): full quality gate →
+  keyless WIF auth → Cloud Build SHA-tagged image → Artifact Registry →
+  `gcloud run jobs deploy` to the Cloud Run Job as a least-privilege runtime SA.
+  Non-secret config via `--set-env-vars`; every secret via `--set-secrets`
+  (`<name>:latest`) — no secret value in the file. FRONTEND (gated on
+  `frontend`): `web-quality-gate` (build + tests) → `deploy-frontend`
+  (`firebase deploy --only hosting` from `web/`), reusing the same keyless WIF
+  identity (OAuth access token via `token_format: access_token`); no stored
+  `FIREBASE_TOKEN` or SA key. A skipped path-filter gate cascades to skip its
+  dependent deploy. The deploy SA requires `roles/firebasehosting.admin` for the
+  frontend job (one-time grant, pending).
 
 ## 6. Strategic decisions
 
@@ -192,9 +214,31 @@ two documents are out of sync and should be reconciled.
 - **Serving separation.** The SPA is strictly read-only; only the read-proxy
   touches Supabase, through a fixed allowlist with a SELECT/GET-only client. A
   `servingLayerGuard` test enforces the compute/storage/serving boundary.
+- **Automated, keyless, path-filtered deploys for both targets.** The frontend
+  SPA deploys to Firebase Hosting on merge to `main` (previously manual), via the
+  same `deploy.yml` as the backend Cloud Run Job. A `dorny/paths-filter` job
+  routes backend-only vs frontend-only commits so each target redeploys only
+  when its own files change (a workflow-file change triggers both). Both deploys
+  are keyless — the frontend reuses the backend's Workload Identity Federation
+  identity and passes a short-lived OAuth access token to firebase-tools rather
+  than storing a long-lived `FIREBASE_TOKEN` or SA key, keeping the frontend's
+  security posture consistent with the backend's. The SPA also gained CI
+  coverage (the `web` job), closing the prior gap where a broken frontend could
+  merge undetected.
 - **CSV is backfill, not a feed.** `ops.config.json` records
   `Data_Source_Role = { csv: { role: "backfill" } }` — run once to seed history,
   not a recurring source.
+- **Display-only producers wired via `fetch`, not SDKs.** Both the Gemini
+  rationale (Req 15) and the third-party reference (Req 23) are reached over the
+  built-in `fetch` against REST endpoints rather than vendor SDKs. This keeps the
+  core's zero-runtime-dependency property and lets the Gemini adapter live in the
+  single sanctioned `src/llm` layer without tripping the import-boundary guard
+  (which forbids SDK packages anywhere in `src/`). Both producers are optional
+  and fail-safe: an unconfigured or failing provider degrades to "no rationale" /
+  "reference unavailable" for the affected pair and never blocks the deterministic
+  firing view from being persisted. Weekday gating is defence-in-depth: the
+  scheduler cron is restricted to Mon–Fri (`0 17 * * 1-5`) and `main.ts`
+  additionally early-exits on a weekend Decision_Date.
 - **Living docs stay live via two agent hooks + the in-code writer.** The
   machine-managed STATE block is owned by `LivingDocs.updateState()`; the prose
   is kept current by two Kiro hooks in `.kiro/hooks/`:
@@ -220,6 +264,25 @@ two documents are out of sync and should be reconciled.
   `firing_setups`; if accurate a verdict exists in the database, but it is not
   reflected in `RESEARCH-LOG.md`. **Resolve this discrepancy** — the running
   summary should not claim validation the research log does not show.
+- **Display-only features work locally but are undeployed and have prod-config
+  prerequisites.** The Gemini + FCS wiring was verified only against live APIs
+  from the dev machine. For the deployed Cloud Run Job to produce the data: the
+  GitHub `GEMINI_MODEL` repo variable must be `gemini-2.5-flash` (the previously
+  configured `gemini-3.5-flash` 404s), the Job's runtime service account needs
+  `roles/aiplatform.user` for Vertex AI, and `.github/workflows/deploy.yml` must
+  carry `EXTERNAL_SIGNAL_PROVIDER=FCS` (added this turn) so `externalSignalConfig
+  FromEnv` resolves. Until a Job run completes post-deploy, the AI and
+  Third-party tabs stay in their empty/unavailable states. Note the AI tab is
+  per-firing-card, so on a silent (no-firing) day showing "no rationale" is
+  correct, not a bug.
+- **Frontend auto-deploy has an unmet one-time IAM prerequisite.** The new
+  `deploy-frontend` job will 403 until the WIF-impersonated deploy service
+  account (`DEPLOY_SERVICE_ACCOUNT`) is granted `roles/firebasehosting.admin` on
+  the project. This is a live-cloud IAM grant that has NOT been executed; the
+  backend deploy jobs are unaffected either way. Secondary note: the pipeline
+  uses the third-party `dorny/paths-filter@v3` action — if the org restricts
+  Actions to verified/first-party publishers, replace it with native per-file
+  `paths:` filters (which would require splitting into two workflow files).
 - **Live-cloud checkboxes can't be re-verified from the repo alone.** Hosted
   migrations applied, secrets provisioned, images deployed, scheduler created,
   and scoped-write verified live are all asserted via LIVE CLOUD task checkboxes.
@@ -242,14 +305,22 @@ two documents are out of sync and should be reconciled.
 
 ## 8. Immediate next steps
 
-1. Record the first real kill-gate walk-forward verdict in `RESEARCH-LOG.md`
+1. Deploy the display-only features: set the GitHub `GEMINI_MODEL` repo variable
+   to `gemini-2.5-flash`, grant the Job runtime SA `roles/aiplatform.user`, and
+   grant the deploy SA `roles/firebasehosting.admin` (enables the new frontend
+   auto-deploy). Push to `main` to redeploy the Cloud Run Job (now wired for
+   Gemini + FCS and weekday-gated) and auto-deploy the SPA, then run one Job
+   execution (`gcloud run jobs execute scheduled-daily-run`) so `signal_rationale`
+   / `external_reference_comparison` get populated. Verify via `/api/ai-rationale`
+   and `/api/external-comparison`.
+2. Record the first real kill-gate walk-forward verdict in `RESEARCH-LOG.md`
    (or reconcile the DB-vs-log discrepancy above) so the core premise is
    measured in the living log.
-2. Close `operational-wiring` Task 13 (final checkpoint) and tick Task 12's
+3. Close `operational-wiring` Task 13 (final checkpoint) and tick Task 12's
    parent checkbox.
-3. Run `dashboard-ui` Task 17 (post-deploy read-only smoke against real firing
+4. Run `dashboard-ui` Task 17 (post-deploy read-only smoke against real firing
    data) and close Task 18; reconcile with `dashboard-data-activation` Task 16.
-4. Push the reconciling merge on `dev` to the remote (directly or via PR), and
+5. Push the reconciling merge on `dev` to the remote (directly or via PR), and
    rename the remote `main` → `origin` to remove the branch/remote name clash.
 
 ## Notes on maintenance
