@@ -16,6 +16,16 @@ export {
   type Clock,
 } from "./llmInterface.js";
 
+// The v1 production backend: Google Gemini via the Gemini API in Vertex AI over
+// REST (no SDK). src/llm is the single sanctioned SDK-aware layer; this adapter
+// reaches the model with the global `fetch` behind GCP IAM/ADC.
+export {
+  GeminiLlmProvider,
+  GeminiProviderError,
+  type GeminiProviderConfig,
+  type AccessTokenProvider,
+} from "./geminiProvider.js";
+
 // ScoringInputGuard — the runtime + compile-time AI/deterministic boundary
 // (Requirements 2.1, 2.2, 2.6). Keeps any LLM-tagged value off scoring/verdict
 // paths and records the blocked attempt.
