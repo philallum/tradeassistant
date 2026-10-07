@@ -21,12 +21,18 @@
 // It contains NO firing logic of its own; all business logic lives in the
 // shared modules so an unattended run reproduces an equivalent local run.
 
+import { fileURLToPath } from "node:url";
+
 import { loadScheduledRunConfig } from "./config.js";
 import type { PairEvaluationLoader, DashboardViewPersister } from "./scheduledRun.js";
 import { runScheduledDaily } from "./scheduledRun.js";
 import { makePipelineLoader } from "../pipeline/index.js";
+import { makeGatePassingResolver } from "../pipeline/gatePassingResolver.js";
 import {
   buildSupabaseStores,
+  buildSupabaseGateStores,
+  SupabaseGateVerdictStore,
+  SupabaseRestClient,
   makeSupabaseViewPersister,
   makeDisplayDataPersister,
   type DisplayOnlyWrite,
@@ -52,9 +58,30 @@ import { buildDisplayOnly, type DisplayOnlyDeps } from "./displayOnly.js";
  * the view was built from are available to the display-only producer (the
  * third-party cross-reference needs each pair's own Direction_Class).
  */
-const loadEvaluations: PairEvaluationLoader = (decisionDate, supabase) => {
-  const stores = buildSupabaseStores(supabase);
-  return makePipelineLoader(stores)(decisionDate, supabase);
+export const loadEvaluations: PairEvaluationLoader = (decisionDate, supabase) => {
+  // Build the gate-verdict + feature-registry adapters (design Component 3)
+  // that back the read-only resolver, sharing ONE SupabaseRestClient so the
+  // gate stores and the resolver's read helper reuse the same connection
+  // (URL + secret key + fetch). `buildSupabaseGateStores` accepts an existing
+  // client for exactly this reuse; the concrete `SupabaseGateVerdictStore` is
+  // constructed on the SAME client so its `latestPassVerdict(configId)` read
+  // helper (added in task 1.3) can be bound into the resolver deps — that
+  // helper lives on the adapter, not on the `GateVerdictStore` PORT type.
+  const gateClient = new SupabaseRestClient(supabase);
+  const { gateVerdictStore, featureRegistryStore } =
+    buildSupabaseGateStores(gateClient);
+  const gateVerdictAdapter = new SupabaseGateVerdictStore(gateClient);
+  const gatePassing = makeGatePassingResolver({
+    gateVerdictStore,
+    featureRegistryStore,
+    activeConfigFor: (pair) => `${pair}-active`,
+    latestPassVerdict: (configId) =>
+      gateVerdictAdapter.latestPassVerdict(configId),
+  });
+  return makePipelineLoader({
+    ...buildSupabaseStores(supabase),
+    gatePassing,
+  })(decisionDate, supabase);
 };
 
 /**
@@ -202,10 +229,24 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((err: unknown) => {
-  const message = err instanceof Error ? err.message : String(err);
-  console.error(
-    JSON.stringify({ event: "scheduled_run.error", message }),
-  );
-  process.exitCode = 1;
-});
+/**
+ * True iff this module is the process entry point (invoked as
+ * `node .../scheduled-run/main.js`), so importing it (e.g. from a test) does NOT
+ * start a run. Mirrors the direct-invocation guard pattern of the seed runner's
+ * container entry (`src/ops/seed-run/main.ts`).
+ */
+function invokedDirectly(): boolean {
+  const entry = process.argv[1];
+  if (entry === undefined) return false;
+  return import.meta.url === `file://${entry}` || fileURLToPath(import.meta.url) === entry;
+}
+
+if (invokedDirectly()) {
+  main().catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(
+      JSON.stringify({ event: "scheduled_run.error", message }),
+    );
+    process.exitCode = 1;
+  });
+}

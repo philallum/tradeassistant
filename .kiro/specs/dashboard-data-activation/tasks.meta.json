@@ -1,0 +1,373 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Add the additive `return=representation` read-back capability to `SupabaseRestClient`": [
+      {
+        "executionId": "b12ff94d-6561-489d-8936-2f9050960da7",
+        "chatSessionId": "sess_b43cf5b4-ab51-441c-b8ad-3d236fe6b03a",
+        "timestamp": 1791201489167
+      },
+      {
+        "executionId": "b12ff94d-6561-489d-8936-2f9050960da7",
+        "chatSessionId": "sess_b43cf5b4-ab51-441c-b8ad-3d236fe6b03a",
+        "timestamp": 1791201611905
+      }
+    ],
+    "1.2 Implement `SupabaseGateVerdictStore.persistVerdict` and `getVerdict`": [
+      {
+        "executionId": "b12ff94d-6561-489d-8936-2f9050960da7",
+        "chatSessionId": "sess_b43cf5b4-ab51-441c-b8ad-3d236fe6b03a",
+        "timestamp": 1791201616655
+      },
+      {
+        "executionId": "b12ff94d-6561-489d-8936-2f9050960da7",
+        "chatSessionId": "sess_b43cf5b4-ab51-441c-b8ad-3d236fe6b03a",
+        "timestamp": 1791201884777
+      }
+    ],
+    "1.3 Add the `latestPassVerdict(configId)` read helper used by the resolver": [
+      {
+        "executionId": "b12ff94d-6561-489d-8936-2f9050960da7",
+        "chatSessionId": "sess_b43cf5b4-ab51-441c-b8ad-3d236fe6b03a",
+        "timestamp": 1791201889034
+      },
+      {
+        "executionId": "b12ff94d-6561-489d-8936-2f9050960da7",
+        "chatSessionId": "sess_b43cf5b4-ab51-441c-b8ad-3d236fe6b03a",
+        "timestamp": 1791202012564
+      }
+    ],
+    "1.6* Write integration test against the stub-fetch adapter idiom": [
+      {
+        "executionId": "b12ff94d-6561-489d-8936-2f9050960da7",
+        "chatSessionId": "sess_b43cf5b4-ab51-441c-b8ad-3d236fe6b03a",
+        "timestamp": 1791202013074
+      }
+    ],
+    "1.4* Write property test — GateVerdictStore persist/read round-trip": [
+      {
+        "executionId": "b12ff94d-6561-489d-8936-2f9050960da7",
+        "chatSessionId": "sess_b43cf5b4-ab51-441c-b8ad-3d236fe6b03a",
+        "timestamp": 1791202017492
+      },
+      {
+        "executionId": "b12ff94d-6561-489d-8936-2f9050960da7",
+        "chatSessionId": "sess_b43cf5b4-ab51-441c-b8ad-3d236fe6b03a",
+        "timestamp": 1791202214143
+      }
+    ],
+    "1.5* Write property test — paginated reads return the complete set": [
+      {
+        "executionId": "b12ff94d-6561-489d-8936-2f9050960da7",
+        "chatSessionId": "sess_b43cf5b4-ab51-441c-b8ad-3d236fe6b03a",
+        "timestamp": 1791202018328
+      },
+      {
+        "executionId": "b12ff94d-6561-489d-8936-2f9050960da7",
+        "chatSessionId": "sess_b43cf5b4-ab51-441c-b8ad-3d236fe6b03a",
+        "timestamp": 1791202215243
+      }
+    ],
+    "1. SupabaseGateVerdictStore adapter — implement the GateVerdictStore PORT (Req 1, design Component 1)": [
+      {
+        "executionId": "b12ff94d-6561-489d-8936-2f9050960da7",
+        "chatSessionId": "sess_b43cf5b4-ab51-441c-b8ad-3d236fe6b03a",
+        "timestamp": 1791202222908
+      }
+    ],
+    "2.1 Implement `SupabaseFeatureRegistryStore` (`upsert` / `get` / `all`)": [
+      {
+        "executionId": "7d472045-422c-47ae-bac9-876c57ed1ae0",
+        "chatSessionId": "sess_fa7a8a9c-378e-4405-a1ac-b6ace12c6047",
+        "timestamp": 1791202796874
+      },
+      {
+        "executionId": "7d472045-422c-47ae-bac9-876c57ed1ae0",
+        "chatSessionId": "sess_fa7a8a9c-378e-4405-a1ac-b6ace12c6047",
+        "timestamp": 1791202903128
+      }
+    ],
+    "2.2* Write property test — FeatureRegistryStore upsert is idempotent": [
+      {
+        "executionId": "7d472045-422c-47ae-bac9-876c57ed1ae0",
+        "chatSessionId": "sess_fa7a8a9c-378e-4405-a1ac-b6ace12c6047",
+        "timestamp": 1791202903546
+      }
+    ],
+    "3.1 Implement `buildSupabaseGateStores(supabase, fetchImpl?)` in `src/storage/supabase/index.ts`": [
+      {
+        "executionId": "1e25a660-b05b-43c7-a82e-2d2a042016be",
+        "chatSessionId": "sess_fa83acff-7cd2-44d5-9b9e-fb854513d5e0",
+        "timestamp": 1791203136382
+      },
+      {
+        "executionId": "1e25a660-b05b-43c7-a82e-2d2a042016be",
+        "chatSessionId": "sess_fa83acff-7cd2-44d5-9b9e-fb854513d5e0",
+        "timestamp": 1791203321533
+      }
+    ],
+    "3.2* Write unit test — shared client + no PipelineStores widening": [
+      {
+        "executionId": "1e25a660-b05b-43c7-a82e-2d2a042016be",
+        "chatSessionId": "sess_fa83acff-7cd2-44d5-9b9e-fb854513d5e0",
+        "timestamp": 1791203322502
+      }
+    ],
+    "4.1 Add gate-store deps to `StagedRunnerDeps` and persist beside the log": [
+      {
+        "executionId": "fe5b544f-6f7c-46ba-ace1-3cecce512ba4",
+        "chatSessionId": "sess_ea1ab261-9b6b-4403-b6ef-c102f24f7e4a",
+        "timestamp": 1791203538295
+      },
+      {
+        "executionId": "fe5b544f-6f7c-46ba-ace1-3cecce512ba4",
+        "chatSessionId": "sess_ea1ab261-9b6b-4403-b6ef-c102f24f7e4a",
+        "timestamp": 1791203744515
+      }
+    ],
+    "4.2 Upsert `feature_registry` included rows on PASS and surface persist failure": [
+      {
+        "executionId": "fe5b544f-6f7c-46ba-ace1-3cecce512ba4",
+        "chatSessionId": "sess_ea1ab261-9b6b-4403-b6ef-c102f24f7e4a",
+        "timestamp": 1791203748214
+      },
+      {
+        "executionId": "fe5b544f-6f7c-46ba-ace1-3cecce512ba4",
+        "chatSessionId": "sess_ea1ab261-9b6b-4403-b6ef-c102f24f7e4a",
+        "timestamp": 1791203883934
+      }
+    ],
+    "4.3* Write unit tests — additive persistence, PASS→included upsert, failure surfacing": [
+      {
+        "executionId": "fe5b544f-6f7c-46ba-ace1-3cecce512ba4",
+        "chatSessionId": "sess_ea1ab261-9b6b-4403-b6ef-c102f24f7e4a",
+        "timestamp": 1791203884411
+      }
+    ],
+    "5.1 Implement `makeGatePassingResolver(deps)`": [
+      {
+        "executionId": "ea8081a2-f911-4c07-bf21-4a657df6db52",
+        "chatSessionId": "sess_2401eef9-2b3b-4e5f-8c87-d520a5914335",
+        "timestamp": 1791204299787
+      },
+      {
+        "executionId": "ea8081a2-f911-4c07-bf21-4a657df6db52",
+        "chatSessionId": "sess_2401eef9-2b3b-4e5f-8c87-d520a5914335",
+        "timestamp": 1791204403355
+      }
+    ],
+    "5.4* Write property test — resolver is deterministic over a fixed history": [
+      {
+        "executionId": "ea8081a2-f911-4c07-bf21-4a657df6db52",
+        "chatSessionId": "sess_2401eef9-2b3b-4e5f-8c87-d520a5914335",
+        "timestamp": 1791204403825
+      },
+      {
+        "executionId": "ea8081a2-f911-4c07-bf21-4a657df6db52",
+        "chatSessionId": "sess_2401eef9-2b3b-4e5f-8c87-d520a5914335",
+        "timestamp": 1791204411784
+      },
+      {
+        "executionId": "ea8081a2-f911-4c07-bf21-4a657df6db52",
+        "chatSessionId": "sess_2401eef9-2b3b-4e5f-8c87-d520a5914335",
+        "timestamp": 1791204650676
+      }
+    ],
+    "5.2* Write property test — resolver reflects recorded PASS / no-PASS exactly": [
+      {
+        "executionId": "ea8081a2-f911-4c07-bf21-4a657df6db52",
+        "chatSessionId": "sess_2401eef9-2b3b-4e5f-8c87-d520a5914335",
+        "timestamp": 1791204415329
+      },
+      {
+        "executionId": "ea8081a2-f911-4c07-bf21-4a657df6db52",
+        "chatSessionId": "sess_2401eef9-2b3b-4e5f-8c87-d520a5914335",
+        "timestamp": 1791204651934
+      }
+    ],
+    "5.3* Write property test — resolver never coerces `true` on read failure": [
+      {
+        "executionId": "ea8081a2-f911-4c07-bf21-4a657df6db52",
+        "chatSessionId": "sess_2401eef9-2b3b-4e5f-8c87-d520a5914335",
+        "timestamp": 1791204416262
+      },
+      {
+        "executionId": "ea8081a2-f911-4c07-bf21-4a657df6db52",
+        "chatSessionId": "sess_2401eef9-2b3b-4e5f-8c87-d520a5914335",
+        "timestamp": 1791204652663
+      }
+    ],
+    "6.1 Inject the resolver as `deps.gatePassing` in `src/scheduled-run/main.ts`": [
+      {
+        "executionId": "6afe7230-e265-410b-9fb1-ab99d5c142b8",
+        "chatSessionId": "sess_0b190eec-1cbe-49c9-955a-190e261cb1c5",
+        "timestamp": 1791205011719
+      },
+      {
+        "executionId": "6afe7230-e265-410b-9fb1-ab99d5c142b8",
+        "chatSessionId": "sess_0b190eec-1cbe-49c9-955a-190e261cb1c5",
+        "timestamp": 1791205141749
+      }
+    ],
+    "6.2* Write unit test — loader receives a non-undefined gatePassing, fires() unchanged": [
+      {
+        "executionId": "6afe7230-e265-410b-9fb1-ab99d5c142b8",
+        "chatSessionId": "sess_0b190eec-1cbe-49c9-955a-190e261cb1c5",
+        "timestamp": 1791205142138
+      }
+    ],
+    "6. Resolver injection into production wiring (Req 3, design Component 5)": [
+      {
+        "executionId": "6afe7230-e265-410b-9fb1-ab99d5c142b8",
+        "chatSessionId": "sess_0b190eec-1cbe-49c9-955a-190e261cb1c5",
+        "timestamp": 1791205423021
+      }
+    ],
+    "7.1 Write the idempotent gate-tables grant/RLS migration": [
+      {
+        "executionId": "81129dd6-30bd-44c2-a378-567a8151702a",
+        "chatSessionId": "sess_f5e6b45e-a9b2-436b-8313-a4f5dfb76088",
+        "timestamp": 1791206018292
+      },
+      {
+        "executionId": "81129dd6-30bd-44c2-a378-567a8151702a",
+        "chatSessionId": "sess_f5e6b45e-a9b2-436b-8313-a4f5dfb76088",
+        "timestamp": 1791206060093
+      }
+    ],
+    "7.2* Write structural/unit test — the grants are present": [
+      {
+        "executionId": "81129dd6-30bd-44c2-a378-567a8151702a",
+        "chatSessionId": "sess_f5e6b45e-a9b2-436b-8313-a4f5dfb76088",
+        "timestamp": 1791206060598
+      }
+    ],
+    "8. Gate_Run Cloud Run Job entry — build-only wiring (Req 4, design Component 6)": [
+      {
+        "executionId": "aa176659-0cbf-4e41-9914-e6ea48905553",
+        "chatSessionId": "sess_a45d1562-9a7d-49e9-8983-1b47c27cde1a",
+        "timestamp": 1791206214552
+      },
+      {
+        "executionId": "aa176659-0cbf-4e41-9914-e6ea48905553",
+        "chatSessionId": "sess_a45d1562-9a7d-49e9-8983-1b47c27cde1a",
+        "timestamp": 1791206894658
+      }
+    ],
+    "9. LIVE CLOUD: apply the gate-tables migration to hosted (Req 4, Req 9)": [
+      {
+        "executionId": "d8dd7ae6-838a-49c4-b3af-89dc7247038e",
+        "chatSessionId": "sess_2912f960-0142-4766-b6d8-d06990b11b4f",
+        "timestamp": 1791207536742
+      },
+      {
+        "executionId": "9edbee13-9cb2-4fd6-a446-97a15cf64889",
+        "chatSessionId": "sess_2912f960-0142-4766-b6d8-d06990b11b4f",
+        "timestamp": 1791220447834
+      }
+    ],
+    "10. LIVE CLOUD: build, deploy, and execute the Gate_Run against hosted (Req 4, Req 9)": [
+      {
+        "executionId": "10c7c594-d21d-4fb9-899f-f539fd730242",
+        "chatSessionId": "sess_a79b28f7-e08e-470f-958f-45d002750e59",
+        "timestamp": 1791229773638
+      },
+      {
+        "executionId": "10c7c594-d21d-4fb9-899f-f539fd730242",
+        "chatSessionId": "sess_a79b28f7-e08e-470f-958f-45d002750e59",
+        "timestamp": 1791282651325
+      }
+    ],
+    "11. LIVE CLOUD: re-run scheduled-daily-run with the resolver deployed and verify firing (Req 4, Req 9)": [
+      {
+        "executionId": "b9cf11fe-e43e-42cb-b6ab-45516213db50",
+        "chatSessionId": "sess_53cb5431-d273-4a6c-b172-6c2e42b2d79a",
+        "timestamp": 1791287135197
+      },
+      {
+        "executionId": "b9cf11fe-e43e-42cb-b6ab-45516213db50",
+        "chatSessionId": "sess_53cb5431-d273-4a6c-b172-6c2e42b2d79a",
+        "timestamp": 1791296957634
+      }
+    ],
+    "12. LIVE CLOUD: Seed_Job timeout hardening (Req 5, Req 9)": [
+      {
+        "executionId": "ccecf431-c53b-4074-a4b9-eb32d32be100",
+        "chatSessionId": "sess_e615ec92-fc42-478e-b05b-1b6c65de9536",
+        "timestamp": 1791297091523
+      },
+      {
+        "executionId": "ccecf431-c53b-4074-a4b9-eb32d32be100",
+        "chatSessionId": "sess_e615ec92-fc42-478e-b05b-1b6c65de9536",
+        "timestamp": 1791302635785
+      }
+    ],
+    "13.1 Provision the read-only diagnostic path and its policy artifact": [
+      {
+        "executionId": "c42180bb-010e-4c71-97db-65594222e5ec",
+        "chatSessionId": "sess_8d0b0803-f18a-42da-9a7b-77d98a22e8f3",
+        "timestamp": 1791305409439
+      },
+      {
+        "executionId": "c42180bb-010e-4c71-97db-65594222e5ec",
+        "chatSessionId": "sess_8d0b0803-f18a-42da-9a7b-77d98a22e8f3",
+        "timestamp": 1791305958941
+      }
+    ],
+    "13.3 LIVE CLOUD: apply the diagnostic grant under the protocol": [
+      {
+        "executionId": "c42180bb-010e-4c71-97db-65594222e5ec",
+        "chatSessionId": "sess_8d0b0803-f18a-42da-9a7b-77d98a22e8f3",
+        "timestamp": 1791306173634
+      },
+      {
+        "executionId": "c42180bb-010e-4c71-97db-65594222e5ec",
+        "chatSessionId": "sess_8d0b0803-f18a-42da-9a7b-77d98a22e8f3",
+        "timestamp": 1791306497895
+      }
+    ],
+    "13.2* Write test/doc artifact asserting read-only scope": [
+      {
+        "executionId": "c42180bb-010e-4c71-97db-65594222e5ec",
+        "chatSessionId": "sess_8d0b0803-f18a-42da-9a7b-77d98a22e8f3",
+        "timestamp": 1791306498242
+      }
+    ],
+    "14. LIVE CLOUD: allUsers run.invoker review (Req 7, Req 9)": [
+      {
+        "executionId": "65e4507d-d140-4d4f-b15d-677d9ac7dd7b",
+        "chatSessionId": "sess_06454c6f-5337-4133-a1ea-bc86fa0206b1",
+        "timestamp": 1791306791112
+      },
+      {
+        "executionId": "65e4507d-d140-4d4f-b15d-677d9ac7dd7b",
+        "chatSessionId": "sess_06454c6f-5337-4133-a1ea-bc86fa0206b1",
+        "timestamp": 1791307045176
+      }
+    ],
+    "15. Deployment_Record provenance — commit the dashboard deployment record (Req 8)": [
+      {
+        "executionId": "fa764959-4b03-4d3a-bbfd-466127e30cb7",
+        "chatSessionId": "sess_e48a11f8-8a6d-4ffe-9deb-a4673ee30654",
+        "timestamp": 1791307104002
+      },
+      {
+        "executionId": "fa764959-4b03-4d3a-bbfd-466127e30cb7",
+        "chatSessionId": "sess_e48a11f8-8a6d-4ffe-9deb-a4673ee30654",
+        "timestamp": 1791307188310
+      }
+    ],
+    "16. Final checkpoint — LIVE CLOUD: dashboard-ui Task 17 read-only smoke against real data (Req 10)": [
+      {
+        "executionId": "f70592c3-c0e5-4125-976c-c565b2343bf6",
+        "chatSessionId": "sess_8f4f0d38-79d0-4fe6-b998-9535b134ee50",
+        "timestamp": 1791307248511
+      },
+      {
+        "executionId": "f70592c3-c0e5-4125-976c-c565b2343bf6",
+        "chatSessionId": "sess_8f4f0d38-79d0-4fe6-b998-9535b134ee50",
+        "timestamp": 1791307554763
+      }
+    ]
+  }
+}

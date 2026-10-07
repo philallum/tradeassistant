@@ -1,0 +1,25 @@
+{
+  "description": "Single committed, version-controlled artifact recording the dashboard-seed-run Cloud Run Job task-timeout hardening (spec dashboard-data-activation Req 5.1, 5.2). The one-shot Seed_Job (dist/ops/seed-run/main.js) backfills hosted candles/vectors then resolves historical outcomes; its clean run was being terminated at the previous 3600s task-timeout as outcome writes finished. This artifact raises --task-timeout into the 5400-7200s range so a clean run completes before the limit, and makes that timeout reproducible from version control. Every live command below is operator-approved under the Live Cloud Execution Protocol (Req 9): target reconciled first, exact command shown before run, secrets sourced by name from Secret_Manager only (never echoed/logged/committed/argv). The re-run relies on the existing idempotent (Asset, Date) upserts so it adds no duplicate rows and performs no re-seed of unchanged data (Req 5.4).",
+  "artifactApproach": "committed-config",
+  "artifactApproachLabel": "committed configuration recording the operator-approved commands",
+  "jobName": "dashboard-seed-run",
+  "project": "trade-assistant-508806",
+  "region": "europe-west1",
+  "taskTimeoutSeconds": 7200,
+  "previousTaskTimeoutSeconds": 3600,
+  "taskTimeoutRangeSeconds": [5400, 7200],
+  "commands": [
+    {
+      "kind": "update-task-timeout",
+      "affectedResource": "Cloud Run Job \"dashboard-seed-run\" (raise --task-timeout 3600s -> 7200s)",
+      "mutates": true,
+      "command": "gcloud run jobs update dashboard-seed-run --task-timeout=7200s --project=trade-assistant-508806 --region=europe-west1"
+    },
+    {
+      "kind": "execute-job",
+      "affectedResource": "Cloud Run Job \"dashboard-seed-run\" (re-run the one-shot seed; idempotent (Asset, Date) upserts, no re-seed)",
+      "mutates": true,
+      "command": "gcloud run jobs execute dashboard-seed-run --wait --project=trade-assistant-508806 --region=europe-west1"
+    }
+  ]
+}

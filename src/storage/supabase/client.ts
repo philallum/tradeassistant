@@ -36,6 +36,14 @@ export class SupabaseRestError extends Error {
 const UPSERT_PREFER = "resolution=merge-duplicates,return=minimal";
 
 /**
+ * PostgREST `Prefer` header value used by {@link SupabaseRestClient.insertReturning}:
+ * a plain insert that returns the inserted rows in the response body. This lets a
+ * caller read back DB-generated columns — notably a `gen_random_uuid()` primary
+ * key — that `return=minimal` (used by {@link SupabaseRestClient.upsert}) withholds.
+ */
+const INSERT_RETURNING_PREFER = "return=representation";
+
+/**
  * Rows fetched per paged `select` request. PostgREST on the hosted gateway caps
  * an unbounded GET at ~1000 rows, so reads MUST page explicitly or they are
  * silently truncated (this is the bug that limited backfill coverage). A page
@@ -147,6 +155,38 @@ export class SupabaseRestClient {
       body: JSON.stringify(rows),
     });
     await this.#assertOk(res, table);
+  }
+
+  /**
+   * Insert rows into `table` and read the inserted rows back from the response.
+   *
+   * Additive sibling to {@link upsert}: where `upsert` sends
+   * `Prefer: resolution=merge-duplicates,return=minimal` (idempotent merge, no
+   * body), this issues a plain insert with `Prefer: return=representation` so the
+   * response carries the inserted rows — including DB-generated columns such as a
+   * `gen_random_uuid()` primary key. The gate-verdict adapter uses this to read
+   * back the generated `id` of the aggregate row before inserting its fold rows.
+   *
+   * Reuses the same headers/transport/`fetch` as every other method; introduces no
+   * new dependency and leaves `upsert`'s behaviour unchanged. On a non-success
+   * status it throws the same secret-free {@link SupabaseRestError}.
+   *
+   * @returns The inserted rows as returned by PostgREST (empty when `rows` is empty).
+   */
+  async insertReturning<T>(
+    table: string,
+    rows: readonly Record<string, unknown>[],
+  ): Promise<T[]> {
+    if (rows.length === 0) {
+      return [];
+    }
+    const res = await this.#fetch(this.#restUrl(table), {
+      method: "POST",
+      headers: this.#headers({ Prefer: INSERT_RETURNING_PREFER }),
+      body: JSON.stringify(rows),
+    });
+    await this.#assertOk(res, table);
+    return (await res.json()) as T[];
   }
 
   /**
