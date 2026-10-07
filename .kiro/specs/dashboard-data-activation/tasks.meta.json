@@ -283,6 +283,90 @@
         "executionId": "b9cf11fe-e43e-42cb-b6ab-45516213db50",
         "chatSessionId": "sess_53cb5431-d273-4a6c-b172-6c2e42b2d79a",
         "timestamp": 1791287135197
+      },
+      {
+        "executionId": "b9cf11fe-e43e-42cb-b6ab-45516213db50",
+        "chatSessionId": "sess_53cb5431-d273-4a6c-b172-6c2e42b2d79a",
+        "timestamp": 1791296957634
+      }
+    ],
+    "12. LIVE CLOUD: Seed_Job timeout hardening (Req 5, Req 9)": [
+      {
+        "executionId": "ccecf431-c53b-4074-a4b9-eb32d32be100",
+        "chatSessionId": "sess_e615ec92-fc42-478e-b05b-1b6c65de9536",
+        "timestamp": 1791297091523
+      },
+      {
+        "executionId": "ccecf431-c53b-4074-a4b9-eb32d32be100",
+        "chatSessionId": "sess_e615ec92-fc42-478e-b05b-1b6c65de9536",
+        "timestamp": 1791302635785
+      }
+    ],
+    "13.1 Provision the read-only diagnostic path and its policy artifact": [
+      {
+        "executionId": "c42180bb-010e-4c71-97db-65594222e5ec",
+        "chatSessionId": "sess_8d0b0803-f18a-42da-9a7b-77d98a22e8f3",
+        "timestamp": 1791305409439
+      },
+      {
+        "executionId": "c42180bb-010e-4c71-97db-65594222e5ec",
+        "chatSessionId": "sess_8d0b0803-f18a-42da-9a7b-77d98a22e8f3",
+        "timestamp": 1791305958941
+      }
+    ],
+    "13.3 LIVE CLOUD: apply the diagnostic grant under the protocol": [
+      {
+        "executionId": "c42180bb-010e-4c71-97db-65594222e5ec",
+        "chatSessionId": "sess_8d0b0803-f18a-42da-9a7b-77d98a22e8f3",
+        "timestamp": 1791306173634
+      },
+      {
+        "executionId": "c42180bb-010e-4c71-97db-65594222e5ec",
+        "chatSessionId": "sess_8d0b0803-f18a-42da-9a7b-77d98a22e8f3",
+        "timestamp": 1791306497895
+      }
+    ],
+    "13.2* Write test/doc artifact asserting read-only scope": [
+      {
+        "executionId": "c42180bb-010e-4c71-97db-65594222e5ec",
+        "chatSessionId": "sess_8d0b0803-f18a-42da-9a7b-77d98a22e8f3",
+        "timestamp": 1791306498242
+      }
+    ],
+    "14. LIVE CLOUD: allUsers run.invoker review (Req 7, Req 9)": [
+      {
+        "executionId": "65e4507d-d140-4d4f-b15d-677d9ac7dd7b",
+        "chatSessionId": "sess_06454c6f-5337-4133-a1ea-bc86fa0206b1",
+        "timestamp": 1791306791112
+      },
+      {
+        "executionId": "65e4507d-d140-4d4f-b15d-677d9ac7dd7b",
+        "chatSessionId": "sess_06454c6f-5337-4133-a1ea-bc86fa0206b1",
+        "timestamp": 1791307045176
+      }
+    ],
+    "15. Deployment_Record provenance — commit the dashboard deployment record (Req 8)": [
+      {
+        "executionId": "fa764959-4b03-4d3a-bbfd-466127e30cb7",
+        "chatSessionId": "sess_e48a11f8-8a6d-4ffe-9deb-a4673ee30654",
+        "timestamp": 1791307104002
+      },
+      {
+        "executionId": "fa764959-4b03-4d3a-bbfd-466127e30cb7",
+        "chatSessionId": "sess_e48a11f8-8a6d-4ffe-9deb-a4673ee30654",
+        "timestamp": 1791307188310
+      }
+    ],
+    "16. Final checkpoint — LIVE CLOUD: dashboard-ui Task 17 read-only smoke against real data (Req 10)": [
+      {
+        "executionId": "f70592c3-c0e5-4125-976c-c565b2343bf6",
+        "chatSessionId": "sess_8f4f0d38-79d0-4fe6-b998-9535b134ee50",
+        "timestamp": 1791307248511
+      },
+      {
+        "executionId": "f70592c3-c0e5-4125-976c-c565b2343bf6",
+        "chatSessionId": "sess_8f4f0d38-79d0-4fe6-b998-9535b134ee50",
+        "timestamp": 1791307554763
       }
     ]
   }

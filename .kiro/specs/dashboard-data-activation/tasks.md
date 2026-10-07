@@ -142,7 +142,7 @@ Test sub-tasks are marked optional with `*`. Core implementation and live-cloud 
   - Confirm at least one PASS Gate_Verdict is recorded in hosted `gate_verdicts` for an active pair config (Req 4.4); record only non-secret references (verdict counts, Decision_Dates, revisions) (Req 9.7)
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 9.1, 9.2, 9.3, 9.4, 9.7_
 
-- [-] 11. LIVE CLOUD: re-run scheduled-daily-run with the resolver deployed and verify firing (Req 4, Req 9)
+- [x] 11. LIVE CLOUD: re-run scheduled-daily-run with the resolver deployed and verify firing (Req 4, Req 9)
   - **This is a LIVE operator-approved operation — NOT a property test.** Follow the Live Cloud Execution Protocol; depends on tasks 6 and 10.
   - Reconcile target/project/account first; show the redeploy/execute command for approval
   - Redeploy/execute the `scheduled-daily-run` Job on the image containing the injected resolver for the current / most-recent matured Decision_Date (Req 4.5)
@@ -151,26 +151,26 @@ Test sub-tasks are marked optional with `*`. Core implementation and live-cloud 
   - Record only non-secret references
   - _Requirements: 4.5, 4.6, 4.7, 4.8_
 
-- [ ] 12. LIVE CLOUD: Seed_Job timeout hardening (Req 5, Req 9)
+- [x] 12. LIVE CLOUD: Seed_Job timeout hardening (Req 5, Req 9)
   - **This is a LIVE operator-approved operation — NOT a property test.** Follow the Live Cloud Execution Protocol.
   - Raise the `dashboard-seed-run` Cloud_Run_Job `--task-timeout` from 3600s to a value in 5400–7200s, expressed as a version-controlled recorded change in `ops/scheduler-job.config.json` / `ops.config.json` or the deploy workflow (Req 5.1, 5.2)
   - Reconcile target/project/account first; show the exact change command for approval before execution (Req 5.5)
   - Re-run the Seed_Job and confirm the execution reports a SUCCESS status (Req 5.3), relying on the existing idempotent `(Asset, Date)` upserts so no duplicate rows / no re-seed result (Req 5.4); record only non-secret references
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
 
-- [ ] 13. Diagnostic_Read_Path — least-privilege read-only count path (Req 6, Req 9)
-  - [ ] 13.1 Provision the read-only diagnostic path and its policy artifact
+- [x] 13. Diagnostic_Read_Path — least-privilege read-only count path (Req 6, Req 9)
+  - [x] 13.1 Provision the read-only diagnostic path and its policy artifact
     - Add the least-privilege Diagnostic_Read_Path — a read-only diagnostic Postgres role (SELECT-only on the counted tables) reached via a scoped read JWT, OR a fixed allowlisted `count` endpoint on the Read_Proxy — as an idempotent migration/config; grant read-only only, no write and no RLS-bypass (Req 6.1, 6.5)
     - Commit a version-controlled policy (doc/artifact) recording which credential/endpoint routine read-only diagnostics use and why the publishable (anon) key (RLS-limited to 0 rows) and the scoped read key (401 on raw PostgREST) are insufficient for raw counts; routine verification uses this path, never the Service_Role_Key (Req 6.2, 6.3). Any Service_Role_Key one-off is read-only, operator-approved, never echoed/logged/committed (Req 6.4)
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
-  - [ ] 13.2* Write test/doc artifact asserting read-only scope
+  - [x] 13.2* Write test/doc artifact asserting read-only scope
     - Add a structural test or committed verification artifact asserting the diagnostic role/endpoint has only read access (a write / out-of-scope query is denied) and returns exact counts
     - _Requirements: 6.1, 6.5_
-  - [ ] 13.3 LIVE CLOUD: apply the diagnostic grant under the protocol
+  - [x] 13.3 LIVE CLOUD: apply the diagnostic grant under the protocol
     - **This is a LIVE operator-approved operation — NOT a property test.** Reconcile target/project first; show the grant/apply command for approval; apply the read-only grant; confirm counts return without the Service_Role_Key; record only non-secret references
     - _Requirements: 6.1, 6.3_
 
-- [ ] 14. LIVE CLOUD: allUsers run.invoker review (Req 7, Req 9)
+- [x] 14. LIVE CLOUD: allUsers run.invoker review (Req 7, Req 9)
   - **This is a LIVE operator-approved operation — NOT a property test.** Follow the Live Cloud Execution Protocol.
   - Reconcile target/project/account first; evaluate the `roles/run.invoker` grant to `allUsers` on `dashboard-read-proxy` (Req 7.1)
   - WHERE a least-privilege Invoker_Identity is preferred, replace `allUsers` with a named service account granted ONLY `roles/run.invoker` on `dashboard-read-proxy` and no broader role (Req 7.2); preserve the read-only select-only Allowlist, the rate limit, and the CSP / security headers regardless of posture (Req 7.3)
@@ -178,13 +178,13 @@ Test sub-tasks are marked optional with `*`. Core implementation and live-cloud 
   - Record the invoker decision (retain `allUsers` with justification, or replace) in the Req 8 Deployment_Record (Req 7.4); record only non-secret references
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 9.5_
 
-- [ ] 15. Deployment_Record provenance — commit the dashboard deployment record (Req 8)
+- [x] 15. Deployment_Record provenance — commit the dashboard deployment record (Req 8)
   - Commit the dashboard Deployment_Record (the currently uncommitted `web/README.md` Task 16 edit) to version control so the live state is reproducible (Req 8.1)
   - Identify the live public URLs — the Firebase_Hosting default URL and the custom domain `app.teamhandso.me` — the deployed `dashboard-read-proxy` revision, and the invoker posture resulting from task 14 (Req 8.2)
   - Record only non-secret references (no Secret_Key / Scoped_Write_Credential / Service_Role_Key) and ensure the committed record reflects the current live deployment state (Req 8.3, 8.4)
   - _Requirements: 8.1, 8.2, 8.3, 8.4_
 
-- [ ] 16. Final checkpoint — LIVE CLOUD: dashboard-ui Task 17 read-only smoke against real data (Req 10)
+- [x] 16. Final checkpoint — LIVE CLOUD: dashboard-ui Task 17 read-only smoke against real data (Req 10)
   - **This is a LIVE operator-approved verification — NOT a property test.** Depends on tasks 10, 11, 14, 15. Ensure all tests pass, ask the user if questions arise.
   - Run `dashboard-ui` Task 17's read-only smoke verification against the real hosted data produced by the Gate_Run + daily re-run
   - Confirm the public dashboard URL serves the latest firing Decision_Date returned by `v_decision_dates` from real `firing_setups` data (Req 10.1); the Read_Proxy rejects a write (non-GET/HEAD) with HTTP 405 (Req 10.2); and the Read_Proxy rejects a query/resource outside the Allowlist with HTTP 400 or 404 (Req 10.3)

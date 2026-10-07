@@ -70,8 +70,47 @@ which strips a single leading `/api` segment before allowlist resolution; this i
 `dashboard-read-proxy-00002-k6c`. `GET /api/decision-dates` through the rewrite now returns
 HTTP 200 end-to-end (rows may be empty until a run is persisted to hosted Supabase).
 
-Task 17's full smoke check (serving the latest Decision_Date) still requires at least one
-persisted run in hosted Supabase.
+Task 17's full smoke check (serving the latest Decision_Date) now passes — see the
+"Task 17 read-only smoke verification" section below.
+
+## Task 17 read-only smoke verification — dashboard-data-activation Task 16 (LIVE CLOUD, Req 10)
+
+Post-activation read-only smoke verification of `dashboard-ui` Task 17 against real
+hosted data produced by the Gate_Run (dashboard-data-activation Task 10) and the daily
+re-run (Task 11), performed under the Live Cloud Execution Protocol (operator-approved).
+Read-only HTTP checks only — no writes, no permission changes, no secrets. Non-secret
+references only.
+
+Reconciliation (performed before the live checks):
+
+- Active gcloud project `trade-assistant-508806` matches `GCP_PROJECT_ID`; active account
+  `allum.phil@gmail.com`.
+- Resolved Supabase target `hosted` (`SUPABASE_TARGET=hosted`).
+- Public URLs: `https://app.teamhandso.me` (custom domain) and
+  `https://trade-assistant-508806.web.app` (Firebase default); `/api/**` rewrite → the
+  `dashboard-read-proxy` Cloud Run service, revision `dashboard-read-proxy-00002-k6c`,
+  region `europe-west1`.
+
+Results (all three checks hold):
+
+1. **Serves the latest firing Decision_Date (Req 10.1):** `GET /api/decision-dates`
+   returns HTTP 200 with `v_decision_dates` → `{"decision_date":"2026-09-14"}` on both
+   the custom and default domains. `GET /api/firing-setups?decisionDate=2026-09-14`
+   returns HTTP 200 with one real `v_firing_setups` row (pair `USDJPY`, direction `DOWN`,
+   horizon 1, `earned_confidence` ≈ 0.571, `surfaced: true`) — a real firing setup from
+   recorded verdicts, not forced.
+2. **Rejects a write with HTTP 405 (Req 10.2):** `POST`, `DELETE`, and `PUT` to the `/api`
+   endpoints each return HTTP 405 (confirmed on both domains).
+3. **Rejects a disallowed query/resource with 400 or 404 (Req 10.3):** an unknown path
+   (`/api/not-a-real-endpoint`) returns HTTP 404; a known endpoint with an invalid param
+   value (`decisionDate=not-a-date`) returns HTTP 400; a disallowed param name
+   (`decision_date=…`) returns HTTP 400.
+
+**Activation complete (Req 10.4):** the public URL serves a real Decision_Date AND the
+Read_Proxy rejects a write with 405 AND rejects a disallowed query with 400/404. The
+checks pass because real recorded verdicts produced a real firing Decision_Date — the
+Read_Proxy firing logic, the gate math, and the `fires()` predicate were not modified to
+force them (Req 10.5).
 
 ## Invoker review — Task 14 (LIVE CLOUD, Req 7, Req 9)
 
