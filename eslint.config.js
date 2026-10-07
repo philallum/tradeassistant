@@ -7,7 +7,10 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "node_modules/**", "coverage/**"],
+    // Build artifacts and vendored output are not linted. `web/` is a separate
+    // SPA with its own tooling; its build output (`web/dist`) is a minified
+    // bundle and must be excluded here exactly as the root `dist/` is.
+    ignores: ["dist/**", "node_modules/**", "coverage/**", "web/dist/**", "**/node_modules/**"],
   },
   js.configs.recommended,
   // Type-aware linting for the source tree (enables no-deprecated).

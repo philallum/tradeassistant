@@ -1,17 +1,27 @@
-name: Deploy scheduled daily-run Job
+name: Deploy (scheduled daily-run Job + dashboard SPA)
 
-# Delivery pipeline for the GCP-scheduled daily refresh (Requirement 16.7).
+# Delivery pipeline, triggered on every push to `main`. It deploys TWO
+# independent, path-filtered targets so a backend-only or frontend-only change
+# redeploys only what it touched:
 #
-# On every push to `main`: run the FULL quality gate (`npm run check`) and, only
-# when it is green, build the deterministic daily-run image via Cloud Build, push
-# it to Artifact Registry tagged with the commit SHA, and deploy that exact
-# SHA-pinned image to the Cloud Run Job. Pinning the deployed image to the commit
-# SHA extends the project's determinism principle to ops: any prior commit's
-# image can be redeployed for an exact rollback.
+#   1. BACKEND — the GCP-scheduled daily refresh (Requirement 16.7): run the
+#      FULL quality gate (`npm run check`) and, only when green, build the
+#      deterministic daily-run image via Cloud Build, push it to Artifact
+#      Registry tagged with the commit SHA, and deploy that exact SHA-pinned
+#      image to the Cloud Run Job. Pinning to the SHA extends the project's
+#      determinism principle to ops: any prior commit's image can be redeployed
+#      for an exact rollback.
 #
-# Authentication is KEYLESS: CI authenticates to Google Cloud via Workload
-# Identity Federation (OIDC) — no long-lived service-account key is stored. The
-# Cloud Run Job itself runs as a dedicated least-privilege service account.
+#   2. FRONTEND — the read-only dashboard SPA (web/) to Firebase Hosting: build
+#      the Vite bundle (which type-checks + tests ran in CI already) and
+#      `firebase deploy --only hosting`. Gated on its own web build so a broken
+#      SPA never reaches production.
+#
+# Authentication is KEYLESS for BOTH targets: CI authenticates to Google Cloud
+# via Workload Identity Federation (OIDC) — no long-lived service-account key or
+# FIREBASE_TOKEN is stored. The frontend deploy reuses the SAME WIF identity and
+# passes the short-lived OAuth access token to firebase-tools. The Cloud Run Job
+# itself runs as a dedicated least-privilege service account.
 #
 # Secrets (Supabase URL/keys + pooler URL, and the third-party provider API
 # keys the Job reads at runtime) are sourced at RUNTIME from Google Secret
@@ -19,6 +29,11 @@ name: Deploy scheduled daily-run Job
 # Each `--set-secrets` entry maps a RUNTIME_ENV_NAME to a Secret Manager
 # reference (`<secret-name>:latest`) — never a value. Non-secret config
 # (project, region, model, target) is passed via `--set-env-vars`.
+#
+# ONE-TIME PREREQUISITE for the frontend deploy: the WIF-impersonated deploy
+# service account (`DEPLOY_SERVICE_ACCOUNT`) needs the Firebase Hosting admin
+# role to publish — grant `roles/firebasehosting.admin` on the project. Without
+# it the `firebase deploy` step 403s; the backend jobs are unaffected.
 
 on:
   push:
@@ -48,11 +63,46 @@ env:
   GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
 
 jobs:
-  # Stage 1 — the SAME full quality gate CI runs. Deployment depends on it, so a
-  # red gate blocks the build/deploy entirely.
+  # Stage 0 — detect which part of the monorepo changed so each target deploys
+  # ONLY when its own files changed. A frontend-only commit skips the Cloud Run
+  # build/deploy; a backend-only commit skips the Firebase deploy. Workflow /
+  # shared-root changes trigger both to stay safe.
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Path filter
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'src/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'tsconfig.json'
+              - 'Dockerfile'
+              - '.dockerignore'
+              - 'data/**'
+              - 'scripts/**'
+              - '.github/workflows/deploy.yml'
+            frontend:
+              - 'web/**'
+              - '.github/workflows/deploy.yml'
+
+  # Stage 1 (backend) — the SAME full quality gate CI runs. Deployment depends on
+  # it, so a red gate blocks the build/deploy entirely.
   quality-gate:
     name: Quality gate (npm run check)
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -73,8 +123,8 @@ jobs:
       - name: Version-policy check
         run: npm run version-policy
 
-  # Stage 2 — build, push (SHA-tagged), and deploy the SHA-pinned image. Runs
-  # ONLY after the quality gate passes (`needs`).
+  # Stage 2 (backend) — build, push (SHA-tagged), and deploy the SHA-pinned
+  # image. Runs ONLY after the quality gate passes (`needs`).
   build-and-deploy:
     name: Build image and deploy Cloud Run Job
     runs-on: ubuntu-latest
@@ -150,5 +200,103 @@ jobs:
             --region "${GCP_REGION}" \
             --image "${{ steps.image.outputs.uri }}" \
             --service-account "${RUNTIME_SERVICE_ACCOUNT}" \
-            --set-env-vars "GCP_PROJECT_ID=${GCP_PROJECT_ID},GCP_REGION=${GCP_REGION},GEMINI_MODEL=${GEMINI_MODEL},SUPABASE_TARGET=hosted" \
+            --set-env-vars "GCP_PROJECT_ID=${GCP_PROJECT_ID},GCP_REGION=${GCP_REGION},GEMINI_MODEL=${GEMINI_MODEL},GOOGLE_GENAI_USE_VERTEXAI=true,EXTERNAL_SIGNAL_PROVIDER=FCS,SUPABASE_TARGET=hosted" \
             --set-secrets "ALPHA_VANTAGE_API_KEY=alpha-vantage-api-key:latest,EXTERNAL_SIGNAL_API_KEY=external-signal-api-key:latest,FINNHUB_API_KEY=finnhub-api-key:latest,MASSIVE_API_KEY=massive-api-key:latest,NEWS_API_KEY=news-api-key:latest,NEWS_CALENDAR_API_KEY=news-calendar-api-key:latest,SUPABASE_HOSTED_KEY=supabase-key:latest,SUPABASE_PUBLISHABLE_KEY=supabase-publishable-key:latest,SUPABASE_HOSTED_URL=supabase-url:latest,SUPABASE_POOLER_URL=supabase-pooler-url:latest,TWELVE_DATA_API_KEY=twelve-data-api-key:latest"
+
+  # Stage 1 (frontend) — build + test the dashboard SPA. This mirrors the `web`
+  # CI job and gates the deploy below, so a broken SPA never reaches production.
+  web-quality-gate:
+    name: Web quality gate (build + tests)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node (Active LTS from .nvmrc)
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `npm run build` is `tsc --noEmit && vite build` — type-check + bundle.
+      - name: Build
+        run: npm run build
+
+      - name: Tests
+        run: npm run test
+
+  # Stage 2 (frontend) — deploy the built SPA to Firebase Hosting, KEYLESSLY.
+  # Reuses the same Workload Identity Federation identity as the backend job: the
+  # auth step mints a short-lived OAuth access token for the deploy service
+  # account, which firebase-tools consumes via FIREBASE_TOKEN. No long-lived
+  # FIREBASE_TOKEN secret and no service-account key are stored. The deploy SA
+  # needs `roles/firebasehosting.admin` (see the one-time prerequisite in the
+  # workflow header).
+  deploy-frontend:
+    name: Deploy dashboard SPA to Firebase Hosting
+    runs-on: ubuntu-latest
+    needs: web-quality-gate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Keyless auth; request an OAuth access token (not just the federated
+      # token) so firebase-tools can authenticate non-interactively.
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
+          token_format: access_token
+
+      - name: Set up Node (Active LTS from .nvmrc)
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      # Rebuild the bundle on the deploy runner so dist/ reflects this exact
+      # commit (the build is cheap and keeps the deploy self-contained).
+      - name: Build web bundle
+        working-directory: web
+        run: npm run build
+
+      - name: Install Firebase CLI
+        run: npm install --global firebase-tools
+
+      # Deploy only Hosting, from web/ (where firebase.json + .firebaserc live).
+      # Two keyless auth paths are provided belt-and-suspenders because
+      # firebase-tools versions differ in which they honor:
+      #   - GOOGLE_APPLICATION_CREDENTIALS → the WIF credentials file the auth
+      #     step wrote (Application Default Credentials), and
+      #   - FIREBASE_TOKEN → the short-lived OAuth access token the auth step
+      #     minted for the deploy service account.
+      # Neither is a long-lived stored secret. --non-interactive + --force so no
+      # prompt blocks the unattended deploy.
+      - name: Deploy to Firebase Hosting
+        working-directory: web
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
+          FIREBASE_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          firebase deploy \
+            --only hosting \
+            --project "${GCP_PROJECT_ID}" \
+            --non-interactive \
+            --force

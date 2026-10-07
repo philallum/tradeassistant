@@ -32,3 +32,8 @@ export {
   InMemoryExternalSignalProvider,
   type SeededReference,
 } from "./inMemoryProvider.js";
+export {
+  FcsExternalSignalProvider,
+  directionFromChangePercent,
+  FCS_DEFAULT_BASE_URL,
+} from "./fcsProvider.js";

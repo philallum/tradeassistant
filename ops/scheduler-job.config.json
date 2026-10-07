@@ -3,7 +3,7 @@
   "artifactApproach": "committed-config",
   "artifactApproachLabel": "committed configuration or Terraform file",
   "schedulerJobName": "scheduled-daily-run-session-close",
-  "schedule": "0 17 * * *",
+  "schedule": "0 17 * * 1-5",
   "timeZone": "America/New_York",
   "maxRetryAttempts": 3,
   "invokerServiceAccount": "scheduler-invoker@trade-assistant-508806.iam.gserviceaccount.com",
@@ -17,7 +17,7 @@
     {
       "kind": "create-job",
       "affectedResource": "Cloud Scheduler job \"scheduled-daily-run-session-close\"",
-      "command": "gcloud scheduler jobs create http scheduled-daily-run-session-close --schedule=0 17 * * * --time-zone=America/New_York --uri=https://europe-west1-run.googleapis.com/v2/projects/trade-assistant-508806/locations/europe-west1/jobs/scheduled-daily-run:run --http-method=POST --oauth-service-account-email=scheduler-invoker@trade-assistant-508806.iam.gserviceaccount.com --max-retry-attempts=3 --project=trade-assistant-508806 --location=europe-west1"
+      "command": "gcloud scheduler jobs create http scheduled-daily-run-session-close --schedule='0 17 * * 1-5' --time-zone=America/New_York --uri=https://europe-west1-run.googleapis.com/v2/projects/trade-assistant-508806/locations/europe-west1/jobs/scheduled-daily-run:run --http-method=POST --oauth-service-account-email=scheduler-invoker@trade-assistant-508806.iam.gserviceaccount.com --max-retry-attempts=3 --project=trade-assistant-508806 --location=europe-west1"
     }
   ]
 }
