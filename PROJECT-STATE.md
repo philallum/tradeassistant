@@ -28,7 +28,7 @@
 <!-- BEGIN STATE -->
 - **Phase:** v1 feature-complete across all four specs; closing out final live-cloud checkpoints and recording the first real kill-gate verdict.
 - **Updated:** 2026-10-07
-- **Summary:** Deterministic TypeScript core (fx-daily-pattern-assistant) is 100% complete and property-tested. operational-wiring is done except Task 13 (final checkpoint); Task 12's subtasks are all complete though its parent checkbox is still unticked. dashboard-ui is complete except Task 17 (post-deploy read-only smoke) and Task 18 (final checkpoint). dashboard-data-activation is 100% complete: Supabase persistence for gate verdicts + feature registry, a GatePassingResolver wired into the scheduled run, a live Gate_Run, and a re-run daily job that populates firing_setups. Stack: TypeScript (Node 22, ESM, zero runtime deps) + Vitest/fast-check; isolated Python cross-check (pytest/hypothesis); Supabase Postgres + pgvector; GCP Cloud Run Job + Cloud Scheduler + Secret Manager + Artifact Registry via keyless WIF; Firebase-hosted React/Vite SPA fronted by a read-only Cloud Run read-proxy. Open items: operational-wiring Task 13, dashboard-ui Tasks 17/18, and — most important — RESEARCH-LOG.md still has zero logged kill-gate verdicts, so the central premise (shape-only pattern model beats the weekly-trend baseline out-of-sample) is not yet recorded in the living research log even though a live Gate_Run is claimed complete. Living-docs automation now keeps this file current: an in-code Living-Docs Writer plus two agent hooks (a Stop-trigger hook for any meaningful change and the postTaskExecution hook at spec-task boundaries).
+- **Summary:** Deterministic TypeScript core (fx-daily-pattern-assistant) is 100% complete and property-tested. operational-wiring is done except Task 13 (final checkpoint); Task 12's subtasks are all complete though its parent checkbox is still unticked. dashboard-ui is complete except Task 17 (post-deploy read-only smoke) and Task 18 (final checkpoint). dashboard-data-activation is 100% complete: Supabase persistence for gate verdicts + feature registry, a GatePassingResolver wired into the scheduled run, a live Gate_Run, and a re-run daily job that populates firing_setups. Stack: TypeScript (Node 22, ESM, zero runtime deps) + Vitest/fast-check; isolated Python cross-check (pytest/hypothesis); Supabase Postgres + pgvector; GCP Cloud Run Job + Cloud Scheduler + Secret Manager + Artifact Registry via keyless WIF; Firebase-hosted React/Vite SPA fronted by a read-only Cloud Run read-proxy. Open items: operational-wiring Task 13, dashboard-ui Tasks 17/18, and — most important — RESEARCH-LOG.md still has zero logged kill-gate verdicts, so the central premise (shape-only pattern model beats the weekly-trend baseline out-of-sample) is not yet recorded in the living research log even though a live Gate_Run is claimed complete. Living-docs automation now keeps this file current: an in-code Living-Docs Writer plus two agent hooks (a Stop-trigger hook for any meaningful change and the postTaskExecution hook at spec-task boundaries). Git state reconciled 2026-10-07: dev rebased onto remote dev and pushed; the activate/dashboard-firing branch (gatePassingResolver, Supabase gate-verdict/feature-registry stores, gate-run ops, migrations ...004/...005, dashboard-data-activation spec, PROJECT-STATE rewrite + hooks) merged into dev with two conflicts resolved (eslint ignores; supabase client — kept both insertReturning and paged select); in-progress Gemini/FCS providers + scheduled-run accessToken/displayOnly safety-committed first. Merge verified locally (typecheck + lint clean, 682 tests pass / 9 skipped). The merge commit is on dev locally but NOT yet pushed.
 <!-- END STATE -->
 
 ## 1. What this project is
@@ -232,6 +232,13 @@ two documents are out of sync and should be reconciled.
   read key 401s on raw PostgREST, a least-privilege read-only count path exists
   (`...005` migration + `supabase/DIAGNOSTIC_READ_PATH_POLICY.md`); service-role
   one-offs must be read-only, operator-approved, and never logged.
+- **Git hygiene / branch confusion.** The remote is named `main` (not `origin`),
+  which collides with the `main` branch and caused work to feel "lost" when it
+  was only committed on another branch. Work had become fragmented across `dev`
+  and `activate/dashboard-firing`; this was reconciled by merging the latter into
+  `dev` (see STATE summary). The reconciling merge commit on `dev` is not yet
+  pushed. Recommended follow-ups: rename the remote to `origin`, and push `dev`
+  (directly or via PR per team preference).
 
 ## 8. Immediate next steps
 
@@ -242,6 +249,8 @@ two documents are out of sync and should be reconciled.
    parent checkbox.
 3. Run `dashboard-ui` Task 17 (post-deploy read-only smoke against real firing
    data) and close Task 18; reconcile with `dashboard-data-activation` Task 16.
+4. Push the reconciling merge on `dev` to the remote (directly or via PR), and
+   rename the remote `main` → `origin` to remove the branch/remote name clash.
 
 ## Notes on maintenance
 
