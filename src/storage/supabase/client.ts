@@ -35,6 +35,45 @@ export class SupabaseRestError extends Error {
  */
 const UPSERT_PREFER = "resolution=merge-duplicates,return=minimal";
 
+/**
+ * Rows fetched per paged `select` request. PostgREST on the hosted gateway caps
+ * an unbounded GET at ~1000 rows, so reads MUST page explicitly or they are
+ * silently truncated (this is the bug that limited backfill coverage). A page
+ * size of 1000 matches that server ceiling so every full page is a round trip
+ * the server would have returned anyway.
+ */
+const SELECT_PAGE_SIZE = 1000;
+
+/**
+ * Hard upper bound on paged `select` iterations. A guard against a server that
+ * never signals termination (e.g. always returns a full page): 100_000 pages ×
+ * 1000 rows = 100M rows, far beyond any real table, so this never trips in
+ * practice but makes an infinite loop impossible.
+ */
+const SELECT_MAX_PAGES = 100_000;
+
+/**
+ * Parse the authoritative total row count from a PostgREST `Content-Range`
+ * response header. The format is `start-end/total` (e.g. `0-999/4183`); the
+ * total may be `*` when the server declines to count, in which case this
+ * returns `undefined` and the caller falls back to short-page termination.
+ */
+function parseContentRangeTotal(header: string | null): number | undefined {
+  if (header === null) {
+    return undefined;
+  }
+  const slash = header.lastIndexOf("/");
+  if (slash === -1) {
+    return undefined;
+  }
+  const totalPart = header.slice(slash + 1).trim();
+  if (totalPart === "" || totalPart === "*") {
+    return undefined;
+  }
+  const total = Number.parseInt(totalPart, 10);
+  return Number.isFinite(total) && total >= 0 ? total : undefined;
+}
+
 /** Trim a trailing slash so `<url>/rest/v1/<table>` composes cleanly. */
 function normalizeBaseUrl(url: string): string {
   return url.endsWith("/") ? url.slice(0, -1) : url;
@@ -112,15 +151,61 @@ export class SupabaseRestClient {
 
   /**
    * Run a GET select against `table` with a raw PostgREST query string
-   * (e.g. `asset=eq.EURUSD&order=date.asc`). Returns the parsed row array.
+   * (e.g. `asset=eq.EURUSD&order=date.asc`) and return the COMPLETE result set.
+   *
+   * Hosted PostgREST silently truncates an unbounded GET at ~1000 rows, so this
+   * pages through the table using `Range` headers (`Range-Unit: items`,
+   * `Range: <start>-<end>`) until every row has been fetched. The first page
+   * asks for `Prefer: count=exact` and reads the authoritative total from the
+   * `Content-Range` response header (`start-end/total`); the loop stops when
+   * that total has been reached, or defensively when a page returns fewer than
+   * {@link SELECT_PAGE_SIZE} rows (covers servers that return `*` for the
+   * count). The caller's `query` — filters AND any `order=...` — is preserved
+   * verbatim; ordering is the caller's responsibility.
    */
   async select<T>(table: string, query: string): Promise<T[]> {
-    const res = await this.#fetch(this.#restUrl(table, query), {
-      method: "GET",
-      headers: this.#headers(),
-    });
-    await this.#assertOk(res, table);
-    return (await res.json()) as T[];
+    const url = this.#restUrl(table, query);
+    const rows: T[] = [];
+    let offset = 0;
+    let total: number | undefined;
+
+    for (let page = 0; page < SELECT_MAX_PAGES; page += 1) {
+      const end = offset + SELECT_PAGE_SIZE - 1;
+      // `Prefer: count=exact` only on the first page: it is the one that reads
+      // the total; subsequent pages do not need the (potentially costly) count.
+      const rangeHeaders: Record<string, string> = {
+        "Range-Unit": "items",
+        Range: `${offset}-${end}`,
+      };
+      if (page === 0) {
+        rangeHeaders.Prefer = "count=exact";
+      }
+      const res = await this.#fetch(url, {
+        method: "GET",
+        headers: this.#headers(rangeHeaders),
+      });
+      await this.#assertOk(res, table);
+
+      if (page === 0) {
+        total = parseContentRangeTotal(res.headers.get("Content-Range"));
+      }
+
+      const batch = (await res.json()) as T[];
+      rows.push(...batch);
+
+      // Terminate on: a short/empty page (fewer rows than requested means the
+      // server has no more), or once we have fetched the authoritative total.
+      if (
+        batch.length < SELECT_PAGE_SIZE ||
+        batch.length === 0 ||
+        (total !== undefined && rows.length >= total)
+      ) {
+        break;
+      }
+      offset += SELECT_PAGE_SIZE;
+    }
+
+    return rows;
   }
 
   /** Delete rows matching a raw PostgREST filter query (used by tests/cleanup). */
@@ -132,7 +217,12 @@ export class SupabaseRestClient {
     await this.#assertOk(res, table);
   }
 
-  /** Throw a secret-free {@link SupabaseRestError} for any non-2xx response. */
+  /**
+   * Throw a secret-free {@link SupabaseRestError} for any non-2xx response.
+   *
+   * `res.ok` is true for the whole 200–299 range, so the `206 Partial Content`
+   * that PostgREST returns for a ranged `select` page is accepted as success.
+   */
   async #assertOk(res: Response, table: string): Promise<void> {
     if (res.ok) {
       return;
