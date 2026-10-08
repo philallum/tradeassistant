@@ -28,6 +28,14 @@ export const SCHEDULED_RUN_ENV = {
   /** Selected LLM model id (non-secret; display/rationale role only). */
   geminiModel: "GEMINI_MODEL",
   /**
+   * Target public-read GCS bucket for the `dashboard.json` snapshot (non-secret;
+   * simplify-to-cloud-minimal R5.1/R5.2). When set, the daily run uploads the
+   * snapshot to this bucket for the hosted SPA to fetch cross-origin; when unset
+   * the snapshot write is a logged no-op (fail-safe, so local/dev runs without a
+   * bucket still complete cleanly).
+   */
+  dashboardSnapshotBucket: "DASHBOARD_SNAPSHOT_BUCKET",
+  /**
    * Optional override for the Supabase PostgREST base URL used from Cloud Run.
    *
    * The storage layer talks to Supabase over PostgREST (HTTPS `fetch` against
@@ -62,6 +70,8 @@ export interface ScheduledRunConfig {
   readonly gcpRegion: string | undefined;
   /** Non-secret selected model id, when provided. */
   readonly geminiModel: string | undefined;
+  /** Non-secret public-read GCS bucket for the dashboard snapshot, when provided. */
+  readonly dashboardSnapshotBucket: string | undefined;
 }
 
 /** Error raised when the environment does not describe a valid scheduled run. */
@@ -152,5 +162,6 @@ export function loadScheduledRunConfig(
     gcpProject: optional(env, SCHEDULED_RUN_ENV.gcpProject),
     gcpRegion: optional(env, SCHEDULED_RUN_ENV.gcpRegion),
     geminiModel: optional(env, SCHEDULED_RUN_ENV.geminiModel),
+    dashboardSnapshotBucket: optional(env, SCHEDULED_RUN_ENV.dashboardSnapshotBucket),
   };
 }

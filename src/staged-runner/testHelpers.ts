@@ -40,6 +40,7 @@ export function makeConfig(
     gcpProject: undefined,
     gcpRegion: undefined,
     geminiModel: undefined,
+    dashboardSnapshotBucket: undefined,
   };
 }
 

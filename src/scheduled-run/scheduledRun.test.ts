@@ -48,7 +48,7 @@ describe("runScheduledDaily — reuses the exact dailyRun path (Req 16.7)", () =
     const evaluations = [firingEvaluation()];
 
     const scheduled = await runScheduledDaily(
-      { decisionDate, supabase: SUPABASE, gcpProject: undefined, gcpRegion: undefined, geminiModel: undefined },
+      { decisionDate, supabase: SUPABASE, gcpProject: undefined, gcpRegion: undefined, geminiModel: undefined, dashboardSnapshotBucket: undefined },
       { loadEvaluations: () => Promise.resolve(evaluations) },
     );
 
@@ -64,11 +64,11 @@ describe("runScheduledDaily — reuses the exact dailyRun path (Req 16.7)", () =
     const loader = () => Promise.resolve(evaluations);
 
     const first = await runScheduledDaily(
-      { decisionDate, supabase: SUPABASE, gcpProject: undefined, gcpRegion: undefined, geminiModel: undefined },
+      { decisionDate, supabase: SUPABASE, gcpProject: undefined, gcpRegion: undefined, geminiModel: undefined, dashboardSnapshotBucket: undefined },
       { loadEvaluations: loader },
     );
     const second = await runScheduledDaily(
-      { decisionDate, supabase: SUPABASE, gcpProject: undefined, gcpRegion: undefined, geminiModel: undefined },
+      { decisionDate, supabase: SUPABASE, gcpProject: undefined, gcpRegion: undefined, geminiModel: undefined, dashboardSnapshotBucket: undefined },
       { loadEvaluations: loader },
     );
 
@@ -84,6 +84,7 @@ describe("runScheduledDaily — reuses the exact dailyRun path (Req 16.7)", () =
         gcpProject: undefined,
         gcpRegion: undefined,
         geminiModel: undefined,
+        dashboardSnapshotBucket: undefined,
       },
       {
         loadEvaluations: () => Promise.resolve([firingEvaluation()]),
@@ -106,6 +107,7 @@ describe("runScheduledDaily — reuses the exact dailyRun path (Req 16.7)", () =
         gcpProject: undefined,
         gcpRegion: undefined,
         geminiModel: undefined,
+        dashboardSnapshotBucket: undefined,
       },
       { loadEvaluations: () => Promise.resolve([]) },
     );

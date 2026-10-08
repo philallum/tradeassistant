@@ -2,15 +2,20 @@
  * The Public_Read_Path snapshot loader (simplify-to-cloud-minimal R5.1, R5.3, R5.4).
  *
  * This replaces the former ten-endpoint read-proxy client. Under the public-data decision
- * the SPA no longer talks to a proxy through a `/api` rewrite; it fetches ONE static,
- * same-origin JSON asset — `dashboard.json` — that the Cloud Run Job writes at the end of
- * each daily run (design Decision 2 / C3). This module is the SPA's ONLY data-fetch surface.
+ * (Option A) the SPA no longer talks to a proxy through a `/api` rewrite; it fetches ONE
+ * static JSON asset — `dashboard.json` — that the Cloud Run Job writes at the end of each
+ * daily run (design Decision 2 / C3). This module is the SPA's ONLY data-fetch surface.
+ *
+ * The snapshot lives in a PUBLIC-READ GCS bucket, so the SPA fetches it CROSS-ORIGIN from
+ * the bucket's public URL (injected at build time via `VITE_SNAPSHOT_URL`), falling back to
+ * the same-origin `/dashboard.json` when that var is unset (dev / preview). The Hosting CSP
+ * `connect-src` is widened to allow the GCS origin for exactly this fetch.
  *
  * It is deliberately IMPURE (it calls the platform `fetch`) and therefore lives OUTSIDE
  * `web/src/pure/` so the purity guard never covers it. It imports NOTHING from the
  * deterministic core (`src/`) and holds NO credential of any kind: the request is a plain
- * same-origin `GET /dashboard.json`, a public static file (R4.4 — no auth gate). The SPA
- * stays strictly read-only (R5.3): there is nothing to write to.
+ * `GET` of a public static file (R4.4 — no auth gate). The SPA stays strictly read-only
+ * (R5.3): there is nothing to write to.
  *
  * The snapshot is fetched ONCE and cached in-module so the five tabs + the shell share a
  * single read; a refresh re-fetches with a cache-busting request.
@@ -26,8 +31,30 @@ import type {
   SignalRationaleRow,
 } from "./types";
 
-/** The same-origin path of the static snapshot asset the SPA fetches. */
-export const SNAPSHOT_PATH = "/dashboard.json";
+/**
+ * The URL the SPA fetches the snapshot from.
+ *
+ * Under the public-data decision (Option A) the Cloud Run Job writes
+ * `dashboard.json` to a PUBLIC-READ GCS bucket and the SPA fetches that object's
+ * public URL cross-origin. The URL is injected at build time via the
+ * `VITE_SNAPSHOT_URL` env var (e.g.
+ * `https://storage.googleapis.com/<bucket>/dashboard.json`). It falls back to the
+ * same-origin `/dashboard.json` when the var is unset, so local dev / preview
+ * (and any same-origin hosting) still work unchanged.
+ */
+export const SNAPSHOT_PATH: string = resolveSnapshotPath();
+
+/**
+ * Resolve the snapshot URL from the build-time env, defaulting to same-origin.
+ * Exported for testability so the env override + fallback can be asserted
+ * without rebuilding the bundle.
+ */
+export function resolveSnapshotPath(): string {
+  const configured = import.meta.env.VITE_SNAPSHOT_URL;
+  return typeof configured === "string" && configured.trim() !== ""
+    ? configured.trim()
+    : "/dashboard.json";
+}
 
 /** The schema version the SPA understands. A mismatch is tolerated (best-effort render). */
 export const SNAPSHOT_SCHEMA_VERSION = 1;
@@ -135,9 +162,18 @@ function parseSnapshot(body: unknown): DashboardSnapshot {
   };
 }
 
-/** Build the request URL, appending a cache-bust nonce when requested. */
+/**
+ * Build the request URL, appending a cache-bust nonce when requested. Uses the
+ * correct separator (`?` or `&`) so the nonce works whether `SNAPSHOT_PATH` is
+ * the same-origin `/dashboard.json` or a cross-origin bucket URL that may
+ * already carry a query string.
+ */
 function buildUrl(bustCache: boolean, nonce: () => string): string {
-  return bustCache ? `${SNAPSHOT_PATH}?_r=${encodeURIComponent(nonce())}` : SNAPSHOT_PATH;
+  if (!bustCache) {
+    return SNAPSHOT_PATH;
+  }
+  const separator = SNAPSHOT_PATH.includes("?") ? "&" : "?";
+  return `${SNAPSHOT_PATH}${separator}_r=${encodeURIComponent(nonce())}`;
 }
 
 /**

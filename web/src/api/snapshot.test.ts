@@ -10,10 +10,11 @@
 //     failures as fixed, non-secret messages (never a raw body / stack trace),
 // using an injected `fetchImpl` so no real network is touched.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   loadSnapshot,
+  resolveSnapshotPath,
   SnapshotError,
   SNAPSHOT_PATH,
   type DashboardSnapshot,
@@ -79,10 +80,38 @@ describe("loadSnapshot — same-origin static fetch (R5.1, R4.4)", () => {
 
     await loadSnapshot({ bustCache: true }, deps);
 
-    expect(captured[0]!.url).toBe(`${SNAPSHOT_PATH}?_r=NONCE1`);
+    // The nonce uses the right separator for the (same-origin, no-query) default path.
+    const separator = SNAPSHOT_PATH.includes("?") ? "&" : "?";
+    expect(captured[0]!.url).toBe(`${SNAPSHOT_PATH}${separator}_r=NONCE1`);
     const headers = (captured[0]!.init?.headers ?? {}) as Record<string, string>;
     expect(headers["Cache-Control"]).toBe("no-cache");
     expect(captured[0]!.init?.cache).toBe("no-store");
+  });
+});
+
+describe("resolveSnapshotPath — build-time URL from VITE_SNAPSHOT_URL (Option A)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("uses the configured cross-origin bucket URL when VITE_SNAPSHOT_URL is set", () => {
+    vi.stubEnv(
+      "VITE_SNAPSHOT_URL",
+      "https://storage.googleapis.com/fx-dashboard-public/dashboard.json",
+    );
+    expect(resolveSnapshotPath()).toBe(
+      "https://storage.googleapis.com/fx-dashboard-public/dashboard.json",
+    );
+  });
+
+  it("falls back to the same-origin /dashboard.json when VITE_SNAPSHOT_URL is unset", () => {
+    vi.stubEnv("VITE_SNAPSHOT_URL", "");
+    expect(resolveSnapshotPath()).toBe("/dashboard.json");
+  });
+
+  it("trims whitespace and falls back when the value is blank", () => {
+    vi.stubEnv("VITE_SNAPSHOT_URL", "   ");
+    expect(resolveSnapshotPath()).toBe("/dashboard.json");
   });
 });
 

@@ -306,13 +306,13 @@ reconcile, then end-to-end verification.
     and the dashboard.
   - _Requirements: 9.6, 9.7, 11.13_
 
-- [-] 8.1 Confirm the research-integrity layer is intact
+- [x] 8.1 Confirm the research-integrity layer is intact
   - Verify (tests green) that the look-ahead guard, weekly-trend baseline, measurement
     math, shrinkage, realized-outcome journal, and AI-never-scores guard are unchanged in
     behaviour; RESEARCH-LOG carries the first evaluation report.
   - _Requirements: 9.1_
 
-- [ ] 8.2 Update the living documents
+- [x] 8.2 Update the living documents
   - Update `PROJECT-STATE.md` (removed subsystems, cloud-minimal architecture) and the
     spec statuses; mark the audit §14 recommendations as actioned.
   - _Requirements: 9.4_

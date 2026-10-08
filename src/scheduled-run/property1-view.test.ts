@@ -98,6 +98,7 @@ function scheduledConfig(decisionDate: TradingDate): ScheduledRunConfig {
     gcpProject: undefined,
     gcpRegion: undefined,
     geminiModel: undefined,
+    dashboardSnapshotBucket: undefined,
   };
 }
 

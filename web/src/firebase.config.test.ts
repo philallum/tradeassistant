@@ -7,7 +7,9 @@
 //   - there is NO `/api/**` rewrite to a Cloud Run service — the SPA fetches the static
 //     `dashboard.json` snapshot same-origin, with no proxy (R4.1, R5.1),
 //   - the SPA catch-all fallback rewrite (`**` → `/index.html`) still exists, and
-//   - the strict CSP + security headers remain under `headers` for source `**`.
+//   - the strict CSP + security headers remain under `headers` for source `**`, with
+//     `connect-src` widened to allow the public GCS origin so the SPA can fetch the
+//     `dashboard.json` snapshot CROSS-ORIGIN from the public-read bucket (R5.1, Option A).
 //
 // It parses the real file so it genuinely validates the committed `firebase.json` — if the
 // deployed config regresses (e.g. a proxy rewrite is reintroduced) THIS test breaks.
@@ -91,7 +93,7 @@ describe("web/firebase.json hosting config (Public_Read_Path)", () => {
   describe("strict CSP + security headers under headers for source **", () => {
     const EXPECTED_HEADERS: Record<string, string> = {
       "Content-Security-Policy":
-        "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'",
+        "default-src 'self'; connect-src 'self' https://storage.googleapis.com; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'",
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
       "X-Frame-Options": "DENY",
@@ -119,10 +121,12 @@ describe("web/firebase.json hosting config (Public_Read_Path)", () => {
       });
     }
 
-    it("the CSP connect-src allows same-origin, so the SPA can fetch /dashboard.json", () => {
+    it("the CSP connect-src allows same-origin AND the public GCS origin, so the SPA can fetch the snapshot cross-origin", () => {
       const headers = headerMapForAllSources();
       const csp = headers.get("Content-Security-Policy") ?? "";
-      expect(csp).toContain("connect-src 'self'");
+      // Same-origin stays allowed (dev/preview fallback) and the public bucket origin is
+      // added for the cross-origin snapshot fetch (Option A).
+      expect(csp).toContain("connect-src 'self' https://storage.googleapis.com");
     });
   });
 });
