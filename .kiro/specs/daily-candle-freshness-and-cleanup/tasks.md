@@ -383,7 +383,7 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
 
 ### Phase 4 — One-off backfill entry (Component 7; R5)
 
-- [ ] 12. Implement the one-off backfill operator entry
+- [x] 12. Implement the one-off backfill operator entry
   - Create `src/ops/candle-backfill/main.ts` (Component 7), modelled on
     `src/ops/evaluation-run/main.ts`: injectable deps for unit testing with no
     network, an `invokedDirectly()` guard, and secret-free structured logs. It
@@ -395,13 +395,13 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
     latest stored date and any residual gap (names/dates only, no secrets).
   - _Requirements: 5.1, 5.2, 5.3_
 
-  - [ ] 12.1 Write unit tests for the one-off backfill entry (no network)
+  - [x] 12.1 Write unit tests for the one-off backfill entry (no network)
     - Against injected in-memory stores and a stub chain: runs end-to-end for the
       five pairs, is idempotent on a second run, and reports per-pair new latest
       date + residual gap with no secret in the output.
     - _Requirements: 5.1, 5.2, 5.3_
 
-- [ ] 13. ☁️ Operator-approved one-off backfill run against hosted
+- [x] 13. ☁️ Operator-approved one-off backfill run against hosted
   - **Live write — run under the operational-safety protocol, NOT autonomously.**
     Reconcile the hosted target, show the exact command for approval, then run
     `src/ops/candle-backfill/main.ts` against the hosted DB to close the current
