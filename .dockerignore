@@ -14,12 +14,8 @@ coverage
 .git
 .github
 .kiro
-.hypothesis
-.pytest_cache
 .nvmrc
 
-# Python cross-checks and research artifacts are not part of the runtime image.
-python
 # NOTE: `data/` (the five *_D1.csv candle files) IS shipped into the runtime
 # image so the one-shot seed Job (dist/ops/seed-run) can read the CSVs for its
 # backfill → vector-encoding stage. These are non-secret market OHLC files.

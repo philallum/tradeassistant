@@ -9,7 +9,7 @@
  * computes the silent / empty flags; the impure component layer renders the result.
  */
 
-import type { FiringSetupRow, Direction, Horizon, Pair } from "../api/endpoints";
+import type { FiringSetupRow, Direction, Horizon, Pair } from "../api/types";
 
 /**
  * A surfaced firing card. Every field is copied VERBATIM from the surfaced
@@ -28,16 +28,14 @@ export interface CardVM {
 }
 
 /**
- * A suppressed setup. Carries the suppressed pair and the `suppression_reason` verbatim
- * across all five reasons (Req 9.3, 9.4). When the reason is `currency_concentration`,
- * `competingPairs` holds the full `competing_pairs` array unchanged so the competing
- * same-currency relationship stays visible cross-pair (Req 8.5, 9.3); for the other
- * reasons it is whatever the row carried (typically `null`).
+ * A suppressed setup. Carries the suppressed pair and the `suppression_reason` verbatim.
+ * After the de-scope the only surviving reasons are `below_floor` and `not_fired` (the
+ * `news`, `currency_concentration`, and `too_choppy` suppressors — and the `competing_pairs`
+ * plumbing — have been removed, design C2 / Data Models).
  */
 export interface SuppressionVM {
   readonly pair: string;
   readonly reason: NonNullable<FiringSetupRow["suppression_reason"]>;
-  readonly competingPairs: readonly string[] | null;
 }
 
 /**
@@ -65,9 +63,8 @@ export interface SetupsViewModel {
  *   row across the five pairs becomes a card (Req 8.3, 8.7, 9.1). Each card's fields are
  *   copied verbatim from the row (Req 9.10, 20.1).
  * - `suppressions` holds exactly one entry per SUPPRESSED row and is ALWAYS cross-pair —
- *   suppressions are never filtered by the pair selection, so a currency-concentration
- *   suppression and its `competing_pairs` stay visible regardless of the active pair
- *   (Req 8.5, 9.3, 9.4).
+ *   suppressions are never filtered by the pair selection, so every suppressed pair stays
+ *   visible regardless of the active pair (Req 8.5, 9.3, 9.4).
  * - `isSilent` is true iff rows are present but none is surfaced (Req 13.1, 13.3).
  * - `hasRows` is true iff the input is non-empty (Req 7.4, 7.2, 6.2).
  *
@@ -104,7 +101,6 @@ export function shapeDashboardView(
       suppressions.push({
         pair: row.pair,
         reason: row.suppression_reason,
-        competingPairs: row.competing_pairs,
       });
     }
   }

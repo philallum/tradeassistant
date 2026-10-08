@@ -25,7 +25,7 @@ import type {
   FiringSetupRow,
   Horizon,
   Pair,
-} from "../api/endpoints.ts";
+} from "../api/types.ts";
 
 /**
  * A generic accessibility table model: the chart's text/table equivalent (Req 18.4).

@@ -23,12 +23,18 @@ name: Deploy (scheduled daily-run Job + dashboard SPA)
 # passes the short-lived OAuth access token to firebase-tools. The Cloud Run Job
 # itself runs as a dedicated least-privilege service account.
 #
-# Secrets (Supabase URL/keys + pooler URL, and the third-party provider API
-# keys the Job reads at runtime) are sourced at RUNTIME from Google Secret
+# Secrets (Supabase URL/keys + pooler URL, and the one external-signal provider
+# API key the Job reads at runtime) are sourced at RUNTIME from Google Secret
 # Manager via `--set-secrets`; they are never committed or baked into the image.
 # Each `--set-secrets` entry maps a RUNTIME_ENV_NAME to a Secret Manager
 # reference (`<secret-name>:latest`) — never a value. Non-secret config
 # (project, region, model, target) is passed via `--set-env-vars`.
+#
+# simplify-to-cloud-minimal Req 6.6: the provider secrets that served the
+# since-removed subsystems (news, news-calendar, yields, and the API-based OHLC
+# ingestion — alpha-vantage, twelve-data, finnhub, massive) are NO LONGER
+# injected; no retained runtime module reads them. The only provider key kept is
+# the external-signal (FCS) key the one retained cross-reference adapter needs.
 #
 # ONE-TIME PREREQUISITE for the frontend deploy: the WIF-impersonated deploy
 # service account (`DEPLOY_SERVICE_ACCOUNT`) needs the Firebase Hosting admin
@@ -173,26 +179,30 @@ jobs:
       # Deploy the SHA-PINNED image to the Cloud Run Job. The Job runs as the
       # dedicated least-privilege runtime service account. Non-secret config via
       # --set-env-vars; runtime secrets via --set-secrets (Secret Manager),
-      # never baked into the image. --set-secrets injects every Secret_Key the
-      # Job reads at runtime — the Supabase URL/key/pooler-url plus the provider
-      # API keys — each as a `<secret-name>:latest` Secret Manager reference, so
-      # no value lives in this file. SUPABASE_POOLER_URL routes over the
+      # never baked into the image. --set-secrets injects only the Secret_Keys
+      # the retained Job actually reads at runtime — the Supabase
+      # URL/key/publishable-key/pooler-url plus the one external-signal (FCS)
+      # provider key — each as a `<secret-name>:latest` Secret Manager reference,
+      # so no value lives in this file. SUPABASE_POOLER_URL routes over the
       # IPv4-reachable pooler/REST endpoint (Cloud Run has no IPv6 egress).
       #
-      # Write credential (spec Req 8.5, 8.6): the `supabase-key` Secret Manager
-      # secret holds the Scoped_Write_Credential (a signed JWT whose role claim
-      # selects the Pipeline_Writer_Role) — set live in task 12.4 — and is
-      # injected into SUPABASE_HOSTED_KEY, which the Job's storage config
-      # resolves as its write path (see src/ops/write-credential/jobWriteConfig).
-      # NO secret value appears in this file. The RLS-bypassing service-role key
-      # is reserved for operator one-offs and is NEVER stored as `supabase-key`
-      # or referenced here (spec Req 8.4). The publishable (anon) key is injected
-      # as SUPABASE_PUBLISHABLE_KEY (from the `supabase-publishable-key` secret):
-      # it is the API gateway admission credential sent in the `apikey` header,
-      # NOT the Job's write path — the write role comes from the Bearer
-      # Scoped_Write_Credential JWT in SUPABASE_HOSTED_KEY (spec Req 8.5).
-      # NOTE: this --set-secrets / --set-env-vars pair is rewritten by
-      # SecretManagerProvisioner.updateDeployWorkflow (spec Req 3.5, 3.6).
+      # Write credential (simplify-to-cloud-minimal Req 4.6): under the
+      # public-data model the single Write_Credential is the `supabase-key`
+      # Secret Manager secret, referenced here by NAME only and injected into
+      # SUPABASE_HOSTED_KEY, which the Job's storage config resolves as its write
+      # path. Per task 5.2a the write role was swapped from `pipeline_writer` to
+      # `fx_writer`; that cutover is a secret rotation (a new `supabase-key` JWT
+      # version), NOT a workflow edit, so the `supabase-key` reference is RETAINED
+      # here unchanged. SUPABASE_PUBLISHABLE_KEY is the gateway `apikey` that
+      # admits the request before PostgREST resolves the write role from the
+      # Bearer JWT, so it is RETAINED. NO secret value appears in this file.
+      # Public read is open; the write path is not publicly writable.
+      #
+      # simplify-to-cloud-minimal Req 6.6: the provider secrets for the removed
+      # subsystems (alpha-vantage, twelve-data, finnhub, massive, news,
+      # news-calendar) are REMOVED from --set-secrets — no retained module reads
+      # them. The RLS/scoped-JWT read-side security and the read-proxy are gone,
+      # so there is no scoped-read secret, read-view, or read-proxy step here.
       - name: Deploy SHA-pinned image to Cloud Run Job
         run: |
           gcloud run jobs deploy "${CLOUD_RUN_JOB}" \
@@ -201,7 +211,7 @@ jobs:
             --image "${{ steps.image.outputs.uri }}" \
             --service-account "${RUNTIME_SERVICE_ACCOUNT}" \
             --set-env-vars "GCP_PROJECT_ID=${GCP_PROJECT_ID},GCP_REGION=${GCP_REGION},GEMINI_MODEL=${GEMINI_MODEL},GOOGLE_GENAI_USE_VERTEXAI=true,EXTERNAL_SIGNAL_PROVIDER=FCS,SUPABASE_TARGET=hosted" \
-            --set-secrets "ALPHA_VANTAGE_API_KEY=alpha-vantage-api-key:latest,EXTERNAL_SIGNAL_API_KEY=external-signal-api-key:latest,FINNHUB_API_KEY=finnhub-api-key:latest,MASSIVE_API_KEY=massive-api-key:latest,NEWS_API_KEY=news-api-key:latest,NEWS_CALENDAR_API_KEY=news-calendar-api-key:latest,SUPABASE_HOSTED_KEY=supabase-key:latest,SUPABASE_PUBLISHABLE_KEY=supabase-publishable-key:latest,SUPABASE_HOSTED_URL=supabase-url:latest,SUPABASE_POOLER_URL=supabase-pooler-url:latest,TWELVE_DATA_API_KEY=twelve-data-api-key:latest"
+            --set-secrets "EXTERNAL_SIGNAL_API_KEY=external-signal-api-key:latest,SUPABASE_HOSTED_KEY=supabase-key:latest,SUPABASE_PUBLISHABLE_KEY=supabase-publishable-key:latest,SUPABASE_HOSTED_URL=supabase-url:latest,SUPABASE_POOLER_URL=supabase-pooler-url:latest"
 
   # Stage 1 (frontend) — build + test the dashboard SPA. This mirrors the `web`
   # CI job and gates the deploy below, so a broken SPA never reaches production.

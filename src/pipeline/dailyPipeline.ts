@@ -6,8 +6,6 @@
 //   ingestion (candles) → encoder (pattern vector) → retrieval (ANN + filters)
 //     → resolver (matured forward outcomes, read via the AnalogueStore)
 //     → confidence (Earned_Confidence, Direction_Class, Horizon)
-//     → kill-gate / feature-registry (gate-passing gate, injected)
-//     → news filter (deterministic suppression, injected)
 //     → risk boundaries (empirical SL/TP)
 //     → dashboard (`dailyRun`, via the caller)
 //
@@ -35,6 +33,7 @@ import {
 } from "../confidence/index.js";
 import { derive as deriveRiskBoundaries } from "../risk-boundaries/empiricalRiskBoundaries.js";
 import type { ExcursionProfile } from "../dashboard/types.js";
+import { efficiencyRatio } from "../dashboard/choppinessMetric.js";
 import type { PairEvaluation } from "../dashboard/dashboard.js";
 import {
   DEFAULT_PIPELINE_CONFIG,
@@ -42,12 +41,6 @@ import {
   type PipelineConfig,
   type PipelineDeps,
 } from "./types.js";
-
-/** Default gate-passing resolver: nothing has a recorded PASS verdict yet. */
-export const resolveGatePassingDefault = (): boolean => false;
-
-/** Default news resolver: trading is permitted for every pair (no calendar wired). */
-export const resolveNewsPermitDefault = () => ({ suppressed: false, reason: "no calendar feed wired" });
 
 /** Default narrative resolver: no outward-only display text (LLM-free). */
 export const resolveNarrativeEmptyDefault = (): CardNarrative => ({
@@ -117,7 +110,6 @@ export function excursionProfileAt(
  *      Earned_Confidence, and read the neighborhood's dominant Direction_Class.
  *   4. Derive the empirical Stop_Loss / Take_Profit (risk boundaries; `null`
  *      below the 30-analogue floor).
- *   5. Resolve gate-passing and the news suppression decision (injected).
  *
  * The forward-outcome resolver (`resolve`) is not called here: it populates the
  * `AnalogueStore` offline (during ingestion/backfill), and retrieval reads those
@@ -130,8 +122,6 @@ export async function evaluatePair(
   deps: PipelineDeps,
   config: PipelineConfig,
 ): Promise<PairEvaluation> {
-  const gatePassingResolver = deps.gatePassing ?? resolveGatePassingDefault;
-  const newsResolver = deps.news ?? resolveNewsPermitDefault;
   const narrativeResolver = deps.narrative ?? resolveNarrativeEmptyDefault;
 
   // Step 1: trailing candle window strictly BEFORE the Decision_Date. Reading
@@ -141,13 +131,20 @@ export async function evaluatePair(
   const allPrior = await deps.candleStore.getCandles(pair, undefined, priorDate);
   const window = allPrior.slice(Math.max(0, allPrior.length - config.windowSize));
 
-  // News + gate + narrative resolve regardless of whether a window exists, so a
-  // pair with no history is still represented (non-firing) in the view.
-  const [gatePassing, newsDecision, narrative] = await Promise.all([
-    Promise.resolve(gatePassingResolver(pair, decisionDate)),
-    Promise.resolve(newsResolver(pair, decisionDate)),
-    Promise.resolve(narrativeResolver(pair, decisionDate)),
-  ]);
+  // Choppiness_Metric (Efficiency Ratio) — a DISPLAYED FIELD on the observation
+  // (Requirement 3.2). The former Choppiness_Guard that suppressed on it has
+  // been removed (Requirement 3.1); this metric never hides a setup. It is a
+  // look-ahead-safe read of the trailing closes strictly before the
+  // Decision_Date, so it is deterministic and leaks no future information.
+  const choppiness = efficiencyRatio(allPrior, decisionDate);
+
+  // The narrative resolves regardless of whether a window exists, so a pair
+  // with no history is still represented (non-firing) in the view. The gate
+  // auto-block and the news suppressor have both been removed (Requirements
+  // 3.4, 3.5): neither gates the firing decision, so the deterministic read no
+  // longer resolves them — a pair that does not fire is an explicit "no trade"
+  // observation, not a hidden one.
+  const narrative = await Promise.resolve(narrativeResolver(pair, decisionDate));
 
   const nonFiring = (
     direction: DirectionClass,
@@ -158,14 +155,13 @@ export async function evaluatePair(
     takeProfitPips: number | null,
   ): PairEvaluation => ({
     pair,
-    gatePassing,
     earnedConfidence: confidence,
     direction,
     horizon,
     excursionProfile: profile,
     stopLossPips,
     takeProfitPips,
-    newsSuppressed: newsDecision.suppressed,
+    choppiness,
     rationale: narrative.rationale,
     analogueLabels: narrative.analogueLabels,
   });

@@ -10,7 +10,7 @@
  *
  * It is deliberately NOT a pure module (it reads `window.location`, pushes history, and
  * owns React state), so it lives under `src/state/` rather than `src/pure/`. It imports
- * only the wire-format pair constants from `../api/endpoints` and nothing from the core
+ * only the wire-format pair constants from `../api/types` and nothing from the core
  * `src/` tree (Req 20.2).
  *
  * URL contract (query string, both keys optional):
@@ -34,7 +34,7 @@ import {
   useState,
 } from "react";
 import type { PropsWithChildren } from "react";
-import { PAIRS, isPair, type Pair } from "../api/endpoints";
+import { PAIRS, isPair, type Pair } from "../api/types";
 
 /** Sentinel for the cross-pair "All pairs" Pair_Selector option (Req 8.1, 8.4). */
 export const ALL_PAIRS = "ALL" as const;

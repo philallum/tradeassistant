@@ -1,22 +1,19 @@
-// Unit test for the scheduled-run container entry wiring (task 6.2;
-// dashboard-data-activation Requirements 3.4, 3.5).
+// Unit test for the scheduled-run container entry (task 6.2;
+// simplify-to-cloud-minimal Requirements 3.5, 3.6).
 //
-// Two independent assertions, both deterministic and network-free:
+// FIRING PRECONDITION (Req 3.5, 3.6): the `fires()` predicate in
+// `src/dashboard/dashboard.ts` is byte-for-byte
+// `direction !== "FLAT" && earnedConfidence >= confidenceThreshold`. There is
+// NO suppression step: the former Gate_Auto_Block (gatePassing) and the news
+// suppressor (newsSuppressed) have both been removed, so a pair's observation
+// is driven purely by its deterministic direction and Earned_Confidence. We
+// assert that exact source text is present AND confirm the behaviour with a
+// truth table over `dailyRun` (which fires a card ONLY when both conditions
+// hold, and records an explicit "no trade" otherwise).
 //
-//   1. WIRING (Req 3.4): the production `loadEvaluations` seam in `main.ts`
-//      passes a DEFINED (non-undefined) `gatePassing` resolver into
-//      `makePipelineLoader`. We mock the pipeline module so `makePipelineLoader`
-//      becomes a capturing spy and assert the `PipelineDeps` it receives carry
-//      a `gatePassing` that is a function — i.e. `evaluatePair` will use the
-//      injected resolver rather than the `resolveGatePassingDefault = () =>
-//      false` fallback.
-//
-//   2. FIRING PRECONDITION UNCHANGED (Req 3.5): the `fires()` predicate in
-//      `src/dashboard/dashboard.ts` is byte-for-byte
-//      `gatePassing && !newsSuppressed && direction !== "FLAT" &&
-//      earnedConfidence >= confidenceThreshold`. We assert that exact source
-//      text is present AND confirm the behaviour with a truth table over
-//      `dailyRun` (which fires a card ONLY when all four conditions hold).
+// (The gate-passing resolver and its wiring in `main.ts` were removed by the
+// cloud-minimal simplification — the daily run no longer injects a `gatePassing`
+// resolver — so the former wiring assertion no longer applies.)
 //
 // Importing `main.ts` must NOT start a run: its top-level `main()` is guarded by
 // the `invokedDirectly()` entry-point check (mirroring `src/ops/seed-run/main.ts`),
@@ -26,58 +23,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { dailyRun, type PairEvaluation } from "../dashboard/index.js";
 import type { Confidence } from "../confidence/types.js";
-import type { SupabaseConfig } from "../storage/supabaseConfig.js";
-import type { PipelineDeps } from "../pipeline/types.js";
 
-// --- Mock the pipeline module so `makePipelineLoader` captures its deps -------
-// We keep every real export (resolver factory, types, etc.) and replace ONLY
-// `makePipelineLoader` with a spy that records the `PipelineDeps` it is handed
-// and returns an inert loader. `main.ts` imports `makePipelineLoader` from this
-// exact specifier, so the mock intercepts the production call.
-const captured: { deps: PipelineDeps | undefined } = { deps: undefined };
-
-vi.mock("../pipeline/index.js", async (importActual) => {
-  const actual = await importActual<typeof import("../pipeline/index.js")>();
-  return {
-    ...actual,
-    makePipelineLoader: (deps: PipelineDeps) => {
-      captured.deps = deps;
-      // Inert loader: the test never exercises the real pipeline, so return no
-      // evaluations. The point is capturing `deps`, not running the pipeline.
-      return () => Promise.resolve([] as PairEvaluation[]);
-    },
-  };
-});
-
-const SUPABASE: SupabaseConfig = {
-  target: "hosted",
-  url: "https://pooler.example.supabase.co",
-  key: "test-key",
-};
-
-describe("scheduled-run main.ts wiring — injects a defined gatePassing (Req 3.4)", () => {
-  it("passes a non-undefined gatePassing resolver (a function) into makePipelineLoader", async () => {
-    // Import after the mock is registered so `main.ts` binds the spied factory.
-    const { loadEvaluations } = await import("./main.js");
-
-    await loadEvaluations("2024-03-15", SUPABASE);
-
-    expect(captured.deps).toBeDefined();
-    const deps = captured.deps!;
-    expect(deps.gatePassing).not.toBeUndefined();
-    expect(typeof deps.gatePassing).toBe("function");
-    // The storage ports are also wired, so the pipeline runs over real stores.
-    expect(deps.candleStore).toBeDefined();
-    expect(deps.vectorStore).toBeDefined();
-    expect(deps.analogueStore).toBeDefined();
-  });
-});
-
-// --- Firing precondition is byte-for-byte unchanged (Req 3.5) -----------------
+// --- Firing precondition is byte-for-byte the two-condition predicate (Req 3.5) ---
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_SOURCE = readFileSync(
@@ -86,39 +37,44 @@ const DASHBOARD_SOURCE = readFileSync(
 );
 
 /**
- * The exact firing precondition the design freezes (Req 3.5). This string is
- * compared against the live `fires()` body source, so any relaxation /
- * re-implementation of the predicate fails the test.
+ * The exact firing precondition the design freezes (Req 3.5, 3.6): a two-
+ * condition predicate with NO suppression step. This string is compared against
+ * the live `fires()` body source, so re-introducing a gate / news suppressor —
+ * or otherwise relaxing / re-implementing the predicate — fails the test.
  */
 const FROZEN_FIRING_PREDICATE = [
-  "evaluation.gatePassing &&",
-  '    !evaluation.newsSuppressed &&',
-  '    evaluation.direction !== "FLAT" &&',
+  'evaluation.direction !== "FLAT" &&',
   "    evaluation.earnedConfidence >= confidenceThreshold",
 ].join("\n");
 
-describe("fires() firing precondition is unchanged (Req 3.5)", () => {
-  it("the fires() source contains the byte-for-byte four-condition predicate", () => {
+describe("fires() firing precondition is the two-condition predicate (Req 3.5, 3.6)", () => {
+  it("the fires() source contains the byte-for-byte two-condition predicate", () => {
     expect(DASHBOARD_SOURCE).toContain(FROZEN_FIRING_PREDICATE);
   });
 
-  // Behavioural truth table over dailyRun: a card renders ONLY when all four
-  // conditions hold, and NOT when any single one fails. This confirms the
-  // predicate's meaning end-to-end without re-implementing it.
+  // No suppression fields remain on the firing path: the frozen predicate — and
+  // the PairEvaluation shape it reads — carry neither a gate nor a news flag.
+  it("the fires() source no longer references any suppression flag", () => {
+    expect(DASHBOARD_SOURCE).not.toContain("gatePassing");
+    expect(DASHBOARD_SOURCE).not.toContain("newsSuppressed");
+  });
+
+  // Behavioural truth table over dailyRun: a card renders iff BOTH conditions
+  // hold, and NOT when either one fails. This confirms the predicate's meaning
+  // end-to-end without re-implementing it.
   const DECISION_DATE = "2024-03-15";
   const THRESHOLD = 0.55 as Confidence; // DEFAULT_CONFIDENCE_THRESHOLD
 
   function evalWith(overrides: Partial<PairEvaluation>): PairEvaluation {
     return {
       pair: "EURUSD",
-      gatePassing: true,
-      newsSuppressed: false,
       direction: "UP",
       earnedConfidence: 0.9 as Confidence,
       horizon: 2,
       excursionProfile: { favorablePips: 40, adversePips: 15 },
       stopLossPips: 15,
       takeProfitPips: 40,
+      choppiness: 0.8,
       rationale: "r",
       analogueLabels: ["a"],
       ...overrides,
@@ -129,22 +85,14 @@ describe("fires() firing precondition is unchanged (Req 3.5)", () => {
     return dailyRun(DECISION_DATE, [evaluation]).cards.length === 1;
   }
 
-  it("fires when all four conditions hold", () => {
+  it("fires when both conditions hold", () => {
     expect(firesViaDashboard(evalWith({}))).toBe(true);
   });
 
-  it("does NOT fire when gate is not passing", () => {
-    expect(firesViaDashboard(evalWith({ gatePassing: false }))).toBe(false);
-  });
-
-  it("does NOT fire when news-suppressed", () => {
-    expect(firesViaDashboard(evalWith({ newsSuppressed: true }))).toBe(false);
-  });
-
-  it("does NOT fire when direction is FLAT", () => {
-    expect(
-      firesViaDashboard(evalWith({ direction: "FLAT" })),
-    ).toBe(false);
+  it("does NOT fire when direction is FLAT — the pair is an explicit 'no trade' observation", () => {
+    // The pair is not suppressed; it simply expresses no directional view, so
+    // the dashboard renders no directional card for it (Req 3.5).
+    expect(firesViaDashboard(evalWith({ direction: "FLAT" }))).toBe(false);
   });
 
   it("does NOT fire when confidence is below the threshold", () => {

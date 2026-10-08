@@ -9,9 +9,6 @@
 //                   injected GateVerdictStore IN ADDITION to the existing
 //                   logGateVerdict Research_Log append (persistence is additive;
 //                   the log is preserved).
-//   Req 2.4       — a PASS verdict triggers a feature_registry `included` upsert
-//                   per admitted feature, carrying the justifying verdictId
-//                   returned by the persist report.
 //   Req 2.6       — a persist rejection propagates with the affected configId
 //                   and is NOT swallowed (the stage does not return { ok: true }).
 //
@@ -22,11 +19,9 @@
 import { describe, it, expect, vi } from "vitest";
 import type { Candle, TradingDate } from "../guard/types.js";
 import type { Pair } from "../ingestion/types.js";
-import type { FeatureId } from "../feature-registry/types.js";
 import type { AnalogueRecord } from "../retrieval/types.js";
 import { LIVING_DOCS } from "../living-docs/livingDocs.js";
 import {
-  InMemoryGateVerdictStore,
   type GateVerdict,
   type GateVerdictSplit,
   type GateVerdictStore,
@@ -156,58 +151,40 @@ describe("backtest persists through the GateVerdictStore IN ADDITION to logGateV
 });
 
 // ---------------------------------------------------------------------------
-// Req 2.4 — a PASS verdict triggers an `included` feature_registry upsert
-// carrying the justifying verdictId.
+// A genuine PASS still persists cleanly after the feature-registry removal.
 // ---------------------------------------------------------------------------
 
-describe("a PASS verdict upserts included feature_registry rows with the justifying verdictId (Req 2.4)", () => {
-  it("records each admitted feature as included with the persist report's verdictId", async () => {
+describe("a genuine PASS composes and persists through the GateVerdictStore (Req 2.1)", () => {
+  it("persists the PASS verdict as verdict-1", async () => {
     const deps = makeTestDeps();
-    const admittedFeatures: FeatureId[] = ["%B", "RSI"];
-    const depsWithFeatures = { ...deps, admittedFeatures };
 
     // Seed a full walk-forward fold's worth of history (756 train + 252 test).
     const dates = sequentialDates(1008);
     await seedCandles(deps, "EURUSD", dates);
 
-    // The first fold's test window is dates[756..1007]. getMaturedOutcomes uses
-    // a STRICT `< testEnd`, so seed 30 matured outcomes safely inside the test
-    // window (indices 760..789). Each outcome is DOWN while its vector's weekly
-    // trend is UP → the model (which predicts the actual outcome) is 100%
-    // correct and the Weekly_Trend_Follow baseline is 0% correct, clearing the
-    // Gate 1 ≥3pp margin on a ≥30-sample subset; identical model/baseline
-    // excursions clear Gate 2 (margin 0 ≥ 0). A GENUINE PASS, composed entirely
-    // by the real composeGateVerdict.
-    for (let i = 760; i < 790; i++) {
+    // The model's directional prediction is now sourced HONESTLY from the
+    // Analogue_Neighborhood retrieved AS OF each Decision_Date (not from that
+    // date's own matured outcome). To drive a GENUINE PASS we therefore seed a
+    // PRIOR block of matured DOWN analogues (indices 500..759, >k=200 of them)
+    // that strictly precede the firing window: for every firing Decision_Date
+    // the retrieved neighborhood is dominated by these earlier DOWN analogues,
+    // so the model predicts DOWN. Each analogue carries mfe=30/mae=10 so the
+    // model's excursion-weighted metric equals the baseline's (margin 0 ≥ 0,
+    // Gate 2 passes). The stored vectors' weekly trend is UP so the
+    // Weekly_Trend_Follow baseline predicts UP.
+    for (let i = 500; i < 760; i++) {
       await seedMaturedWithVector(deps, "EURUSD", dates[i]!, "DOWN");
     }
 
-    const result = await backtest(depsWithFeatures);
-    expect(result.ok).toBe(true);
-
-    // The genuinely-composed verdict is a PASS and was persisted as verdict-1.
-    const persisted = await deps.gateVerdictStore.getVerdict("verdict-1");
-    expect(persisted).not.toBeNull();
-    expect(persisted?.verdict.verdict).toBe("PASS");
-
-    // Each admitted feature is now an `included` row carrying that verdictId.
-    for (const featureId of admittedFeatures) {
-      const row = await deps.featureRegistryStore.get(featureId);
-      expect(row).not.toBeNull();
-      expect(row?.status).toBe("included");
-      expect(row?.verdictId).toBe("verdict-1");
-    }
-
-    // No non-admitted feature was touched.
-    const all = await deps.featureRegistryStore.all();
-    expect(all.map((r) => r.featureId).sort()).toEqual(["%B", "RSI"]);
-  });
-
-  it("upserts nothing when a PASS is composed but no features are admitted (no-op)", async () => {
-    const deps = makeTestDeps(); // admittedFeatures undefined
-
-    const dates = sequentialDates(1008);
-    await seedCandles(deps, "EURUSD", dates);
+    // The first fold's test window is dates[756..1007]. getMaturedOutcomes uses
+    // a STRICT `< testEnd`, so seed 30 matured outcomes safely inside the test
+    // window (indices 760..789). Each realized outcome is DOWN while its
+    // vector's weekly trend is UP → the honest model (predicting DOWN from the
+    // prior DOWN neighborhood) is 100% correct and the Weekly_Trend_Follow
+    // baseline is 0% correct, clearing the Gate 1 ≥3pp margin on a ≥30-sample
+    // subset. The model's retrieved-neighborhood excursions (30/10) match the
+    // baseline's realized excursions (30/10), so Gate 2's margin is 0 ≥ 0. A
+    // GENUINE PASS, composed entirely by the real composeGateVerdict.
     for (let i = 760; i < 790; i++) {
       await seedMaturedWithVector(deps, "EURUSD", dates[i]!, "DOWN");
     }
@@ -215,11 +192,10 @@ describe("a PASS verdict upserts included feature_registry rows with the justify
     const result = await backtest(deps);
     expect(result.ok).toBe(true);
 
-    // PASS was composed and persisted...
+    // The genuinely-composed verdict is a PASS and was persisted as verdict-1.
     const persisted = await deps.gateVerdictStore.getVerdict("verdict-1");
+    expect(persisted).not.toBeNull();
     expect(persisted?.verdict.verdict).toBe("PASS");
-    // ...but with no admitted features the registry is left empty.
-    expect(await deps.featureRegistryStore.all()).toEqual([]);
   });
 });
 
@@ -231,8 +207,7 @@ describe("a persist rejection propagates with the configId and is not swallowed 
   /**
    * Build a backtest deps whose GateVerdictStore.persistVerdict always rejects,
    * seeded with just enough data for the stage to compose a verdict and reach
-   * the persist call. The featureRegistryStore records any upsert so we can
-   * assert the PASS→included path never ran after the failure.
+   * the persist call.
    */
   function makeRejectingDeps(error: Error) {
     const deps = makeTestDeps();
@@ -294,54 +269,6 @@ describe("a persist rejection propagates with the configId and is not swallowed 
     await expect(backtest(deps)).rejects.toThrow(
       new RegExp(`config_id=${deps.configId}`),
     );
-  });
-
-  it("does not perform a feature_registry upsert when persistence fails on a PASS", async () => {
-    // Seed a genuine PASS so the (unreached) PASS→included branch would fire if
-    // the failure were swallowed. Admit a feature and inject a rejecting store.
-    const base = makeTestDeps();
-    const rejectingStore = new InMemoryGateVerdictStore();
-    vi.spyOn(rejectingStore, "persistVerdict").mockRejectedValue(
-      new SupabaseRestError("insert failed", 500, "gate_verdicts"),
-    );
-    const upsertSpy = vi.spyOn(base.featureRegistryStore, "upsert");
-
-    const deps = {
-      ...base,
-      gateVerdictStore: rejectingStore,
-      admittedFeatures: ["%B"] as FeatureId[],
-    };
-
-    const dates = sequentialDates(1008);
-    await base.candleStore.upsertCandles(
-      dates.map((d) => makeCandle("EURUSD", d)),
-    );
-    for (let i = 760; i < 790; i++) {
-      const record: AnalogueRecord = {
-        asset: "EURUSD",
-        decisionDate: dates[i]!,
-        horizon: 1,
-        direction: "DOWN",
-        mfePips: 30,
-        maePips: 10,
-        atr14: 15,
-        matured: true,
-      };
-      await base.analogueStore.upsertOutcome(record);
-      await base.vectorStore.upsertVector(
-        "EURUSD",
-        dates[i]!,
-        makeStoredVector("UP"),
-      );
-    }
-
-    await expect(backtest(deps)).rejects.toThrow(
-      new RegExp(`config_id=${deps.configId}`),
-    );
-    // The included upsert must NOT have run — the failure was surfaced, not
-    // swallowed, so the stage never proceeded as though the verdict recorded.
-    expect(upsertSpy).not.toHaveBeenCalled();
-    expect(await base.featureRegistryStore.all()).toEqual([]);
   });
 });
 

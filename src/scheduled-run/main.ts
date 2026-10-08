@@ -12,11 +12,12 @@
 //      trading day (Requirement 4; the dashboard is a weekday session product);
 //   4. invokes the SAME deterministic `runScheduledDaily` → `dailyRun` path the
 //      local dashboard uses, then persists the firing view; and
-//   5. BESIDE the firing view, produces and persists the OUTWARD-ONLY display
-//      values for the Decision_Date — the AI `signal_rationale` /
-//      `pattern_description` narrative (Requirement 15) and the third-party
-//      external cross-reference comparison (Requirement 23) — via the display
-//      persister. These are display-only and never feed scoring.
+//   5. BESIDE the firing view, produces the OUTWARD-ONLY display values for the
+//      Decision_Date — the AI `signal_rationale` / `pattern_description`
+//      narrative (Requirement 15) and the third-party external cross-reference
+//      comparison (Requirement 23) — and carries them in the `dashboard.json`
+//      snapshot (their dedicated DB tables are dropped under
+//      simplify-to-cloud-minimal). These are display-only and never feed scoring.
 //
 // It contains NO firing logic of its own; all business logic lives in the
 // shared modules so an unattended run reproduces an equivalent local run.
@@ -27,14 +28,9 @@ import { loadScheduledRunConfig } from "./config.js";
 import type { PairEvaluationLoader, DashboardViewPersister } from "./scheduledRun.js";
 import { runScheduledDaily } from "./scheduledRun.js";
 import { makePipelineLoader } from "../pipeline/index.js";
-import { makeGatePassingResolver } from "../pipeline/gatePassingResolver.js";
 import {
   buildSupabaseStores,
-  buildSupabaseGateStores,
-  SupabaseGateVerdictStore,
-  SupabaseRestClient,
   makeSupabaseViewPersister,
-  makeDisplayDataPersister,
   type DisplayOnlyWrite,
 } from "../storage/supabase/index.js";
 import type { PairEvaluation, DashboardView } from "../dashboard/index.js";
@@ -47,6 +43,11 @@ import {
 } from "../external-signal/index.js";
 import { resolveAccessTokenProvider } from "./accessToken.js";
 import { buildDisplayOnly, type DisplayOnlyDeps } from "./displayOnly.js";
+import {
+  buildDashboardSnapshot,
+  writeDashboardSnapshot,
+  type SnapshotSink,
+} from "./snapshot.js";
 
 /**
  * Load the deterministic per-pair evaluations for the Decision_Date by running
@@ -57,31 +58,13 @@ import { buildDisplayOnly, type DisplayOnlyDeps } from "./displayOnly.js";
  * The loader is wrapped by {@link cachingLoader} below so the SAME evaluations
  * the view was built from are available to the display-only producer (the
  * third-party cross-reference needs each pair's own Direction_Class).
+ *
+ * The gate auto-block has been removed (design Decision 1, C2): the daily run no
+ * longer reads recorded PASS verdicts to gate firing, so no gate-verdict adapter
+ * is wired into the pipeline here.
  */
 export const loadEvaluations: PairEvaluationLoader = (decisionDate, supabase) => {
-  // Build the gate-verdict + feature-registry adapters (design Component 3)
-  // that back the read-only resolver, sharing ONE SupabaseRestClient so the
-  // gate stores and the resolver's read helper reuse the same connection
-  // (URL + secret key + fetch). `buildSupabaseGateStores` accepts an existing
-  // client for exactly this reuse; the concrete `SupabaseGateVerdictStore` is
-  // constructed on the SAME client so its `latestPassVerdict(configId)` read
-  // helper (added in task 1.3) can be bound into the resolver deps — that
-  // helper lives on the adapter, not on the `GateVerdictStore` PORT type.
-  const gateClient = new SupabaseRestClient(supabase);
-  const { gateVerdictStore, featureRegistryStore } =
-    buildSupabaseGateStores(gateClient);
-  const gateVerdictAdapter = new SupabaseGateVerdictStore(gateClient);
-  const gatePassing = makeGatePassingResolver({
-    gateVerdictStore,
-    featureRegistryStore,
-    activeConfigFor: (pair) => `${pair}-active`,
-    latestPassVerdict: (configId) =>
-      gateVerdictAdapter.latestPassVerdict(configId),
-  });
-  return makePipelineLoader({
-    ...buildSupabaseStores(supabase),
-    gatePassing,
-  })(decisionDate, supabase);
+  return makePipelineLoader(buildSupabaseStores(supabase))(decisionDate, supabase);
 };
 
 /**
@@ -147,6 +130,23 @@ async function buildDisplayDeps(
   return deps;
 }
 
+/**
+ * Resolve the destination sink for the `dashboard.json` snapshot
+ * (simplify-to-cloud-minimal R5.1, R5.2).
+ *
+ * The snapshot is published to the Firebase Hosting site / public bucket by the
+ * deploy-side wiring (Phase 6). Until a concrete destination is configured for
+ * the Job's runtime, no sink is wired here, so {@link writeDashboardSnapshot}
+ * logs a secret-free "no destination configured" no-op and the run completes
+ * cleanly. Returning `undefined` keeps the snapshot step fail-safe by
+ * construction: there is nothing that can corrupt the persisted rows. A real
+ * uploader is injected by replacing this resolver when the hosting target is
+ * wired.
+ */
+function resolveSnapshotSink(): SnapshotSink | undefined {
+  return undefined;
+}
+
 /** Structured, secret-free warning for an optional-collaborator wiring failure. */
 function logStartupWarning(collaborator: string, err: unknown): void {
   const message = err instanceof Error ? err.message : String(err);
@@ -193,14 +193,19 @@ async function main(): Promise<void> {
 
   /**
    * Persist the produced dashboard view to `firing_setups`, then — beside it —
-   * build and write the OUTWARD-ONLY display values (AI rationale + external
-   * comparison) for the Decision_Date to `signal_rationale` /
-   * `external_reference_comparison` via `makeDisplayDataPersister` (Req 20, 15,
-   * 23). The display step is fail-safe: a producer error degrades to no
-   * rationale / unavailable reference for that pair and never prevents the
-   * firing view from being persisted.
+   * build the OUTWARD-ONLY display values (AI rationale + external comparison)
+   * for the Decision_Date (Req 15, 23). These are no longer written to their own
+   * DB tables (the `signal_rationale` / `external_reference_comparison` tables
+   * are dropped under simplify-to-cloud-minimal, design C4); their display
+   * content is carried in the `dashboard.json` snapshot instead. The display
+   * step stays fail-safe: a producer error degrades to no rationale / unavailable
+   * reference for that pair and never prevents the firing view from being
+   * persisted.
    */
+  const snapshotSink = resolveSnapshotSink();
+
   const persistView: DashboardViewPersister = async (view: DashboardView, supabase) => {
+    // The persisted DB rows are the source of truth and are written FIRST.
     await makeSupabaseViewPersister(supabase)(view, supabase);
 
     let displayOnly: DisplayOnlyWrite | undefined;
@@ -211,9 +216,19 @@ async function main(): Promise<void> {
       displayOnly = undefined;
     }
 
-    if (displayOnly !== undefined) {
-      await makeDisplayDataPersister(supabase)(displayOnly);
-    }
+    // Public_Read_Path (simplify-to-cloud-minimal R5.1, R5.2): at the END of the
+    // run, serialise the dashboard view + display-only writes into the
+    // `dashboard.json` snapshot the hosted SPA fetches, and write it fail-safely.
+    // This runs AFTER the DB rows are persisted, and the write is best-effort:
+    // `writeDashboardSnapshot` logs and swallows any failure so a snapshot error
+    // can never corrupt the persisted rows nor fail the run (design Error
+    // Handling). History slices beyond today's view are not re-queried here; the
+    // snapshot carries the produced view + display-only, and a missing slice is
+    // an empty array the SPA renders as an explicit empty state (R5.5).
+    const snapshot = buildDashboardSnapshot(view, displayOnly, {
+      decisionDates: [view.decisionDate],
+    });
+    await writeDashboardSnapshot(snapshot, snapshotSink);
   };
 
   const result = await runScheduledDaily(config, { loadEvaluations: cached.loader, persistView });
@@ -223,7 +238,6 @@ async function main(): Promise<void> {
       event: "scheduled_run.complete",
       decisionDate: result.decisionDate,
       firingCards: result.view.cards.length,
-      suppressed: result.view.suppressed.length,
       persisted: result.persisted,
     }),
   );

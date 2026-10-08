@@ -36,8 +36,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { fetchEndpoint, type ApiResult } from "../../api/client";
-import type { DecisionDateRow, FiringSetupRow } from "../../api/endpoints";
+import type { ApiResult } from "../../api/snapshot";
+import { getSnapshot } from "../../api/snapshotCache";
+import type { DecisionDateRow, FiringSetupRow } from "../../api/types";
 import { selectBrowseDate } from "../../pure/selectDates";
 import { shapeDashboardView } from "../../pure/shapeDashboard";
 import { ALL_PAIRS, useSelection } from "../../state/selection";
@@ -46,25 +47,49 @@ import { FiringCard } from "./FiringCard";
 import { resolveSetupsViewState } from "./setupsViewState";
 import { SuppressionList } from "./SuppressionList";
 
-/** Loader for the available Decision_Dates. Injected for testability. */
-export type DecisionDatesLoader = (options?: {
+/** Per-load options shared by the Setups loaders. */
+interface SetupsLoadOptions {
   readonly bustCache?: boolean;
   readonly signal?: AbortSignal;
-}) => Promise<ApiResult<DecisionDateRow>>;
+  /** The shared refresh generation (the shell's refreshNonce), so all reads share one fetch. */
+  readonly generation?: number;
+}
+
+/** Loader for the available Decision_Dates. Injected for testability. */
+export type DecisionDatesLoader = (
+  options?: SetupsLoadOptions,
+) => Promise<ApiResult<DecisionDateRow>>;
 
 /** Loader for a Decision_Date's firing-setups rows (all five pairs). Injected for testability. */
 export type FiringSetupsLoader = (
   decisionDate: string,
-  options?: { readonly bustCache?: boolean; readonly signal?: AbortSignal },
+  options?: SetupsLoadOptions,
 ) => Promise<ApiResult<FiringSetupRow>>;
 
-const defaultLoadDecisionDates: DecisionDatesLoader = (options) =>
-  fetchEndpoint("/decision-dates", {}, options);
+/** Resolve the shared snapshot for a load, forwarding the generation + abort signal. */
+function snapshotFor(options?: SetupsLoadOptions) {
+  return getSnapshot(options?.generation ?? 0, {
+    ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+  });
+}
 
-const defaultLoadFiringSetups: FiringSetupsLoader = (decisionDate, options) =>
-  // No `pair` param: fetch all five pairs so suppressions stay cross-pair (Req 8.5); the
-  // pure shaper scopes the cards to the selected pair.
-  fetchEndpoint("/firing-setups", { decisionDate }, options);
+const defaultLoadDecisionDates: DecisionDatesLoader = async (options) => {
+  const snapshot = await snapshotFor(options);
+  return {
+    rows: snapshot.decisionDates.map((decision_date) => ({ decision_date })),
+    lastUpdated: snapshot.generatedAt === "" ? null : snapshot.generatedAt,
+  };
+};
+
+const defaultLoadFiringSetups: FiringSetupsLoader = async (decisionDate, options) => {
+  // All five pairs for the date: suppressions stay cross-pair (Req 8.5); the pure shaper
+  // scopes the cards to the selected pair.
+  const snapshot = await snapshotFor(options);
+  return {
+    rows: snapshot.firingSetups.filter((r) => r.decision_date === decisionDate),
+    lastUpdated: snapshot.generatedAt === "" ? null : snapshot.generatedAt,
+  };
+};
 
 export interface SetupsTabProps {
   /** Decision_Dates loader; defaults to the real `/decision-dates` fetch. */
@@ -140,7 +165,9 @@ export function SetupsTab({
 
   const load = useCallback(
     async (bustCache: boolean, signal: AbortSignal) => {
-      const opts = bustCache ? { bustCache: true, signal } : { signal };
+      const opts: SetupsLoadOptions = bustCache
+        ? { bustCache: true, signal, generation: refreshNonce }
+        : { signal, generation: refreshNonce };
       try {
         // Resolve the effective Decision_Date from the available set (Req 7.1). The browsed
         // date is used when it is actually present; otherwise we fall back to the latest.
@@ -169,7 +196,7 @@ export function SetupsTab({
         setState({ kind: "error", message });
       }
     },
-    [date, loadDecisionDates, loadFiringSetups],
+    [date, loadDecisionDates, loadFiringSetups, refreshNonce],
   );
 
   // (Re)load whenever the browsed date or the refresh signal changes. A bumped

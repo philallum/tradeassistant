@@ -22,8 +22,8 @@ import fc from "fast-check";
 
 import { resolveSetupsViewState } from "./setupsViewState";
 import type { SetupsViewModel, CardVM, SuppressionVM } from "../../pure/shapeDashboard";
-import { PAIRS } from "../../api/endpoints";
-import type { Direction, Horizon, Pair } from "../../api/endpoints";
+import { PAIRS } from "../../api/types";
+import type { Direction, Horizon, Pair } from "../../api/types";
 import { ALL_PAIRS, type PairSelection } from "../../state/selection";
 
 const NUM_RUNS = 300; // >= 100 iterations required by the task.
@@ -37,11 +37,8 @@ const selectionArb: fc.Arbitrary<PairSelection> = fc.constantFrom<PairSelection>
 );
 
 const reasonArb: fc.Arbitrary<SuppressionVM["reason"]> = fc.constantFrom(
-  "news",
-  "currency_concentration",
   "below_floor",
   "not_fired",
-  "too_choppy",
 );
 
 const cardArb: fc.Arbitrary<CardVM> = fc.record({
@@ -57,7 +54,6 @@ const cardArb: fc.Arbitrary<CardVM> = fc.record({
 const suppressionArb: fc.Arbitrary<SuppressionVM> = fc.record({
   pair: pairArb,
   reason: reasonArb,
-  competingPairs: fc.option(fc.array(pairArb, { maxLength: 4 }), { nil: null }),
 });
 
 /**

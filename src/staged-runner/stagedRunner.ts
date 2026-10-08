@@ -26,11 +26,22 @@ import type {
   Gate1FiringSample,
   GateVerdictSplit,
 } from "../kill-gate/types.js";
-import type { FeatureRegistryRow } from "../feature-registry/types.js";
 import { SupabaseRestError } from "../storage/supabase/client.js";
 import { compareTradingDates } from "../guard/tradingDate.js";
 import type { WalkForwardFold } from "../kill-gate/types.js";
-import type { ForwardOutcome } from "../retrieval/types.js";
+import type {
+  AnalogueRecord,
+  ForwardOutcome,
+  RetrievalConfig,
+} from "../retrieval/types.js";
+import { retrieve } from "../retrieval/retrieve.js";
+import {
+  dominantDirection,
+  excursionProfileAt,
+} from "../pipeline/dailyPipeline.js";
+import { DEFAULT_RETRIEVAL_CONFIG } from "../pipeline/types.js";
+import { earnedConfidence, selectHorizon } from "../confidence/index.js";
+import type { PatternVector } from "../encoder/types.js";
 import { runScheduledDaily } from "../scheduled-run/scheduledRun.js";
 import type { StageName, StageResult, StagedRunnerDeps } from "./types.js";
 import type { DataSourceRole } from "./types.js";
@@ -94,52 +105,77 @@ export async function backfill(
 }
 
 /**
- * Backtest stage (Requirement 2.3, 2.4, 2.7):
- *   1. Check that candles and pattern vectors are present (prerequisite).
- *   2. Call `walkForwardFolds(pair, history)` for all pairs, build
- *      `FoldGateInput[]` from stored data, then call `composeGateVerdict`.
- *   3. Append the verdict to RESEARCH-LOG.md via `logGateVerdict`.
- *   4. Abort with `ok: false` + `missingPrerequisite` if no data is available.
+ * True when at least one pair has BOTH stored candles and stored pattern
+ * vectors — the Backtest_Stage / evaluation-report prerequisite (Requirement
+ * 2.7). Extracted so the evaluation report path can run the SAME check.
  */
-export async function backtest(
+export async function hasBacktestData(
   deps: StagedRunnerDeps,
-): Promise<StageResult> {
-  // Prerequisite: at least one pair must have stored candles and vectors.
-  let hasData = false;
+): Promise<boolean> {
   for (const pair of PAIRS) {
     const candles = await deps.ingestion.getCandles(pair);
     const vectors = await deps.vectorStore.getVectorsByAsset(pair);
     if (candles.length > 0 && vectors.length > 0) {
-      hasData = true;
-      break;
+      return true;
     }
   }
-  if (!hasData) {
-    return {
-      ok: false,
-      missingPrerequisite:
-        "backtest: no candles or pattern vectors stored — run backfill first",
-    };
-  }
+  return false;
+}
 
-  // For each pair, build walk-forward folds over stored candle dates.
-  // We aggregate all fold inputs across pairs into a single verdict.
+/**
+ * Build the per-fold {@link FoldGateInput}s (and the underlying walk-forward
+ * folds) from the stored candles / pattern vectors / matured analogue outcomes.
+ *
+ * This is the SHARED fold-construction the verdict path (`composeGateVerdict`)
+ * and the evaluation-report path (`composeEvaluationReport`) both consume, so
+ * both see byte-identical inputs — the reframe changes only the OUTPUT type, not
+ * the Measurement_Engine inputs (simplify-to-cloud-minimal Requirement 1.1). It
+ * re-implements NO gate math: it only reads stored rows and maps them to the
+ * fold-input shape the composers expect.
+ *
+ * `foldIndex` is assigned GLOBALLY across pairs (monotonic) so the aggregated
+ * fold inputs never collide on index — `walkForwardFolds` restarts its per-pair
+ * index at 0, so reusing the raw index across pairs would duplicate. The
+ * per-fold evaluation inputs are independent of the index and the composers only
+ * sort by it, so the result is unchanged — only the identifiers become unique.
+ *
+ * LOOK-AHEAD SAFETY (Requirement 9.1): the model's directional prediction for a
+ * Decision_Date is NOT read from that date's matured forward outcome (which
+ * would be a tautological leak — the model would be scored against the very
+ * value it was derived from). Instead it is sourced HONESTLY from the Analogue_
+ * Neighborhood retrieved AS OF the Decision_Date, exactly as the live daily
+ * pipeline does (`src/pipeline/dailyPipeline.ts`):
+ *
+ *   1. use the STORED pattern vector at the Decision_Date as the query — it was
+ *      encoded over the trailing window strictly BEFORE that date during
+ *      backfill, so it carries no future information;
+ *   2. `retrieve(...)` the neighborhood (pre-date, matured-only, self-exclusion,
+ *      epsilon cutoff) — the Decision_Date's own future outcome is structurally
+ *      excluded, so no leak is possible;
+ *   3. `selectHorizon` + `dominantDirection` → the model prediction;
+ *      `earnedConfidence` → the model's earned strength;
+ *      `excursionProfileAt` → the model's OWN excursion profile.
+ *
+ * The matured outcome supplies ONLY `actual` (the realized direction scored
+ * against) and the Weekly_Trend_Follow baseline's excursions. A Decision_Date
+ * whose neighborhood is empty / below the directional floor yields a FLAT
+ * (non-fire) model: it does NOT contribute a firing sample, mirroring the live
+ * path, so the Sample_Size_Floor behaviour is preserved and no prediction is
+ * fabricated.
+ */
+export async function buildFoldInputs(deps: StagedRunnerDeps): Promise<{
+  readonly foldInputs: readonly FoldGateInput[];
+  readonly allFolds: readonly WalkForwardFold[];
+}> {
   const foldInputs: FoldGateInput[] = [];
-  // Collect every constructed fold so the GateVerdictSplit can be derived from
-  // the walk-forward fold bounds already available in this stage.
   const allFolds: WalkForwardFold[] = [];
-
-  // Monotonic fold index assigned GLOBALLY across pairs. `walkForwardFolds`
-  // restarts its per-pair `fold.foldIndex` at 0,1,2… for every pair, so reusing
-  // that raw index across multiple pairs produces DUPLICATE foldIndex values in
-  // the aggregated verdict. Because the persisted `gate_fold_verdicts` row is
-  // keyed by `(verdict_id, fold_index)`, duplicate indices collide on that PK.
-  // Assigning a globally-unique index here keeps every persisted fold row
-  // distinct. This is pure wiring: the per-fold gate evaluation inputs
-  // (firingSubset, modelOutcomes, baselineOutcomes) are independent of the
-  // index, and `composeGateVerdict` only sorts by foldIndex, so the verdict
-  // result is unchanged — only the fold_index identifiers become unique.
   let globalFoldIndex = 0;
+
+  // Reuse the live daily pipeline's committed retrieval knobs unless the caller
+  // overrides them, so evaluation fold inputs are produced under the SAME
+  // Analogue_Neighborhood parameters the live firing path uses (Requirement 9.1).
+  const retrievalConfig: RetrievalConfig =
+    deps.retrieval ?? DEFAULT_RETRIEVAL_CONFIG;
 
   for (const pair of PAIRS) {
     const candles = await deps.ingestion.getCandles(pair);
@@ -153,7 +189,7 @@ export async function backtest(
       // Build the firing subset and outcome arrays for each fold.
       // We read stored vectors to get dates; the actual gate evaluation
       // receives empty firingSubset / outcomes when no resolved data is
-      // available — composeGateVerdict marks those folds as skipped
+      // available — the composers mark those folds as skipped
       // (sample size < 30 floor).
       const firingSubset: Gate1FiringSample[] = [];
       const modelOutcomes: ForwardOutcome[] = [];
@@ -167,57 +203,107 @@ export async function backtest(
 
       for (const outcome of maturedOutcomes) {
         if (
-          outcome.decisionDate >= fold.testStart &&
-          outcome.decisionDate <= fold.testEnd &&
-          outcome.matured
+          !(
+            outcome.decisionDate >= fold.testStart &&
+            outcome.decisionDate <= fold.testEnd &&
+            outcome.matured
+          )
         ) {
-          // Build a Gate1FiringSample from the matured record.
-          // `baselinePrediction` is the Weekly_Trend_Follow baseline.
-          // The vector store holds the weeklyTrendSign for each date.
-          const vec = await deps.vectorStore.getVector(
-            pair,
-            outcome.decisionDate,
-          );
-          if (vec === null) continue;
-
-          const modelDirection = outcome.direction;
-          // Baseline: weeklyTrendSign mapped to UP/DOWN/FLAT direction.
-          const baselineDirection =
-            vec.weeklyTrendSign === "UP" ? "UP" : "DOWN";
-
-          firingSubset.push({
-            decisionDate: outcome.decisionDate,
-            modelPrediction: modelDirection,
-            baselinePrediction: baselineDirection,
-            actual: outcome.direction,
-          } satisfies Gate1FiringSample);
-
-          // Build the ForwardOutcome for Gate 2.
-          const forwardOutcome: ForwardOutcome = {
-            perHorizon: {
-              1: { direction: outcome.direction, mfePips: outcome.mfePips, maePips: outcome.maePips },
-              2: { direction: outcome.direction, mfePips: outcome.mfePips, maePips: outcome.maePips },
-              3: { direction: outcome.direction, mfePips: outcome.mfePips, maePips: outcome.maePips },
-            },
-          };
-
-          modelOutcomes.push(forwardOutcome);
-          // Baseline: same excursions but direction from weeklyTrendSign.
-          const baselineForwardOutcome: ForwardOutcome = {
-            perHorizon: {
-              1: { direction: baselineDirection, mfePips: outcome.mfePips, maePips: outcome.maePips },
-              2: { direction: baselineDirection, mfePips: outcome.mfePips, maePips: outcome.maePips },
-              3: { direction: baselineDirection, mfePips: outcome.mfePips, maePips: outcome.maePips },
-            },
-          };
-          baselineOutcomes.push(baselineForwardOutcome);
+          continue;
         }
+
+        // The stored pattern vector at this Decision_Date is BOTH the baseline's
+        // weekly-trend source AND the query for honest model retrieval. Absent →
+        // the date cannot be evaluated (no query, no baseline), so skip it.
+        const vec = await deps.vectorStore.getVector(pair, outcome.decisionDate);
+        if (vec === null) continue;
+
+        // --- MODEL prediction, sourced HONESTLY as of the Decision_Date ---
+        // Retrieve the Analogue_Neighborhood using the stored vector as the
+        // query. The look-ahead-safe filters inside `retrieve` (strictly
+        // pre-date + matured-only + self-exclusion) structurally exclude this
+        // date's own outcome, so the model never sees the value it is scored
+        // against.
+        const query: PatternVector = {
+          scale10: vec.scaleDims.scale10,
+          scale20: vec.scaleDims.scale20,
+          scale40: vec.scaleDims.scale40,
+          embedding: vec.embedding,
+          weeklyTrendSign: vec.weeklyTrendSign,
+          dim: vec.embedding.length,
+        };
+        const neighborhood: readonly AnalogueRecord[] = await retrieve(
+          query,
+          pair,
+          outcome.decisionDate,
+          outcome.decisionDate,
+          deps.vectorStore,
+          deps.analogueStore,
+          retrievalConfig,
+        );
+
+        const horizon = selectHorizon(neighborhood);
+        const modelDirection = dominantDirection(neighborhood, horizon);
+
+        // No directional view (empty / below-floor neighborhood) ⇒ the model
+        // does NOT fire on this date, mirroring the live pipeline. The date
+        // simply contributes no firing sample (Sample_Size_Floor preserved).
+        if (modelDirection === "FLAT") continue;
+
+        const modelConfidence = earnedConfidence(neighborhood, horizon);
+        const modelProfile = excursionProfileAt(neighborhood, horizon);
+
+        // --- BASELINE prediction: Weekly_Trend_Follow (unchanged mapping) ---
+        const baselineDirection =
+          vec.weeklyTrendSign === "UP" ? "UP" : "DOWN";
+
+        firingSubset.push({
+          decisionDate: outcome.decisionDate,
+          modelPrediction: modelDirection,
+          baselinePrediction: baselineDirection,
+          actual: outcome.direction,
+          // Populate the model's Earned_Confidence so the Evaluation_Report's
+          // strengthBreakdown buckets correctly (Design C1). It NEVER affects
+          // any gate math — it is an annotation only.
+          confidence: modelConfidence,
+        } satisfies Gate1FiringSample);
+
+        // Gate 2 model ForwardOutcome: the model's OWN retrieved-neighborhood
+        // excursion profile (favorable/adverse pips at the selected horizon),
+        // NOT the realized outcome's mfe/mae. The model direction is attached.
+        // The profile is written to every horizon slot so whichever `horizon`
+        // the composer reads from `fold.horizon`, it reads the model's own
+        // excursions (the fold's horizon is 1 below, matching the live default).
+        const modelHorizonOutcome = {
+          direction: modelDirection,
+          mfePips: modelProfile.favorablePips,
+          maePips: modelProfile.adversePips,
+        };
+        const forwardOutcome: ForwardOutcome = {
+          perHorizon: {
+            1: modelHorizonOutcome,
+            2: modelHorizonOutcome,
+            3: modelHorizonOutcome,
+          },
+        };
+        modelOutcomes.push(forwardOutcome);
+
+        // Baseline ForwardOutcome keeps its OWN derivation: the realized
+        // outcome's excursions with the Weekly_Trend_Follow direction. Because
+        // the model excursions now come from the retrieved neighborhood, the
+        // model and baseline ForwardOutcomes are NOT byte-identical by
+        // construction (the former leak symptom).
+        const baselineForwardOutcome: ForwardOutcome = {
+          perHorizon: {
+            1: { direction: baselineDirection, mfePips: outcome.mfePips, maePips: outcome.maePips },
+            2: { direction: baselineDirection, mfePips: outcome.mfePips, maePips: outcome.maePips },
+            3: { direction: baselineDirection, mfePips: outcome.mfePips, maePips: outcome.maePips },
+          },
+        };
+        baselineOutcomes.push(baselineForwardOutcome);
       }
 
       foldInputs.push({
-        // Globally-unique index across pairs (see `globalFoldIndex` above) so
-        // the persisted (verdict_id, fold_index) rows never collide. The
-        // per-pair `fold.foldIndex` is intentionally NOT used here.
         foldIndex: globalFoldIndex,
         pair,
         horizon: 1,
@@ -228,6 +314,40 @@ export async function backtest(
       globalFoldIndex += 1;
     }
   }
+
+  return { foldInputs, allFolds };
+}
+
+/**
+ * Backtest stage (Requirement 2.3, 2.4, 2.7):
+ *   1. Check that candles and pattern vectors are present (prerequisite).
+ *   2. Call `walkForwardFolds(pair, history)` for all pairs, build
+ *      `FoldGateInput[]` from stored data, then call `composeGateVerdict`.
+ *   3. Append the verdict to RESEARCH-LOG.md via `logGateVerdict`.
+ *   4. Abort with `ok: false` + `missingPrerequisite` if no data is available.
+ *
+ * NOTE (simplify-to-cloud-minimal): this verdict-path stage is RETAINED and
+ * unchanged in behaviour — its backing `gate_verdicts` table is only dropped in
+ * Phase 4. The ACTIVE evaluation write path is now the report path
+ * (`src/ops/evaluation-run/main.ts` → `evaluateAndRecordReport`), which composes
+ * an {@link composeEvaluationReport} from the SAME {@link buildFoldInputs} and
+ * records it with NO verdict (Requirement 8.2).
+ */
+export async function backtest(
+  deps: StagedRunnerDeps,
+): Promise<StageResult> {
+  // Prerequisite: at least one pair must have stored candles and vectors.
+  if (!(await hasBacktestData(deps))) {
+    return {
+      ok: false,
+      missingPrerequisite:
+        "backtest: no candles or pattern vectors stored — run backfill first",
+    };
+  }
+
+  // Build the per-fold gate inputs from stored data (shared with the evaluation
+  // report path, which composes an EvaluationReport from the SAME inputs).
+  const { foldInputs, allFolds } = await buildFoldInputs(deps);
 
   // Compose the verdict across all folds and append to RESEARCH-LOG.md.
   const verdict = composeGateVerdict(deps.configId, foldInputs);
@@ -243,34 +363,13 @@ export async function backtest(
   // producer — nothing is recomputed here.
   const split = deriveGateVerdictSplit(allFolds);
   if (split !== null) {
-    // Capture the persist report — its `verdictId` is the justifying id written
-    // onto any PASS→included feature_registry rows below (spec Req 2.4). A
-    // persist rejection is surfaced with the affected configId (spec Req 2.6):
+    // A persist rejection is surfaced with the affected configId (spec Req 2.6):
     // it is NOT swallowed and the stage does NOT return `{ ok: true }` as though
     // the verdict were recorded.
-    let report;
     try {
-      report = await persistGateVerdict(deps.gateVerdictStore, verdict, split);
+      await persistGateVerdict(deps.gateVerdictStore, verdict, split);
     } catch (err) {
       throw withConfigIdContext(err, deps.configId);
-    }
-
-    // On a PASS, record each admitted candidate feature as an `included`
-    // feature_registry row carrying the justifying PASS verdictId (spec Req
-    // 2.4). The admitted set is injected by the caller — the stage makes NO
-    // admission decision and validates NO ceiling (spec Req 1.8). When no
-    // features are admitted (undefined/empty), nothing is upserted and this is
-    // a valid no-op.
-    if (verdict.verdict === "PASS") {
-      const admitted = deps.admittedFeatures ?? [];
-      for (const featureId of admitted) {
-        const row: FeatureRegistryRow = {
-          featureId,
-          status: "included",
-          verdictId: report.verdictId,
-        };
-        await deps.featureRegistryStore.upsert(row);
-      }
     }
   }
 

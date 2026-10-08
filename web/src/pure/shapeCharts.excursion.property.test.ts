@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { shapeExcursionProfile } from "./shapeCharts.ts";
-import type { AnalogueOutcomeRow, Direction, Horizon } from "../api/endpoints.ts";
+import type { AnalogueOutcomeRow, Direction, Horizon } from "../api/types.ts";
 
 // For any set of `analogue_outcomes` rows, `shapeExcursionProfile` produces one point per
 // row whose `mfe_pips`/`mae_pips` (and horizon/direction) equal the source row's values

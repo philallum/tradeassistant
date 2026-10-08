@@ -43,9 +43,9 @@ export type PairEvaluationLoader = (
 ) => Promise<readonly PairEvaluation[]>;
 
 /**
- * Persists the produced dashboard view (firing cards + suppressions) for the
- * Decision_Date. Injected for the same reasons as the loader; the concrete
- * `firing_setups` writer is wired in task 10.10 / 11.1.
+ * Persists the produced dashboard view (firing cards) for the Decision_Date.
+ * Injected for the same reasons as the loader; the concrete `firing_setups`
+ * writer is wired in task 10.10 / 11.1.
  */
 export type DashboardViewPersister = (
   view: DashboardView,

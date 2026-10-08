@@ -8,28 +8,25 @@
 // (see src/scheduled-run/scheduledRun.ts).
 //
 // It composes the existing modules in the design's data-flow order —
-// ingestion → encoder → retrieval → resolver → confidence → kill-gate →
-// feature registry → news filter → (risk boundaries) → dashboard — WITHOUT
-// re-implementing any of them. Each stage is invoked through its module's
-// public API; storage is reached only through the existing PORTs
-// (`CandleStore`, `PatternVectorStore`, `AnalogueStore`), so compute stays
+// ingestion → encoder → retrieval → resolver → confidence → risk boundaries →
+// dashboard — WITHOUT re-implementing any of them. Each stage is invoked
+// through its module's public API; storage is reached only through the existing
+// PORTs (`CandleStore`, `PatternVectorStore`, `AnalogueStore`), so compute stays
 // independent of any concrete Supabase client (Requirement 17.1).
 //
 // The AI / Deterministic boundary holds here (Requirement 2.1): the firing
 // decision is derived entirely from typed numeric / enumerated values. The only
-// LLM-derived values are:
-//   - the news `RiskFlag`, consumed ONLY as the deterministic `suppressed`
-//     boolean of a `SuppressionDecision` (never a Direction_Class), and
-//   - the outward-only `rationale` / `analogueLabels` display strings.
-// Both enter through injected resolvers so the deterministic core never imports
-// an LLM type, and by default they are empty / permissive (LLM-free).
+// LLM-derived values are the outward-only `rationale` / `analogueLabels`
+// display strings, which enter through an injected resolver so the deterministic
+// core never imports an LLM type, and by default they are empty (LLM-free).
+// The former news suppressor has been removed (Requirements 3.4, 3.5), so no
+// news decision crosses into the pipeline.
 
 import type { Pair } from "../ingestion/types.js";
 import type { CandleStore } from "../ingestion/types.js";
 import type { TradingDate } from "../guard/types.js";
 import type { PatternVectorStore } from "../encoder/types.js";
 import type { AnalogueStore, RetrievalConfig } from "../retrieval/types.js";
-import type { SuppressionDecision } from "../news-filter/types.js";
 import type { RiskBoundaryConfig } from "../risk-boundaries/types.js";
 
 /**
@@ -46,37 +43,6 @@ export interface PipelineStores {
   /** Resolved forward-outcome rows — the matured Analogue_Neighborhood source. */
   readonly analogueStore: AnalogueStore;
 }
-
-/**
- * Resolves whether a pair has a Kill_Gate-passing pattern for the Decision_Date
- * (Requirements 16.5, 12.2, 12.3). Gate verdicts are produced during the
- * research phase (the two-stage harness + Feature Registry) and recorded; the
- * daily run consumes the recorded PASS/CUT outcome rather than re-running the
- * walk-forward backtest on every unattended run. Injected so the pipeline stays
- * deterministic and free of the heavy backtest on the daily path.
- *
- * A typical implementation reads `gate_verdicts` / `feature_registry` and
- * returns `true` only when a PASS verdict backs the pair's active configuration.
- */
-export type GatePassingResolver = (
-  pair: Pair,
-  decisionDate: TradingDate,
-) => Promise<boolean> | boolean;
-
-/**
- * Resolves the deterministic news {@link SuppressionDecision} for a pair on the
- * Decision_Date (Requirement 14). The News Filter turns the structured
- * `RiskFlag` (or a feed failure) into a `{ suppressed, reason }` decision; the
- * pipeline consumes ONLY the `suppressed` boolean — never a direction
- * (Requirement 14.5). Injected so no LLM type crosses into the pipeline.
- *
- * The default resolver permits trading for every pair (no calendar wired),
- * keeping the pipeline LLM-free unless a caller supplies the News Filter.
- */
-export type NewsDecisionResolver = (
-  pair: Pair,
-  decisionDate: TradingDate,
-) => Promise<SuppressionDecision> | SuppressionDecision;
 
 /**
  * The OUTWARD-ONLY display strings for a firing card (Requirement 15). Produced
@@ -135,14 +101,11 @@ export const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
 
 /**
  * The injected collaborators the pipeline needs beyond the storage ports: the
- * gate-passing resolver, the news suppression resolver, and the outward-only
- * narrative resolver. Each has a safe, deterministic default (see
- * {@link resolveGatePassingDefault} etc.), so a caller can run the pipeline with
- * storage alone and layer in the gate / news / LLM collaborators incrementally.
+ * outward-only narrative resolver. It has a safe, deterministic default (see
+ * {@link resolveNarrativeEmptyDefault}), so a caller can run the pipeline with
+ * storage alone and layer in the LLM narrative incrementally.
  */
 export interface PipelineDeps extends PipelineStores {
-  readonly gatePassing?: GatePassingResolver;
-  readonly news?: NewsDecisionResolver;
   readonly narrative?: NarrativeResolver;
   readonly config?: PipelineConfig;
 }

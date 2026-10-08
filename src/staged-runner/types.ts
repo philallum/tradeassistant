@@ -7,12 +7,8 @@
 import type { DataSourceRole } from "../csv-loader/types.js";
 import type { CandleStore } from "../ingestion/types.js";
 import type { PatternVectorStore } from "../encoder/types.js";
-import type { AnalogueStore } from "../retrieval/types.js";
+import type { AnalogueStore, RetrievalConfig } from "../retrieval/types.js";
 import type { GateVerdictStore } from "../kill-gate/types.js";
-import type {
-  FeatureRegistryStore,
-  FeatureId,
-} from "../feature-registry/types.js";
 import type { LivingDocs } from "../living-docs/livingDocs.js";
 import type {
   PairEvaluationLoader,
@@ -55,12 +51,6 @@ export interface StagedRunnerDeps {
    * passes the Supabase adapter.
    */
   readonly gateVerdictStore: GateVerdictStore;
-  /**
-   * FeatureRegistryStore PORT — persists feature-registry rows. Injectable:
-   * tests pass the in-memory reference, the Gate_Run passes the Supabase
-   * adapter. (Consumed by the PASS→included upsert in a later task.)
-   */
-  readonly featureRegistryStore: FeatureRegistryStore;
   /** Data directory for CSV files (used by backfill). */
   readonly dataDir: string;
   /** Living-Docs writer for appending backtest verdicts to RESEARCH-LOG.md. */
@@ -74,16 +64,16 @@ export interface StagedRunnerDeps {
   /** Kill-gate config id for verdict composition. */
   readonly configId: string;
   /**
-   * The candidate features this run admits on a PASS verdict (spec Req 2.4).
-   *
-   * Supplied by the caller (the Gate_Run); the Backtest_Stage records these as
-   * `feature_registry` rows with `status: "included"` and the justifying PASS
-   * `verdictId`, but makes NO admission decision itself (spec Req 1.8 — the
-   * stage does not own candidate-feature admission; it only persists the set the
-   * caller already decided). Optional: when omitted/empty, no admission is
-   * recorded and the PASS→included upsert writes nothing.
+   * Retrieval knobs (neighborhood size `k` and Similarity_Radius `epsilon`)
+   * used when `buildFoldInputs` sources the model's directional prediction
+   * HONESTLY from the Analogue_Neighborhood as of each Decision_Date — exactly
+   * as the live daily pipeline does (`src/pipeline/dailyPipeline.ts`). Optional:
+   * when omitted, `buildFoldInputs` reuses the live pipeline's committed
+   * `DEFAULT_RETRIEVAL_CONFIG`, so the evaluation fold inputs are scored under
+   * the SAME retrieval parameters the live firing path uses. It is NOT a new
+   * config source — it threads the existing pipeline default (Requirement 9.1).
    */
-  readonly admittedFeatures?: readonly FeatureId[];
+  readonly retrieval?: RetrievalConfig;
 }
 
 // Re-export DataSourceRole so stagedRunner.ts can import it from types.

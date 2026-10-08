@@ -30,14 +30,15 @@ import {
   type ReactNode,
 } from "react";
 
-import { fetchEndpoint, type ApiResult } from "../../api/client";
+import type { ApiResult } from "../../api/snapshot";
+import { getSnapshot } from "../../api/snapshotCache";
 import type {
   AnalogueOutcomeRow,
   CandleRow,
   FiringSetupRow,
   Pair,
   RealizedOutcomeRow,
-} from "../../api/endpoints";
+} from "../../api/types";
 import {
   shapeConfidenceTrend,
   shapeExcursionProfile,
@@ -75,23 +76,49 @@ export interface PatternOutcomesLoaders {
   ) => Promise<ApiResult<CandleRow>>;
 }
 
-/** Default loaders: the real same-origin `/api` reads through the api client. */
+/** Freshness marker helper: the snapshot's `generatedAt`, or `null` when absent. */
+function freshness(generatedAt: string): string | null {
+  return generatedAt === "" ? null : generatedAt;
+}
+
+/**
+ * Default loaders: slices of the shared `dashboard.json` snapshot, scoped to the pair (and,
+ * where applicable, the Decision_Date). They reuse the shell-shared snapshot so a tab never
+ * issues a second fetch; a refresh re-fetch is driven once by the shell.
+ */
 const defaultLoaders: PatternOutcomesLoaders = {
-  loadConfidenceTrend: (pair, signal) =>
-    fetchEndpoint("/confidence-trend", { pair }, { signal }),
-  loadExcursions: (pair, decisionDate, signal) =>
-    fetchEndpoint(
-      "/analogue-outcomes",
-      decisionDate !== null ? { pair, decisionDate } : { pair },
-      { signal },
-    ),
-  loadRealized: (pair, decisionDate, signal) =>
-    fetchEndpoint(
-      "/realized-outcomes",
-      decisionDate !== null ? { pair, decisionDate } : { pair },
-      { signal },
-    ),
-  loadCandles: (pair, signal) => fetchEndpoint("/candles", { pair }, { signal }),
+  loadConfidenceTrend: async (pair, signal) => {
+    const s = await getSnapshot(0, { signal });
+    return {
+      rows: s.firingSetups.filter((r) => r.pair === pair),
+      lastUpdated: freshness(s.generatedAt),
+    };
+  },
+  loadExcursions: async (pair, decisionDate, signal) => {
+    const s = await getSnapshot(0, { signal });
+    return {
+      rows: s.analogueOutcomes.filter(
+        (r) => r.asset === pair && (decisionDate === null || r.decision_date === decisionDate),
+      ),
+      lastUpdated: freshness(s.generatedAt),
+    };
+  },
+  loadRealized: async (pair, decisionDate, signal) => {
+    const s = await getSnapshot(0, { signal });
+    return {
+      rows: s.realizedOutcomes.filter(
+        (r) => r.pair === pair && (decisionDate === null || r.decision_date === decisionDate),
+      ),
+      lastUpdated: freshness(s.generatedAt),
+    };
+  },
+  loadCandles: async (pair, signal) => {
+    const s = await getSnapshot(0, { signal });
+    return {
+      rows: s.candles.filter((r) => r.asset === pair),
+      lastUpdated: freshness(s.generatedAt),
+    };
+  },
 };
 
 /** The rows the four per-pair reads return, held together once all four resolve. */
@@ -177,7 +204,7 @@ export function PatternOutcomesTab({
         if (!mounted.current) return;
         // Non-secret message only — never the raw payload/stack (Req 14.2).
         const message =
-          cause instanceof Error && cause.name === "ApiError"
+          cause instanceof Error && cause.name === "SnapshotError"
             ? cause.message
             : "Could not load pattern and outcome data.";
         setState({ status: "error", message });

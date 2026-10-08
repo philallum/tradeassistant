@@ -26,18 +26,17 @@ const SUPABASE: SupabaseConfig = {
   key: "test-key",
 };
 
-/** A single gate-passing, high-confidence, non-suppressed evaluation. */
+/** A single directional, high-confidence evaluation (fires: no suppression step). */
 function firingEvaluation(): PairEvaluation {
   return {
     pair: "EURUSD",
-    gatePassing: true,
     earnedConfidence: 0.9 as Confidence,
     direction: "UP",
     horizon: 2,
     excursionProfile: { favorablePips: 40, adversePips: 15 },
     stopLossPips: 15,
     takeProfitPips: 40,
-    newsSuppressed: false,
+    choppiness: 0.8,
     rationale: "analogues resolved up",
     analogueLabels: ["trend-continuation"],
   };

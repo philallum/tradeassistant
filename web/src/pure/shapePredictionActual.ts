@@ -11,7 +11,7 @@
  * strings, so "most recent" is the plain lexicographic string maximum (see `selectDates`).
  */
 
-import type { Direction, Horizon, RealizedOutcomeRow } from "../api/endpoints.ts";
+import type { Direction, Horizon, RealizedOutcomeRow } from "../api/types.ts";
 
 /**
  * The predicted side of the comparison, copied verbatim from the selected row (Req 10.1).

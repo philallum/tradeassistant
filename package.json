@@ -2,7 +2,7 @@
   "name": "fx-daily-pattern-assistant",
   "version": "0.1.0",
   "private": true,
-  "description": "FX Daily Pattern Trading Assistant - deterministic TypeScript core with isolated Python statistical cross-checks.",
+  "description": "FX Daily Pattern Trading Assistant - deterministic TypeScript core with authoritative Vitest/fast-check property tests.",
   "type": "module",
   "engines": {
     "node": ">=22.0.0 <23.0.0"

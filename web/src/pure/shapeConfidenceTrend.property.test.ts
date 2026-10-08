@@ -10,8 +10,8 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { shapeConfidenceTrend } from "./shapeCharts.ts";
-import type { FiringSetupRow, Pair } from "../api/endpoints.ts";
-import { PAIRS } from "../api/endpoints.ts";
+import type { FiringSetupRow, Pair } from "../api/types.ts";
+import { PAIRS } from "../api/types.ts";
 
 const NUM_RUNS = 300; // >= 100 iterations required by the task.
 
@@ -54,14 +54,10 @@ const rowArb: fc.Arbitrary<FiringSetupRow> = fc.record({
   }),
   surfaced: fc.boolean(),
   suppression_reason: fc.constantFrom<FiringSetupRow["suppression_reason"]>(
-    "news",
-    "currency_concentration",
     "below_floor",
     "not_fired",
-    "too_choppy",
     null,
   ),
-  competing_pairs: fc.option(fc.array(pairArb, { maxLength: 4 }), { nil: null }),
 });
 
 /** A set of rows spanning multiple pairs so the per-pair filter is genuinely exercised. */

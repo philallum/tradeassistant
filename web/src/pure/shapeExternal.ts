@@ -15,7 +15,7 @@
  * labeling (Req 12.2).
  */
 
-import type { ExternalReferenceComparisonRow } from "../api/endpoints.ts";
+import type { ExternalReferenceComparisonRow } from "../api/types.ts";
 
 /** The system's own persisted Direction_Class. */
 export type OwnDirection = "UP" | "DOWN" | "FLAT";

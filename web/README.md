@@ -1,8 +1,10 @@
 # Dashboard UI (web)
 
 Standalone read-only dashboard SPA (React + Vite + TypeScript). Deployed to Firebase
-Hosting; all data reads go through the Read_Proxy via the `/api` rewrite — the SPA never
-holds Supabase credentials.
+Hosting. Under the public-data model the SPA reads a single static JSON snapshot
+(`dashboard.json`) that the Cloud Run Job writes at the end of each daily run — there is no
+read-proxy, no `/api` rewrite, and no authentication gate, and the SPA holds no credential
+(simplify-to-cloud-minimal R4, R5).
 
 ## Local development
 
@@ -11,8 +13,9 @@ npm install
 npm run dev
 ```
 
-`npm run dev` starts the Vite dev server. Requests to `/api/**` are forwarded to the
-`dashboard-read-proxy` Cloud Run service (or a locally-run proxy) and the rest of the app
+`npm run dev` starts the Vite dev server. The SPA fetches the same-origin static
+`dashboard.json` snapshot (`loadSnapshot()` in `src/api/snapshot.ts`); for local work place a
+`dashboard.json` in the served root (or point the dev server at a copy). The rest of the app
 is served as a single-page application.
 
 Other scripts:
@@ -35,14 +38,19 @@ Hosting config (`firebase.json`):
 
 - `public: "dist"` — serves the Vite build output (`web/dist`), resolved relative to
   `web/firebase.json`.
-- `/api/**` rewrite → the `dashboard-read-proxy` Cloud Run service
-  (region `europe-west1`), so all reads flow through the Read_Proxy.
-- Catch-all `**` rewrite → `/index.html` for SPA client-side routing fallback.
+- Catch-all `**` rewrite → `/index.html` for SPA client-side routing fallback. There is NO
+  `/api` rewrite — the read-proxy has been removed; the SPA fetches the static
+  `dashboard.json` the Job publishes.
 - Strict CSP and security headers applied to all responses
-  (`Content-Security-Policy`, `X-Content-Type-Options`, `Referrer-Policy`,
-  `X-Frame-Options`).
+  (`Content-Security-Policy` with `connect-src 'self'` so the same-origin snapshot fetch is
+  allowed, `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`).
 
 The target Firebase project is `trade-assistant-508806` (`.firebaserc` `projects.default`).
+
+> The sections below are a historical record of past live-cloud operator actions from when
+> the read-proxy was still deployed. They are retained for provenance; the read-proxy service
+> and its GCP resources are removed by the simplify-to-cloud-minimal spec (code removal in
+> Phase 5; the live GCP resource deletion is a separate operator-approved task).
 
 ## Deployment record — Task 16 (LIVE CLOUD, Req 21.4)
 

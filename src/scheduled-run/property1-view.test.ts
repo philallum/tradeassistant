@@ -22,7 +22,6 @@ import fc from "fast-check";
 import { dailyRun, type PairEvaluation } from "../dashboard/index.js";
 import {
   DEFAULT_CONFIDENCE_THRESHOLD,
-  DEFAULT_MAX_CONCURRENT_ALIGNED,
   type DashboardConfig,
 } from "../dashboard/index.js";
 import type { Confidence, Horizon } from "../confidence/types.js";
@@ -47,7 +46,6 @@ const HORIZONS: readonly Horizon[] = [1, 2, 3] as const;
 function evaluationArb(pair: Pair): fc.Arbitrary<PairEvaluation> {
   return fc.record({
     pair: fc.constant(pair),
-    gatePassing: fc.boolean(),
     earnedConfidence: fc
       .double({ min: 0, max: 1, noNaN: true })
       .map((c) => c as Confidence),
@@ -63,7 +61,7 @@ function evaluationArb(pair: Pair): fc.Arbitrary<PairEvaluation> {
     takeProfitPips: fc.option(fc.double({ min: 1, max: 200, noNaN: true }), {
       nil: null,
     }),
-    newsSuppressed: fc.boolean(),
+    choppiness: fc.double({ min: 0, max: 1, noNaN: true }),
     rationale: fc.string(),
     analogueLabels: fc.array(fc.string(), { maxLength: 4 }),
   });
@@ -90,7 +88,6 @@ const decisionDateArb: fc.Arbitrary<TradingDate> = fc
 /** An arbitrary DashboardConfig so the property holds for any tuning. */
 const configArb: fc.Arbitrary<DashboardConfig> = fc.record({
   confidenceThreshold: fc.double({ min: 0, max: 1, noNaN: true }),
-  maxConcurrentAligned: fc.integer({ min: 1, max: 5 }),
 });
 
 /** Build a scheduled-run config for a Decision_Date over the fixed store. */
@@ -163,7 +160,6 @@ describe("Property 1 (view scope): scheduled run reproduces the equivalent local
 
         const local = dailyRun(decisionDate, evaluations, {
           confidenceThreshold: DEFAULT_CONFIDENCE_THRESHOLD,
-          maxConcurrentAligned: DEFAULT_MAX_CONCURRENT_ALIGNED,
         });
 
         expect(scheduled.view).toEqual(local);

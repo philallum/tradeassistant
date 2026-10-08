@@ -24,8 +24,8 @@
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { ApiResult } from "../api/client";
-import type { DecisionDateRow } from "../api/endpoints";
+import type { ApiResult } from "../api/snapshot";
+import type { DecisionDateRow } from "../api/types";
 import { TABS } from "../routing/routes";
 import { SelectionProvider, type SelectionState } from "../state/selection";
 import { AppShell, type DecisionDatesLoader } from "./AppShell";

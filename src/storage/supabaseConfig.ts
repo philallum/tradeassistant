@@ -9,6 +9,20 @@
 //
 // Secrets are never fabricated or defaulted — the URL/key values are read
 // verbatim from the process environment (Requirement 6.3).
+//
+// ROLE-NAME AGNOSTIC (spec Req 4.6, 9.3). This module and the companion
+// `supabase/client.ts` are deliberately ignorant of the Postgres role the write
+// JWT selects. The Bearer credential (`key`, from SUPABASE_HOSTED_KEY /
+// `supabase-key`) and the gateway `apikey` (`apiKey`, from
+// SUPABASE_PUBLISHABLE_KEY / `supabase-publishable-key`) are read verbatim and
+// carried through unchanged — no code here parses the JWT, inspects its `role`
+// claim, or hardcodes any role name. PostgREST (not this code) resolves the
+// Postgres role from the JWT's `role` claim server-side. Consequently the
+// pipeline_writer → fx_writer cutover (tasks 5.2a / 5.3) is a SECRET ROTATION,
+// NOT A CODE EDIT: minting a new JWT with `role: fx_writer` and storing it as a
+// new `supabase-key` secret version is sufficient; this file and the client
+// need no change. The role names appearing in comments below are illustrative
+// of the deployment model only and are never matched against at runtime.
 
 /** The two supported deployment targets (Requirement 17.2). */
 export type SupabaseTarget = "local" | "hosted";

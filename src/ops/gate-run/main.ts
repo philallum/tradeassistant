@@ -9,8 +9,7 @@
 // the EXISTING Backtest_Stage against that hosted data to persist a
 // `gate_verdicts` PASS — so the `GatePassingResolver` finds no recorded PASS and
 // no pair fires. The Gate_Run runs that Backtest_Stage against the hosted stores
-// so composed verdicts (and PASS→`included` `feature_registry` rows) land in the
-// hosted backend.
+// so composed verdicts land in the hosted backend.
 //
 // It contains NO gate math of its own — Gate 1 / Gate 2 evaluation and
 // `composeGateVerdict` are design Component 4, reached entirely through the
@@ -20,16 +19,15 @@
 //
 //   loadScheduledRunConfig()
 //     → buildSupabaseStores(config.supabase)        (candle/vector/analogue)
-//     + buildSupabaseGateStores(<shared client>)    (gate-verdict + registry)
+//     + buildSupabaseGateStores(<shared client>)    (gate-verdict)
 //       sharing ONE SupabaseRestClient
 //     → backtest(deps)  — composeGateVerdict per config → persistGateVerdict
-//       + logGateVerdict → PASS → upsert `feature_registry` `included` rows
+//       + logGateVerdict
 //
 // `composeGateVerdict` remains the SOLE verdict producer; nothing here
 // re-implements, re-evaluates, or re-composes any verdict. `persistGateVerdict`
-// / `logGateVerdict` and the PASS→`included` upsert all live inside the existing
-// Backtest_Stage; this entry supplies the hosted stores and the admitted
-// candidate-feature set and reports non-secret references.
+// / `logGateVerdict` live inside the existing Backtest_Stage; this entry
+// supplies the hosted stores and reports non-secret references.
 //
 // Secret confidentiality (design Component 6; parent Req 6.2, 6.3): the Supabase
 // `Secret_Key` is NEVER logged. The structured logs carry only non-secret
@@ -54,10 +52,6 @@ import type {
   StageResult,
 } from "../../staged-runner/types.js";
 import type { GateVerdictStore } from "../../kill-gate/types.js";
-import type {
-  FeatureRegistryStore,
-  FeatureId,
-} from "../../feature-registry/types.js";
 import type {
   PairEvaluationLoader,
   DashboardViewPersister,
@@ -164,12 +158,11 @@ export interface GateRunDeps {
    */
   readonly stores?: PipelineStores;
   /**
-   * The two gate stores (gate-verdict + feature-registry). Defaults to
-   * `buildSupabaseGateStores(<shared client>)` so they share the SAME
-   * {@link SupabaseRestClient} as `stores`. Inject in-memory references to test.
+   * The gate-verdict store. Defaults to `buildSupabaseGateStores(<shared
+   * client>)` so it shares the SAME {@link SupabaseRestClient} as `stores`.
+   * Inject an in-memory reference to test.
    */
   readonly gateVerdictStore?: GateVerdictStore;
-  readonly featureRegistryStore?: FeatureRegistryStore;
   /**
    * Injectable `fetch` passed to the Supabase builders when `stores` /
    * gate stores are not supplied — tests inject a stub so no network is
@@ -182,14 +175,6 @@ export interface GateRunDeps {
   readonly docs?: LivingDocs;
   /** Kill-gate config id recorded on the composed verdict. */
   readonly configId?: string;
-  /**
-   * The candidate features this run admits on a PASS verdict (parent Req 13;
-   * spec Req 2.4). The Backtest_Stage records these as `feature_registry` rows
-   * with `status: "included"` and the justifying PASS `verdictId`; the stage
-   * makes NO admission decision (spec Req 1.8). Optional: when omitted/empty, a
-   * PASS records no `included` rows.
-   */
-  readonly admittedFeatures?: readonly FeatureId[];
   /** Evaluation loader (unused by backtest); defaults to a no-op. */
   readonly loadEvaluations?: PairEvaluationLoader;
   /** Optional view persister (unused by backtest). */
@@ -201,11 +186,9 @@ export interface GateRunDeps {
  * gate stores sharing ONE client → run the EXISTING Backtest_Stage over the
  * hosted seeded walk-forward folds. The Backtest_Stage calls
  * `composeGateVerdict` (the sole verdict producer), then `persistGateVerdict` +
- * `logGateVerdict`, and on a PASS upserts the admitted `feature_registry` rows
- * as `included` carrying the justifying `verdictId` — all unchanged, existing
- * logic. This entry re-implements NO gate math; it only assembles the
- * {@link StagedRunnerDeps} from existing pieces and calls the existing free
- * `backtest` function.
+ * `logGateVerdict` — all unchanged, existing logic. This entry re-implements NO
+ * gate math; it only assembles the {@link StagedRunnerDeps} from existing
+ * pieces and calls the existing free `backtest` function.
  *
  * Collaborators are injectable so this is unit-testable without a live network
  * (task 8.2); the LIVE build/deploy/execute against hosted Supabase is task 10.
@@ -219,14 +202,12 @@ export async function runGateRun(deps: GateRunDeps = {}): Promise<StageResult> {
   const config = deps.config ?? loadScheduledRunConfig();
 
   // Build ONE shared SupabaseRestClient so the pipeline stores and the gate
-  // stores reach storage through the same connection configuration (URL + key +
+  // store reach storage through the same connection configuration (URL + key +
   // fetch), as the design requires (Component 3 / Component 6). The key is held
   // inside the client and never logged. When the caller injects `stores` /
-  // gate stores (tests), no client is built and no network is touched.
+  // gate store (tests), no client is built and no network is touched.
   const needsHostedStores =
-    deps.stores === undefined ||
-    deps.gateVerdictStore === undefined ||
-    deps.featureRegistryStore === undefined;
+    deps.stores === undefined || deps.gateVerdictStore === undefined;
   const sharedClient = needsHostedStores
     ? makeSharedClient(config, deps.fetchImpl)
     : undefined;
@@ -239,7 +220,6 @@ export async function runGateRun(deps: GateRunDeps = {}): Promise<StageResult> {
     config,
     deps.fetchImpl,
     deps.gateVerdictStore,
-    deps.featureRegistryStore,
   );
 
   const ingestion = new OhlcIngestion(stores.candleStore);
@@ -266,22 +246,18 @@ export async function runGateRun(deps: GateRunDeps = {}): Promise<StageResult> {
     vectorStore: stores.vectorStore,
     analogueStore: stores.analogueStore,
     gateVerdictStore: gateStores.gateVerdictStore,
-    featureRegistryStore: gateStores.featureRegistryStore,
     dataDir,
     docs,
     config,
     loadEvaluations: deps.loadEvaluations ?? noopEvaluationLoader,
     ...(deps.persistView !== undefined ? { persistView: deps.persistView } : {}),
     configId,
-    ...(deps.admittedFeatures !== undefined
-      ? { admittedFeatures: deps.admittedFeatures }
-      : {}),
   };
 
   // Run the EXISTING Backtest_Stage against the hosted (seeded) stores. All gate
-  // math, verdict composition, persistence, logging, and the PASS→`included`
-  // upsert live inside this existing stage (design Component 4). A missing
-  // prerequisite (no stored candles/vectors) is surfaced via `ok: false`.
+  // math, verdict composition, persistence, and logging live inside this
+  // existing stage (design Component 4). A missing prerequisite (no stored
+  // candles/vectors) is surfaced via `ok: false`.
   const result = await backtest(runnerDeps);
 
   console.log(
@@ -310,33 +286,25 @@ function makeSharedClient(
 }
 
 /**
- * Resolve the two gate stores. When the caller injected BOTH, those are used
- * verbatim (tests). Otherwise `buildSupabaseGateStores` constructs them — from
- * the SHARED client when available (so they share the pipeline stores' client),
- * else from the config — and any individually-injected store overrides the
- * built one.
+ * Resolve the gate-verdict store. When the caller injected it, that is used
+ * verbatim (tests). Otherwise `buildSupabaseGateStores` constructs it — from
+ * the SHARED client when available (so it shares the pipeline stores' client),
+ * else from the config.
  */
 function buildGateStores(
   sharedClient: SupabaseRestClient | undefined,
   config: ScheduledRunConfig,
   fetchImpl: typeof fetch | undefined,
   injectedVerdictStore: GateVerdictStore | undefined,
-  injectedRegistryStore: FeatureRegistryStore | undefined,
-): { readonly gateVerdictStore: GateVerdictStore; readonly featureRegistryStore: FeatureRegistryStore } {
-  if (injectedVerdictStore !== undefined && injectedRegistryStore !== undefined) {
-    return {
-      gateVerdictStore: injectedVerdictStore,
-      featureRegistryStore: injectedRegistryStore,
-    };
+): { readonly gateVerdictStore: GateVerdictStore } {
+  if (injectedVerdictStore !== undefined) {
+    return { gateVerdictStore: injectedVerdictStore };
   }
   const built =
     sharedClient !== undefined
       ? buildSupabaseGateStores(sharedClient)
       : buildSupabaseGateStores(config.supabase, fetchImpl);
-  return {
-    gateVerdictStore: injectedVerdictStore ?? built.gateVerdictStore,
-    featureRegistryStore: injectedRegistryStore ?? built.featureRegistryStore,
-  };
+  return { gateVerdictStore: built.gateVerdictStore };
 }
 
 /**

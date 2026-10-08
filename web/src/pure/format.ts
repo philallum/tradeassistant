@@ -9,7 +9,7 @@
  * an explicit not-actionable marker, never as a made-up number (Req 9.2).
  */
 
-import type { Direction } from "../api/endpoints";
+import type { Direction } from "../api/types";
 
 /**
  * The explicit "not actionable" marker rendered in place of a null Stop_Loss /

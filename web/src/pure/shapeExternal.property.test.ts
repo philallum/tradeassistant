@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { shapeExternal } from "./shapeExternal.ts";
-import type { ExternalReferenceComparisonRow } from "../api/endpoints.ts";
+import type { ExternalReferenceComparisonRow } from "../api/types.ts";
 
 // For any set of `external_reference_comparison` rows for a pair + Decision_Date,
 // `shapeExternal` projects the system's own Direction_Class, the provider's reference

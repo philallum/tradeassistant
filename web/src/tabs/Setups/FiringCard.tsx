@@ -16,7 +16,7 @@
  */
 
 import type { CardVM } from "../../pure/shapeDashboard";
-import type { Direction } from "../../api/endpoints";
+import type { Direction } from "../../api/types";
 import { formatConfidence, formatDirection, formatPips } from "../../pure/format";
 import { theme } from "../../theme/darkTheme";
 
