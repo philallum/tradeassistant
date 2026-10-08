@@ -27,6 +27,8 @@ import { fileURLToPath } from "node:url";
 import { loadScheduledRunConfig } from "./config.js";
 import type { PairEvaluationLoader, DashboardViewPersister } from "./scheduledRun.js";
 import { runScheduledDaily } from "./scheduledRun.js";
+import { runCandleFreshnessStage, type CandleFreshnessDeps } from "./candleFreshness.js";
+import { resolveMaxLookback } from "./candleGap.js";
 import { makePipelineLoader } from "../pipeline/index.js";
 import {
   buildSupabaseStores,
@@ -35,6 +37,11 @@ import {
 } from "../storage/supabase/index.js";
 import type { PairEvaluation, DashboardView } from "../dashboard/index.js";
 import { isTradingDay } from "../guard/tradingDate.js";
+import { OhlcIngestion } from "../ingestion/ohlcIngestion.js";
+import {
+  ohlcFeedConfigFromEnv,
+  buildProviderChain,
+} from "../ingestion/ohlcFeed/index.js";
 import { LlmInterface, GeminiLlmProvider, InMemoryRoleRejectionRecorder } from "../llm/index.js";
 import {
   externalSignalConfigFromEnv,
@@ -172,6 +179,90 @@ function logStartupWarning(collaborator: string, err: unknown): void {
   );
 }
 
+/**
+ * Injectable seam for {@link freshenCandles} so the wiring is unit-testable with
+ * no live network. Production defaults build the real Supabase-backed stores and
+ * drive {@link runCandleFreshnessStage}; a test injects an in-memory
+ * `buildStores` and/or a `runStage` spy to assert the stage is (not) run and
+ * that a thrown error is caught.
+ */
+export interface FreshenCandlesDeps {
+  /** Build the candle/vector stores for the stage. Defaults to the Supabase stores. */
+  readonly buildStores?: (
+    config: ReturnType<typeof loadScheduledRunConfig>,
+  ) => Pick<ReturnType<typeof buildSupabaseStores>, "candleStore" | "vectorStore">;
+  /** Run the freshness stage. Defaults to {@link runCandleFreshnessStage}. */
+  readonly runStage?: (stageDeps: CandleFreshnessDeps) => Promise<unknown>;
+  /** Env map the OHLC-feed config + lookback are read from. Defaults to `process.env`. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
+}
+
+/**
+ * Candle_Freshness_Stage wiring (design Component 6, R2.1): bring each pair's
+ * candles up to the most recent Completed_Trading_Day BEFORE the deterministic
+ * pipeline reads history. Must run after the weekday gate and before
+ * `runScheduledDaily` (which reads candle history inside the pipeline loader).
+ *
+ * FAIL-SAFE (R4.1): the whole stage is wrapped in a `try/catch` that routes any
+ * error — including an unexpected store-construction failure — through the
+ * secret-free {@link logStartupWarning}. A stage error NEVER crashes the Job; the
+ * run then proceeds on the pair's existing history. (`runCandleFreshnessStage`
+ * already avoids throwing on provider failures; the try/catch covers the rest.)
+ *
+ * When NO OHLC feed provider key is configured (`providers.length === 0`), the
+ * stage is skipped with a secret-free warning and the run proceeds (R1.5). No
+ * key value is ever logged.
+ */
+export async function freshenCandles(
+  config: ReturnType<typeof loadScheduledRunConfig>,
+  deps: FreshenCandlesDeps = {},
+): Promise<void> {
+  const env = deps.env ?? process.env;
+  const runStage = deps.runStage ?? runCandleFreshnessStage;
+  const buildStores =
+    deps.buildStores ?? ((c) => buildSupabaseStores(c.supabase));
+
+  try {
+    const chainConfig = ohlcFeedConfigFromEnv(env);
+
+    // `ohlcFeedConfigFromEnv` ALWAYS returns `{ providers: [] }` (never null);
+    // an empty list means no provider key is present (R1.5) — skip the stage.
+    if (chainConfig.providers.length === 0) {
+      logStartupWarning("candle_freshness", new Error("no OHLC feed provider configured"));
+      return;
+    }
+
+    console.log(
+      JSON.stringify({
+        event: "candle_freshness.start",
+        decisionDate: config.decisionDate,
+        providers: chainConfig.providers.map((p) => p.provider),
+      }),
+    );
+
+    const stores = buildStores(config);
+    await runStage({
+      decisionDate: config.decisionDate,
+      ingestion: new OhlcIngestion(stores.candleStore),
+      candleStore: stores.candleStore,
+      vectorStore: stores.vectorStore,
+      chain: buildProviderChain(chainConfig),
+      maxLookbackTradingDays: resolveMaxLookback(env),
+    });
+
+    console.log(
+      JSON.stringify({
+        event: "candle_freshness.complete",
+        decisionDate: config.decisionDate,
+      }),
+    );
+  } catch (err) {
+    // Fail-safe (R4.1): a stage error never crashes the Job; the run proceeds on
+    // existing history with a secret-free warning (no key value is logged).
+    logStartupWarning("candle_freshness", err);
+  }
+}
+
 /** Run the scheduled daily refresh and report the outcome, then exit. */
 async function main(): Promise<void> {
   const config = loadScheduledRunConfig();
@@ -204,6 +295,12 @@ async function main(): Promise<void> {
     );
     return;
   }
+
+  // Candle_Freshness_Stage (design Component 6, R2.1): freshen candle history up
+  // to the most recent Completed_Trading_Day BEFORE `runScheduledDaily` reads it.
+  // Fail-safe (R4.1): a stage error is caught inside `freshenCandles` and the run
+  // proceeds on existing history.
+  await freshenCandles(config);
 
   const displayDeps = await buildDisplayDeps(config);
   const cached = cachingLoader(loadEvaluations);

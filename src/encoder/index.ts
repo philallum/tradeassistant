@@ -3,3 +3,4 @@
 export * from "./types.js";
 export * from "./normalize.js";
 export * from "./patternEncoder.js";
+export * from "./encodeStoredCandles.js";
