@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { shapePriceSeries } from "./shapeCharts.ts";
-import type { CandleRow } from "../api/endpoints.ts";
+import type { CandleRow } from "../api/types.ts";
 
 // For any set of `candles` rows, `shapePriceSeries` produces one point per row whose OHLC
 // (open/high/low/close) equal the source row's values verbatim, ordered ascending by

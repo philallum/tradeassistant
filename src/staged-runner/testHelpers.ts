@@ -10,7 +10,6 @@ import { InMemoryCandleStore } from "../ingestion/types.js";
 import { InMemoryPatternVectorStore } from "../encoder/types.js";
 import { InMemoryAnalogueStore } from "../retrieval/types.js";
 import { InMemoryGateVerdictStore } from "../kill-gate/types.js";
-import { InMemoryFeatureRegistryStore } from "../feature-registry/types.js";
 import { OhlcIngestion } from "../ingestion/ohlcIngestion.js";
 import { CsvLoader } from "../csv-loader/csvLoader.js";
 import { LivingDocs, InMemoryDocStore } from "../living-docs/livingDocs.js";
@@ -61,7 +60,6 @@ export function makeTestDeps(
   vectorStore: InMemoryPatternVectorStore;
   analogueStore: InMemoryAnalogueStore;
   gateVerdictStore: InMemoryGateVerdictStore;
-  featureRegistryStore: InMemoryFeatureRegistryStore;
   docStore: InMemoryDocStore;
 } {
   const candleStore = new InMemoryCandleStore();
@@ -69,7 +67,6 @@ export function makeTestDeps(
   const vectorStore = new InMemoryPatternVectorStore();
   const analogueStore = new InMemoryAnalogueStore();
   const gateVerdictStore = new InMemoryGateVerdictStore();
-  const featureRegistryStore = new InMemoryFeatureRegistryStore();
   const docStore = new InMemoryDocStore();
   const docs = new LivingDocs(docStore);
 
@@ -93,7 +90,6 @@ export function makeTestDeps(
     vectorStore,
     analogueStore,
     gateVerdictStore,
-    featureRegistryStore,
     dataDir: "/test/data",
     docs,
     docStore,

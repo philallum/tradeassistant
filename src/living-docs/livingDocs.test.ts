@@ -6,6 +6,7 @@ import {
   InMemoryDocStore,
   LIVING_DOCS,
   LivingDocs,
+  type EvaluationReportSummary,
   type GateVerdictSummary,
 } from "./livingDocs.js";
 
@@ -176,5 +177,163 @@ describe("Living-docs existence smoke test (Req 5.1, 5.3)", () => {
 
   it("LESSONS.md exists at the repo root (Req 5.3)", () => {
     expect(existsSync(join(REPO_ROOT, LIVING_DOCS.lessons))).toBe(true);
+  });
+});
+
+/** A sample Evaluation_Report summary used to exercise the report-path writer. */
+const SAMPLE_REPORT: EvaluationReportSummary = {
+  configId: "EURUSD-shape-only",
+  split: {
+    trainEnd: "2022-12-30",
+    testStart: "2023-01-02",
+    testEnd: "2023-12-29",
+  },
+  sampleSize: 42,
+  predictionsCount: 55,
+  modelAccuracy: 0.58,
+  baselineAccuracy: 0.5,
+  deltaVsBaseline: 0.08,
+  frictionAdjustedModel: 1.1,
+  frictionAdjustedBaseline: 0.9,
+  mfeMaeSummary: {
+    modelMfe: 12.3,
+    modelMae: 8.1,
+    baselineMfe: 10.0,
+    baselineMae: 9.4,
+  },
+  strengthBreakdown: { weak: 10, moderate: 20, strong: 12 },
+  uncertainty: {
+    accuracyDeltaCI: [-0.07, 0.23],
+    note: "95% Wald interval on the accuracy delta from the matched subset (n=42).",
+  },
+  annotations: { deltaExceeds3pp: true, riskAdjNonNegative: true },
+};
+
+describe("LivingDocs.appendEvaluationReport — report-path entry (Req 2.2, 2.4)", () => {
+  it("renders an entry accepted by validateEvaluationLogEntry", async () => {
+    const store = new InMemoryDocStore();
+    const docs = new LivingDocs(store);
+    await docs.appendEvaluationReport(SAMPLE_REPORT);
+
+    const log = store.peek(LIVING_DOCS.researchLog);
+    expect(log).not.toBeNull();
+    const match = log?.match(
+      /## \[EVALUATION\][\s\S]*?- Annotations \(non-binding\): .*/,
+    );
+    expect(match).not.toBeNull();
+    expect(docs.validateEvaluationLogEntry(match![0])).toBe(true);
+  });
+
+  it("records the measured metrics in the entry", async () => {
+    const store = new InMemoryDocStore();
+    const docs = new LivingDocs(store);
+    await docs.appendEvaluationReport(SAMPLE_REPORT);
+
+    const log = store.peek(LIVING_DOCS.researchLog) ?? "";
+    expect(log).toContain("EURUSD-shape-only");
+    expect(log).toContain("testStart=2023-01-02");
+    expect(log).toContain("Sample size: 42");
+    expect(log).toContain("Predictions count: 55");
+    expect(log).toContain("model=0.58 baseline=0.5 delta=0.08");
+    expect(log).toContain("weak=10 moderate=20 strong=12");
+    expect(log).toContain("accuracyDeltaCI=[-0.07, 0.23]");
+  });
+
+  it("contains NO PASS/CUT/verdict tokens (Req 2.4)", async () => {
+    const store = new InMemoryDocStore();
+    const docs = new LivingDocs(store);
+    await docs.appendEvaluationReport(SAMPLE_REPORT);
+
+    const log = store.peek(LIVING_DOCS.researchLog) ?? "";
+    // Isolate the rendered evaluation entry.
+    const entry = log.match(
+      /## \[EVALUATION\][\s\S]*?- Annotations \(non-binding\): .*/,
+    )?.[0];
+    expect(entry).toBeDefined();
+    expect(/\bPASS\b/.test(entry!)).toBe(false);
+    expect(/\bCUT\b/.test(entry!)).toBe(false);
+    expect(/\bKILL\b/.test(entry!)).toBe(false);
+    expect(/Verdict/i.test(entry!)).toBe(false);
+  });
+
+  it("surfaces the LOW-N uncertainty caveat when the note carries it (Req 2.5)", async () => {
+    const store = new InMemoryDocStore();
+    const docs = new LivingDocs(store);
+    const lowN: EvaluationReportSummary = {
+      ...SAMPLE_REPORT,
+      sampleSize: 7,
+      uncertainty: {
+        accuracyDeltaCI: [-0.5, 0.66],
+        note: "LOW-N: the matched subset is below the 30-sample floor, so this interval is wide.",
+      },
+    };
+    await docs.appendEvaluationReport(lowN);
+
+    const log = store.peek(LIVING_DOCS.researchLog) ?? "";
+    expect(log).toContain("LOW-N");
+    expect(log).toContain("Sample size: 7");
+  });
+});
+
+describe("LivingDocs.validateEvaluationLogEntry — malformed entries (Req 2.4)", () => {
+  const docs = new LivingDocs(new InMemoryDocStore());
+
+  const conformingEntry = [
+    "## [EVALUATION] EURUSD-shape-only",
+    "- Date: 2024-01-02T03:04:05.000Z",
+    "- Split: trainEnd=2022-12-30 testStart=2023-01-02 testEnd=2023-12-29",
+    "- Sample size: 42",
+    "- Predictions count: 55",
+    "- Accuracy: model=0.58 baseline=0.5 delta=0.08",
+    "- Friction-adjusted: model=1.1 baseline=0.9",
+    "- MFE/MAE: modelMfe=12.3 modelMae=8.1 baselineMfe=10 baselineMae=9.4",
+    "- Strength: weak=10 moderate=20 strong=12",
+    "- Uncertainty: accuracyDeltaCI=[-0.07 0.23] note=some note",
+    "- Annotations (non-binding): deltaExceeds3pp=true riskAdjNonNegative=true",
+  ].join("\n");
+
+  it("accepts a canonical evaluation entry", () => {
+    expect(docs.validateEvaluationLogEntry(conformingEntry)).toBe(true);
+  });
+
+  it("rejects an entry whose heading carries a verdict token", () => {
+    const bad = conformingEntry.replace(
+      "## [EVALUATION] EURUSD-shape-only",
+      "## [EVALUATION] EURUSD-shape-only — PASS",
+    );
+    expect(docs.validateEvaluationLogEntry(bad)).toBe(false);
+  });
+
+  it("rejects an entry carrying a Verdict field", () => {
+    const bad = conformingEntry.replace(
+      "- Sample size: 42",
+      "- Verdict: PASS\n- Sample size: 42",
+    );
+    expect(docs.validateEvaluationLogEntry(bad)).toBe(false);
+  });
+
+  it("rejects an entry with too few lines", () => {
+    const truncated = conformingEntry.split("\n").slice(0, 5).join("\n");
+    expect(docs.validateEvaluationLogEntry(truncated)).toBe(false);
+  });
+
+  it("rejects an entry missing the Split field", () => {
+    const bad = conformingEntry
+      .split("\n")
+      .filter((l) => !l.startsWith("- Split:"))
+      .join("\n");
+    expect(docs.validateEvaluationLogEntry(bad)).toBe(false);
+  });
+
+  it("rejects an entry with a non-boolean annotation flag", () => {
+    const bad = conformingEntry.replace(
+      "deltaExceeds3pp=true",
+      "deltaExceeds3pp=yes",
+    );
+    expect(docs.validateEvaluationLogEntry(bad)).toBe(false);
+  });
+
+  it("rejects an empty string", () => {
+    expect(docs.validateEvaluationLogEntry("")).toBe(false);
   });
 });

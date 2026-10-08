@@ -1,7 +1,7 @@
 /**
  * Shared, mobile-friendly loading state (task 9.6; Req 2.3, 14.3, 17.4).
  *
- * Every in-flight Read_Proxy fetch — including a refresh (Req 17.4) — must show a loading
+ * Every in-flight snapshot fetch — including a refresh (Req 17.4) — must show a loading
  * state rather than a blank screen (Req 2.3, 14.3). This is the single reusable, presentational
  * loading region the shell and tabs can mount so that behavior is consistent everywhere.
  *

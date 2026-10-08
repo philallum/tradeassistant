@@ -1,8 +1,8 @@
 // Feature: dashboard-ui, Property 5: Firing-card projection is verbatim with explicit null markers
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import type { Direction, FiringSetupRow, Horizon, Pair } from "../api/endpoints.ts";
-import { PAIRS } from "../api/endpoints.ts";
+import type { Direction, FiringSetupRow, Horizon, Pair } from "../api/types.ts";
+import { PAIRS } from "../api/types.ts";
 import { shapeDashboardView } from "./shapeDashboard.ts";
 import { formatPips, NOT_ACTIONABLE } from "./format.ts";
 

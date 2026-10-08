@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { shapePredictionActual } from "./shapePredictionActual.ts";
-import type { Direction, Horizon, RealizedOutcomeRow } from "../api/endpoints.ts";
+import type { Direction, Horizon, RealizedOutcomeRow } from "../api/types.ts";
 
 // For any set of `realized_outcomes` rows for a pair, `shapePredictionActual` selects the
 // matured row with the maximum Decision_Date (when any matured row exists); the predicted

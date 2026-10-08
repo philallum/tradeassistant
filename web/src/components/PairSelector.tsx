@@ -15,7 +15,7 @@
  */
 
 import { ALL_PAIRS, useSelection, type PairSelection } from "../state/selection";
-import { PAIRS } from "../api/endpoints";
+import { PAIRS } from "../api/types";
 import { theme } from "../theme/darkTheme";
 
 /** The ordered option list: the cross-pair overview first, then the five pairs. */

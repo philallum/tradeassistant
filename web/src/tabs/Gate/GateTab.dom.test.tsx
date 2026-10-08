@@ -1,62 +1,43 @@
 // @vitest-environment jsdom
 //
-// dashboard-ui `web/` — Gate tab render example/unit tests (task 9.7).
+// dashboard-ui `web/` — Evaluation (Gate) tab render example/unit tests.
 //
-// These are EXAMPLE/UNIT (not property) tests. They render the Gate tab with injected
-// loaders — no real network — and assert the behavioral contract of the gate visuals:
+// These are EXAMPLE/UNIT (not property) tests. They render the Evaluation tab with an
+// injected reports loader — no real network — and assert the behavioral contract of the
+// reframed evaluation visual (R1):
 //
-//   - A PASS `gate_verdicts` row renders a PASS visual, a CUT row renders a CUT visual, and
-//     the two are distinguishable by TEXT/SHAPE (label + ✓/✕ glyph), never by color alone
-//     (Req 9.7, reinforced by Req 18.3).
-//   - The walk-forward fold list shows each fold's SKIPPED status and its per-fold verdict,
-//     for both a skipped fold and a non-skipped (ran) fold (Req 9.8).
-//   - While the verdicts fetch is in-flight (a pending loader promise), a loading state is
-//     shown rather than a blank screen (Req 2.3, 14.3).
+//   - An evaluation-report row renders the model-vs-baseline directional accuracy and the
+//     delta between them, read verbatim from the persisted report (R1.2).
+//   - NO PASS/CUT verdict is rendered anywhere (R1.3) — the tab presents metrics for human
+//     interpretation, not an automated decision (R2.4).
+//   - The most recent report (by test-window end) is surfaced when several are returned.
+//   - An empty report set shows an explicit "no reports yet" state, not a blank screen.
+//   - While the fetch is in-flight, a loading state is shown rather than a blank screen.
 //
-// Validates: Requirements 9.7, 9.8, 2.3, 14.3
+// Validates: Requirements 1.2, 1.3, 2.4, 2.3, 14.3
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { ApiResult } from "../../api/client";
-import type { GateFoldVerdictRow, GateVerdictRow } from "../../api/endpoints";
+import type { ApiResult } from "../../api/snapshot";
+import type { EvaluationReportRow } from "../../api/types";
 import { GateTab } from "./GateTab";
 
 afterEach(() => {
   cleanup();
 });
 
-/** A persisted PASS verdict fixture (every field verbatim, nothing recomputed). */
-function passVerdict(overrides: Partial<GateVerdictRow> = {}): GateVerdictRow {
+/** A persisted evaluation-report fixture (every field verbatim, nothing recomputed). */
+function report(overrides: Partial<EvaluationReportRow> = {}): EvaluationReportRow {
   return {
-    id: "verdict-pass-1",
     config_id: "config-A",
-    sample_size: 420,
-    gate1_model_acc: 0.61,
-    gate1_baseline_acc: 0.52,
-    gate1_delta_pp: 9,
-    gate1_passed: true,
-    gate2_model_ra: 1.3,
-    gate2_baseline_ra: 1.1,
-    gate2_margin: 0.2,
-    gate2_passed: true,
-    verdict: "PASS",
-    selected_horizon: 2,
     split_test_start: "2026-01-01",
     split_test_end: "2026-06-30",
-    created_at: "2026-07-01T00:00:00.000Z",
-    ...overrides,
-  };
-}
-
-/** A persisted CUT verdict fixture. */
-function cutVerdict(overrides: Partial<GateVerdictRow> = {}): GateVerdictRow {
-  return {
-    ...passVerdict(),
-    id: "verdict-cut-1",
-    verdict: "CUT",
-    gate1_passed: false,
-    gate2_passed: false,
+    sample_size: 420,
+    predictions_count: 500,
+    model_accuracy: 0.61,
+    baseline_accuracy: 0.52,
+    delta_vs_baseline: 0.09,
     ...overrides,
   };
 }
@@ -66,153 +47,80 @@ function result<Row>(rows: readonly Row[]): ApiResult<Row> {
   return { rows, lastUpdated: null };
 }
 
-describe("GateTab — PASS vs CUT gate_verdicts render (Req 9.7)", () => {
-  it("renders a PASS verdict distinguishable by text + shape glyph (not color alone)", async () => {
+describe("GateTab — evaluation report renders metrics, no verdict (R1.2, R1.3)", () => {
+  it("renders the model + baseline accuracy and the delta, and NO PASS/CUT verdict", async () => {
     render(
-      <GateTab
-        loadGateVerdicts={() => Promise.resolve(result([passVerdict()]))}
-        loadGateFoldVerdicts={() => Promise.resolve(result<GateFoldVerdictRow>([]))}
-      />,
+      <GateTab loadEvaluationReports={() => Promise.resolve(result([report()]))} />,
     );
 
-    // The verdict badge exposes its meaning as an explicit text label via aria-label...
-    const badge = await screen.findByRole("img", { name: /Gate verdict: PASS/i });
-    // ...and the visible text/shape together name the verdict without relying on color.
-    expect(badge.textContent).toContain("PASS");
-    expect(badge.textContent).toContain("✓");
-    expect(badge.textContent).not.toContain("CUT");
-    expect(badge.textContent).not.toContain("✕");
+    // The report card is present (its region names the model-vs-baseline report).
+    const region = await screen.findByRole("region", {
+      name: /Model versus baseline evaluation report/i,
+    });
+    const text = region.textContent ?? "";
+
+    // Model-vs-baseline accuracy, shown verbatim (scaled to %).
+    expect(text).toContain("61%");
+    expect(text).toContain("52%");
+    // Delta vs baseline, signed, in pp.
+    expect(text).toMatch(/\+9 pp/);
+    // The config + sample size are surfaced.
+    expect(text).toContain("config-A");
+    expect(text).toContain("420");
+
+    // No automated verdict anywhere (R1.3).
+    expect(text).not.toMatch(/\bPASS\b/);
+    expect(text).not.toMatch(/\bCUT\b/);
+    expect(screen.queryByText(/verdict/i)).toBeNull();
   });
 
-  it("renders a CUT verdict distinguishable by text + shape glyph (not color alone)", async () => {
+  it("surfaces the most recent report (by test-window end) when several are returned", async () => {
+    const older = report({ config_id: "old", split_test_end: "2026-03-31", model_accuracy: 0.5 });
+    const newer = report({ config_id: "new", split_test_end: "2026-09-30", model_accuracy: 0.7 });
     render(
-      <GateTab
-        loadGateVerdicts={() => Promise.resolve(result([cutVerdict()]))}
-        loadGateFoldVerdicts={() => Promise.resolve(result<GateFoldVerdictRow>([]))}
-      />,
+      <GateTab loadEvaluationReports={() => Promise.resolve(result([older, newer]))} />,
     );
 
-    const badge = await screen.findByRole("img", { name: /Gate verdict: CUT/i });
-    expect(badge.textContent).toContain("CUT");
-    expect(badge.textContent).toContain("✕");
-    expect(badge.textContent).not.toContain("PASS");
-    expect(badge.textContent).not.toContain("✓");
-  });
-
-  it("surfaces the most recent verdict when several are returned", async () => {
-    const older = passVerdict({ id: "old", created_at: "2026-01-01T00:00:00.000Z" });
-    const newer = cutVerdict({ id: "new", created_at: "2026-07-01T00:00:00.000Z" });
-    render(
-      <GateTab
-        loadGateVerdicts={() => Promise.resolve(result([older, newer]))}
-        loadGateFoldVerdicts={() => Promise.resolve(result<GateFoldVerdictRow>([]))}
-      />,
-    );
-
-    // The newer (CUT) row wins the recency selection.
-    const badge = await screen.findByRole("img", { name: /Gate verdict: CUT/i });
-    expect(badge).toBeTruthy();
+    const region = await screen.findByRole("region", {
+      name: /Model versus baseline evaluation report/i,
+    });
+    // The newer report wins the recency selection.
+    expect(region.textContent).toContain("new");
+    expect(region.textContent).toContain("70%");
   });
 });
 
-describe("GateTab — walk-forward folds: skipped vs ran (Req 9.8)", () => {
-  function fold(overrides: Partial<GateFoldVerdictRow>): GateFoldVerdictRow {
-    return {
-      verdict_id: "verdict-pass-1",
-      fold_index: 0,
-      sample_size: 100,
-      skipped: false,
-      gate1_passed: true,
-      gate2_passed: true,
-      verdict: "PASS",
-      ...overrides,
-    };
-  }
-
-  it("shows the skipped status and per-fold verdict for both a skipped and a ran fold", async () => {
-    const ranFold = fold({
-      fold_index: 1,
-      skipped: false,
-      verdict: "PASS",
-      gate1_passed: true,
-      gate2_passed: true,
-    });
-    // A skipped fold has no gate pass/fail outcome and a null verdict (shown as the
-    // explicit not-evaluated marker, never a guessed value).
-    const skippedFold = fold({
-      fold_index: 2,
-      skipped: true,
-      verdict: null,
-      gate1_passed: null,
-      gate2_passed: null,
-    });
-
+describe("GateTab — empty + loading states (R2.3, 14.3)", () => {
+  it("shows an explicit 'no reports yet' state for an empty set, not a blank screen", async () => {
     render(
       <GateTab
-        loadGateVerdicts={() => Promise.resolve(result([passVerdict()]))}
-        loadGateFoldVerdicts={() =>
-          Promise.resolve(result<GateFoldVerdictRow>([ranFold, skippedFold]))
-        }
+        loadEvaluationReports={() => Promise.resolve(result<EvaluationReportRow>([]))}
       />,
     );
 
-    const foldsRegion = await screen.findByRole("region", {
-      name: /Walk-forward folds/i,
-    });
-
-    // The ran fold's row carries its "Ran" status and a PASS verdict.
-    const ranRow = within(foldsRegion).getByRole("rowheader", { name: "1" }).closest("tr");
-    expect(ranRow).not.toBeNull();
-    const ranCells = within(ranRow as HTMLTableRowElement).getAllByRole("cell");
-    const ranText = (ranRow as HTMLTableRowElement).textContent ?? "";
-    expect(ranText).toContain("Ran");
-    expect(ranText).toContain("PASS");
-    // sanity: the status cell is the first data cell.
-    expect(ranCells[0]?.textContent).toBe("Ran");
-
-    // The skipped fold's row carries its "Skipped" status and the explicit not-evaluated
-    // marker ("—") for its missing per-fold verdict (no fabricated value, Req 9.8).
-    const skippedRow = within(foldsRegion)
-      .getByRole("rowheader", { name: "2" })
-      .closest("tr");
-    expect(skippedRow).not.toBeNull();
-    const skippedCells = within(skippedRow as HTMLTableRowElement).getAllByRole("cell");
-    const skippedText = (skippedRow as HTMLTableRowElement).textContent ?? "";
-    expect(skippedText).toContain("Skipped");
-    expect(skippedCells[0]?.textContent).toBe("Skipped");
-    // The verdict cell (last) is the explicit not-evaluated marker, not PASS/CUT.
-    expect(skippedCells.at(-1)?.textContent).toBe("—");
+    expect(
+      await screen.findByText(/No evaluation reports have been recorded yet/i),
+    ).toBeTruthy();
   });
-});
 
-describe("GateTab — loading state during an in-flight fetch (Req 2.3, 14.3)", () => {
   it("shows a loading status rather than a blank screen while the fetch is pending", () => {
     // A loader whose promise never resolves keeps the tab in its in-flight state.
-    const pending: Promise<ApiResult<GateVerdictRow>> = new Promise(() => {});
-    render(
-      <GateTab
-        loadGateVerdicts={() => pending}
-        loadGateFoldVerdicts={() => Promise.resolve(result<GateFoldVerdictRow>([]))}
-      />,
-    );
+    const pending: Promise<ApiResult<EvaluationReportRow>> = new Promise(() => {});
+    render(<GateTab loadEvaluationReports={() => pending} />);
 
-    // A visible, announced loading state is present (not a blank viewport).
     const status = screen.getByRole("status");
-    expect(status.textContent).toMatch(/Loading gate verdicts/i);
+    expect(status.textContent).toMatch(/Loading evaluation report/i);
     expect(status.getAttribute("aria-live")).toBe("polite");
   });
 
   it("replaces the loading state with content once the fetch resolves", async () => {
     render(
-      <GateTab
-        loadGateVerdicts={() => Promise.resolve(result([passVerdict()]))}
-        loadGateFoldVerdicts={() => Promise.resolve(result<GateFoldVerdictRow>([]))}
-      />,
+      <GateTab loadEvaluationReports={() => Promise.resolve(result([report()]))} />,
     );
 
-    await screen.findByRole("img", { name: /Gate verdict: PASS/i });
+    await screen.findByRole("region", { name: /Model versus baseline evaluation report/i });
     await waitFor(() => {
-      expect(screen.queryByText(/Loading gate verdicts/i)).toBeNull();
+      expect(screen.queryByText(/Loading evaluation report/i)).toBeNull();
     });
   });
 });

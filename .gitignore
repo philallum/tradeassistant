@@ -3,14 +3,10 @@ dist/
 coverage/
 *.tsbuildinfo
 
-# Python
-.venv/
-__pycache__/
-*.pyc
-.hypothesis/
-.pytest_cache/
-
 # Env
 .env
 .env.*
 !.env.example
+
+# fx_writer BYO signing key (local-only, never commit)
+ops/fx-writer-key/

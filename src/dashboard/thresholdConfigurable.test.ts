@@ -20,21 +20,21 @@ import type { Confidence } from "../confidence/types.js";
 const DECISION_DATE = "2024-03-15";
 
 /**
- * A single gate-passing, news-permitting, directional pair whose
- * Earned_Confidence (0.6) sits between two candidate thresholds. Everything
- * except the threshold is held constant across the assertions below.
+ * A single directional pair whose Earned_Confidence (0.6) sits between two
+ * candidate thresholds. Everything except the threshold is held constant across
+ * the assertions below. There is no suppression step, so surfacing turns purely
+ * on the confidence vs. the threshold.
  */
 function pairAtConfidence(earned: number): PairEvaluation {
   return {
     pair: "EURUSD",
-    gatePassing: true,
     earnedConfidence: earned as Confidence,
     direction: "UP",
     horizon: 2,
     excursionProfile: { favorablePips: 40, adversePips: 15 },
     stopLossPips: 15,
     takeProfitPips: 40,
-    newsSuppressed: false,
+    choppiness: 0.8,
     rationale: "analogues resolved up",
     analogueLabels: ["trend-continuation"],
   };

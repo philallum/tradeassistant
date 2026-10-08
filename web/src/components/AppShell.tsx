@@ -33,8 +33,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { fetchEndpoint, type ApiResult } from "../api/client";
-import type { DecisionDateRow } from "../api/endpoints";
+import { EMPTY_SNAPSHOT, SnapshotError, type ApiResult } from "../api/snapshot";
+import { getSnapshot } from "../api/snapshotCache";
+import type { DecisionDateRow } from "../api/types";
 import { selectBrowseDate } from "../pure/selectDates";
 import { useSelection } from "../state/selection";
 import { theme } from "../theme/darkTheme";
@@ -49,15 +50,37 @@ import { TabRouter } from "./TabRouter";
 import { useMediaQuery, WIDE_VIEWPORT_QUERY } from "./useMediaQuery";
 import { useRoute } from "./useRoute";
 
-/** Loader for the available Decision_Dates. Injected for testability; defaults to the api client. */
+/** Loader for the available Decision_Dates. Injected for testability; defaults to the snapshot. */
 export type DecisionDatesLoader = (options?: {
   readonly bustCache?: boolean;
   readonly signal?: AbortSignal;
+  /** The shared refresh generation (the shell's refreshNonce), so all reads share one fetch. */
+  readonly generation?: number;
 }) => Promise<ApiResult<DecisionDateRow>>;
 
-/** Default loader: fetch `/decision-dates` through the real same-origin api client. */
-const defaultLoader: DecisionDatesLoader = (options) =>
-  fetchEndpoint("/decision-dates", {}, options);
+/**
+ * Default loader: read the Decision_Dates from the shared `dashboard.json` snapshot. A
+ * missing snapshot (404 — the Job has not written one yet) resolves to an EMPTY snapshot so
+ * the shell shows the explicit empty/unavailable state (R5.5) rather than a transport error.
+ */
+const defaultLoader: DecisionDatesLoader = async (options) => {
+  let snapshot;
+  try {
+    snapshot = await getSnapshot(options?.generation ?? 0, {
+      ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+    });
+  } catch (cause) {
+    if (cause instanceof SnapshotError && cause.status === 404) {
+      snapshot = EMPTY_SNAPSHOT;
+    } else {
+      throw cause;
+    }
+  }
+  return {
+    rows: snapshot.decisionDates.map((decision_date) => ({ decision_date })),
+    lastUpdated: snapshot.generatedAt === "" ? null : snapshot.generatedAt,
+  };
+};
 
 export interface AppShellProps {
   /** Decision_Dates loader; defaults to the real `/decision-dates` fetch. */
@@ -95,14 +118,16 @@ export function AppShell({ loadDecisionDates = defaultLoader }: AppShellProps): 
   }, []);
 
   const load = useCallback(
-    async (bustCache: boolean) => {
+    async (bustCache: boolean, generation: number) => {
       setIsRefreshing(true);
       // Only show the full-screen loading state on the very first load; a refresh keeps the
       // current content visible and signals in-flight via the (disabled) refresh control
       // (Req 17.4), so the viewer never flashes to a blank screen on refresh.
       setDatesState((prev) => (prev.kind === "ready" ? prev : { kind: "loading" }));
       try {
-        const result = await loadDecisionDates(bustCache ? { bustCache: true } : {});
+        const result = await loadDecisionDates(
+          bustCache ? { bustCache: true, generation } : { generation },
+        );
         if (!mounted.current) return;
         setDatesState({ kind: "ready", dates: result.rows.map((r) => r.decision_date) });
         setLastUpdated(result.lastUpdated);
@@ -122,14 +147,19 @@ export function AppShell({ loadDecisionDates = defaultLoader }: AppShellProps): 
     [loadDecisionDates],
   );
 
-  // Initial shell load (normal, cache-allowed fetch).
+  // Initial shell load (generation 0, cache-allowed fetch).
   useEffect(() => {
-    void load(false);
+    void load(false, 0);
   }, [load]);
 
   const onRefresh = useCallback(() => {
-    setRefreshNonce((n) => n + 1);
-    void load(true); // cache-busting fetch (Req 17.1, 17.2); also recovers from an error
+    setRefreshNonce((n) => {
+      const next = n + 1;
+      // Use the NEW generation so the shared snapshot cache re-fetches exactly once and all
+      // tabs (which re-run on the same bumped refreshNonce) share that fresh snapshot.
+      void load(true, next);
+      return next;
+    });
   }, [load]);
 
   // The dates available to the selector, and the effective Decision_Date handed to the

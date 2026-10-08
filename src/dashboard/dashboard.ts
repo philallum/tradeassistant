@@ -1,47 +1,38 @@
-// Silent-by-Default Dashboard — Design Component 11 (Requirements 16, 1, 12.3).
+// Silent-by-Default Dashboard — Design Component 11 (Requirements 16, 1, 3).
 //
 // `dailyRun(decisionDate)` produces a DashboardView over all five pairs
-// (Requirement 16.1). The pipeline has three stages, in this exact order:
+// (Requirement 16.1). The pipeline has two stages, in this exact order:
 //
-//   1. PER-PAIR FIRING DECISION (Requirements 16.2, 16.5, 16.6, 1.1, 12.3):
-//      a pair fires iff it has a Kill_Gate-passing pattern AND its
-//      Earned_Confidence is >= the configurable Confidence_Threshold AND the
-//      news filter permits trading. A pair that has NOT passed the gate is never
-//      displayed (Requirement 16.5); news suppression is respected
-//      (Requirement 16.6). FLAT setups are not surfaced as directional cards.
+//   1. PER-PAIR FIRING DECISION (Requirements 3.5, 3.6, 1.1): a pair fires iff
+//      it expresses a directional view (`direction !== "FLAT"`) AND its
+//      Earned_Confidence is >= the configurable Confidence_Threshold. There is
+//      NO suppression step: the former Gate_Auto_Block and the news suppressor
+//      have both been removed (Requirements 3.4, 7), so firing depends only on
+//      the deterministic direction and confidence. A pair that does not fire is
+//      an explicit "no trade" observation, not a hidden one.
 //
-//   2. CURRENCY CONCENTRATION GUARD (Requirement 22): runs AFTER the per-pair
-//      firing decisions and BEFORE the final render, de-duplicating aligned
-//      same-currency setups by conviction (Design Component 16).
+//   2. RENDER: the firing setups become FiringCards; if none fire, the
+//      dashboard renders no directional cards for the date (Requirement 3.5).
 //
-//   3. CHOPPINESS VOLATILITY SILENCE GUARD (Requirement 24): runs after the
-//      currency-concentration guard and BEFORE the final render, hard-vetoing an
-//      otherwise-firing pair whose look-ahead-safe Efficiency-Ratio
-//      Choppiness_Metric is below the configurable threshold (Design Component
-//      18). It COMPOSES with the news and currency-concentration suppressors
-//      rather than replacing them: a pair renders only if it survives every
-//      suppression step. It only ever suppresses — it never generates a signal.
-//
-//   4. RENDER: the surviving setups become FiringCards; if none survive, the
-//      dashboard is empty (silent by default, Requirement 16.2).
+// The dashboard applies NO suppressor. The Choppiness_Guard (design Decision 1 /
+// C2, Requirement 3.1) and the Currency_Concentration_Guard (Requirement 3.3)
+// that formerly silenced an otherwise-firing pair have both been REMOVED, so a
+// firing pair is always rendered — nothing is silently dropped. The
+// Choppiness_Metric is retained and surfaced as a displayed field on each
+// `PairEvaluation` (Requirement 3.2); it never suppresses a setup.
 //
 // This module is deterministic (Requirement 3.1): identical `PairEvaluation`
 // inputs yield an identical view, so a scheduled unattended run reproduces an
-// equivalent local run (Requirement 16.7). The firing decision and guard take
-// NO LLM input; the only LLM-derived values are the outward-only `rationale` /
+// equivalent local run (Requirement 16.7). The firing decision takes NO LLM
+// input; the only LLM-derived values are the outward-only `rationale` /
 // `analogueLabels` display strings on a rendered card (Requirements 2.1, 15.4).
 
 import type { Pair } from "../ingestion/types.js";
 import { PAIRS } from "../ingestion/types.js";
 import type { TradingDate } from "../guard/types.js";
-import type { Candle } from "../guard/types.js";
-import { applyCurrencyConcentrationGuard } from "./currencyConcentrationGuard.js";
-import { applyChoppinessGuard } from "./choppinessGuard.js";
 import {
-  DEFAULT_CHOPPINESS_CONFIG,
   DEFAULT_DASHBOARD_CONFIG,
   type DashboardConfig,
-  type DashboardSuppression,
   type DashboardView,
   type FiringCard,
   type FiringSetup,
@@ -62,11 +53,9 @@ import {
  */
 export interface PairEvaluation {
   readonly pair: Pair;
-  /** True iff this pair has a Kill_Gate-passing pattern (Requirement 16.5). */
-  readonly gatePassing: boolean;
   /**
    * The pair's Earned_Confidence in [0,1]. Fires only when this is >= the
-   * configurable Confidence_Threshold (Requirements 16.2, 1.1).
+   * configurable Confidence_Threshold (Requirements 3.5, 1.1).
    */
   readonly earnedConfidence: FiringSetup["earnedConfidence"];
   /** The deterministic Direction_Class. A FLAT setup is not surfaced. */
@@ -80,12 +69,14 @@ export interface PairEvaluation {
   /** Empirical Take_Profit in pips (Component 15), or `null` when below the floor. */
   readonly takeProfitPips: number | null;
   /**
-   * True when the news filter suppresses this pair for the Decision_Date
-   * (Requirement 16.6). When true, the pair never fires regardless of gate /
-   * confidence. Sourced from the News Filter's deterministic suppression
-   * decision (Component 10); the dashboard consumes only the boolean outcome.
+   * The look-ahead-safe Efficiency-Ratio Choppiness_Metric in `[0,1]` (~1 clean
+   * trend, ~0 chop) (Requirement 3.2). This is a DISPLAYED FIELD only: the
+   * former Choppiness_Guard that suppressed on it has been removed
+   * (Requirement 3.1), so the metric never hides a setup. It is purely outward
+   * information for the operator and feeds no firing / suppression / scoring
+   * decision.
    */
-  readonly newsSuppressed: boolean;
+  readonly choppiness: number;
   /** Outward-only plain-language AI rationale for the card (Requirement 15.1). */
   readonly rationale: string;
   /** Outward-only qualitative analogue labels for the card (Requirement 15.3). */
@@ -93,14 +84,14 @@ export interface PairEvaluation {
 }
 
 /**
- * Determine whether a pair fires, applying all three firing conditions
- * (Requirements 16.2, 16.5, 16.6, 1.1). A FLAT setup expresses no directional
- * view and is not surfaced as a directional card.
+ * Determine whether a pair fires, applying the two firing conditions
+ * (Requirements 3.5, 3.6, 1.1). A FLAT setup expresses no directional view and
+ * is not surfaced as a directional card. There is no suppression step: the
+ * former Gate_Auto_Block and news suppressor have been removed, so firing is a
+ * pure function of the deterministic direction and Earned_Confidence.
  */
 function fires(evaluation: PairEvaluation, confidenceThreshold: number): boolean {
   return (
-    evaluation.gatePassing &&
-    !evaluation.newsSuppressed &&
     evaluation.direction !== "FLAT" &&
     evaluation.earnedConfidence >= confidenceThreshold
   );
@@ -136,28 +127,20 @@ function toFiringCard(setup: FiringSetup, evaluation: PairEvaluation): FiringCar
 
 /**
  * Produce the silent-by-default dashboard view for a Decision_Date across all
- * five pairs (Design Component 11; Requirements 16.1, 16.2, 16.5, 16.6, 1.1,
- * 12.3, 22).
+ * five pairs (Design Component 11; Requirements 16.1, 3.5, 3.6, 1.1).
  *
  * @param decisionDate  The Decision_Date being evaluated.
  * @param evaluations   The per-pair deterministic evaluations. Any of the five
  *                      pairs missing from the input is treated as non-firing.
  * @param config        Optional dashboard config; defaults to the configured
- *                      Confidence_Threshold, `maxConcurrentAligned = 2`, and the
- *                      default Choppiness Guard window/threshold.
- * @param candlesByPair Optional per-pair daily candles used by the Choppiness
- *                      Volatility Silence Guard (Requirement 24). When omitted,
- *                      or when a pair has no entry, that pair is not assessed for
- *                      choppiness (the guard has no basis to silence it).
- * @returns The DashboardView: firing cards (empty ⇒ silent) plus the
- *          currency-concentration AND choppiness suppressions applied before
- *          render.
+ *                      Confidence_Threshold.
+ * @returns The DashboardView: the firing cards (empty ⇒ no directional cards).
+ *          No suppressor runs, so every firing pair is rendered.
  */
 export function dailyRun(
   decisionDate: TradingDate,
   evaluations: readonly PairEvaluation[],
   config: DashboardConfig = DEFAULT_DASHBOARD_CONFIG,
-  candlesByPair: ReadonlyMap<Pair, readonly Candle[]> = new Map(),
 ): DashboardView {
   // Index evaluations by pair for a deterministic, pair-ordered pass.
   const byPair = new Map<Pair, PairEvaluation>();
@@ -177,49 +160,26 @@ export function dailyRun(
     }
   }
 
-  // Stage 2: Currency Concentration Guard (after firing decisions, before
-  // render) — de-duplicate aligned same-currency setups by conviction (Req 22).
-  const concentration = applyCurrencyConcentrationGuard(firing, decisionDate, {
-    maxConcurrentAligned: config.maxConcurrentAligned,
-  });
-
-  // Stage 3: Choppiness Volatility Silence Guard (after the concentration
-  // guard, before render) — hard-veto any survivor whose look-ahead-safe
-  // Efficiency-Ratio Choppiness_Metric is below the configurable threshold
-  // (Req 24). It COMPOSES with the currency-concentration and news suppressors:
-  // it runs on the concentration-guard survivors, and its suppressions are
-  // recorded alongside the others.
-  const choppiness = applyChoppinessGuard(
-    concentration.kept,
-    candlesByPair,
-    decisionDate,
-    config.choppiness ?? DEFAULT_CHOPPINESS_CONFIG,
-  );
-
-  const kept = choppiness.kept;
-  const suppressed: DashboardSuppression[] = [
-    ...concentration.suppressed,
-    ...choppiness.suppressed,
-  ];
-
-  // Stage 4: render the survivors. Empty ⇒ silent (Requirement 16.2).
-  const cards: FiringCard[] = kept.map((setup) => {
+  // Stage 2: render the firing setups. No suppressor runs — the
+  // Currency_Concentration_Guard (Requirement 3.3) and Choppiness_Guard
+  // (Requirement 3.1) have been removed — so every firing pair becomes a card.
+  // Empty ⇒ silent (Requirement 16.2).
+  const cards: FiringCard[] = firing.map((setup) => {
     const evaluation = firingEvaluations.get(setup.pair);
-    // `evaluation` is always present: `kept` is a subset of `firing`, and every
-    // firing pair recorded its evaluation above. The fallback keeps the render
-    // total and satisfies the type-checker without inventing display text.
+    // `evaluation` is always present: every firing pair recorded its evaluation
+    // above. The fallback keeps the render total and satisfies the type-checker
+    // without inventing display text.
     return evaluation
       ? toFiringCard(setup, evaluation)
       : toFiringCard(setup, {
           ...setup,
-          gatePassing: true,
-          newsSuppressed: false,
+          choppiness: 0,
           rationale: "",
           analogueLabels: [],
         });
   });
 
-  return { decisionDate, cards, suppressed };
+  return { decisionDate, cards };
 }
 
 /**
@@ -231,19 +191,18 @@ export interface Dashboard {
   dailyRun(
     decisionDate: TradingDate,
     evaluations: readonly PairEvaluation[],
-    candlesByPair?: ReadonlyMap<Pair, readonly Candle[]>,
   ): DashboardView;
 }
 
 /**
  * Construct a {@link Dashboard} bound to a configuration (Requirement 16.4). The
- * Confidence_Threshold and `maxConcurrentAligned` are configurable and tunable
- * against the Kill_Gate backtest.
+ * Confidence_Threshold is configurable and tunable against the Kill_Gate
+ * backtest.
  */
 export function createDashboard(config: DashboardConfig = DEFAULT_DASHBOARD_CONFIG): Dashboard {
   return {
-    dailyRun(decisionDate, evaluations, candlesByPair) {
-      return dailyRun(decisionDate, evaluations, config, candlesByPair);
+    dailyRun(decisionDate, evaluations) {
+      return dailyRun(decisionDate, evaluations, config);
     },
   };
 }

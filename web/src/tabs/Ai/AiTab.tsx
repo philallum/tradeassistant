@@ -24,8 +24,9 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { fetchEndpoint, type ApiResult } from "../../api/client";
-import type { Pair, SignalRationaleRow } from "../../api/endpoints";
+import type { ApiResult } from "../../api/snapshot";
+import { getSnapshot } from "../../api/snapshotCache";
+import type { Pair, SignalRationaleRow } from "../../api/types";
 import { shapeAi, type AiViewModel } from "../../pure/shapeAi.ts";
 import { ALL_PAIRS, useSelection } from "../../state/selection";
 import { theme } from "../../theme/darkTheme";
@@ -39,8 +40,17 @@ export type AiRationaleLoader = (
   options?: { readonly bustCache?: boolean; readonly signal?: AbortSignal },
 ) => Promise<ApiResult<SignalRationaleRow>>;
 
-const defaultLoader: AiRationaleLoader = ({ decisionDate, pair }, options) =>
-  fetchEndpoint("/ai-rationale", { decisionDate, pair }, options);
+const defaultLoader: AiRationaleLoader = async ({ decisionDate, pair }, options) => {
+  const snapshot = await getSnapshot(0, {
+    ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+  });
+  return {
+    rows: snapshot.aiRationale.filter(
+      (r) => r.decision_date === decisionDate && r.pair === pair,
+    ),
+    lastUpdated: snapshot.generatedAt === "" ? null : snapshot.generatedAt,
+  };
+};
 
 export interface AiTabProps {
   /**

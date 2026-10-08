@@ -1,14 +1,15 @@
 /**
  * Shared non-secret error state (task 9.6; Req 14.2, 17.5).
  *
- * When a Read_Proxy request (including a refresh) fails, the dashboard must show a
+ * When the snapshot load (including a refresh) fails, the dashboard must show a
  * non-secret error message — never a stack trace, raw payload, or blank screen (Req 14.2,
  * 17.5). This is the single reusable, presentational error region the shell and tabs mount
  * for that case.
  *
- * The caller passes an already-sanitized message. The api client (`api/client.ts`) only ever
- * throws fixed, credential-free {@link ApiError} strings, so the message reaching this
- * component carries no credential, no response body, and no stack trace. As a defensive
+ * The caller passes an already-sanitized message. The snapshot loader (`api/snapshot.ts`)
+ * only ever throws fixed, credential-free {@link SnapshotError} strings, so the message
+ * reaching this component carries no credential, no response body, and no stack trace. As a
+ * defensive
  * backstop this component falls back to a generic message if an empty string is passed, so a
  * blank screen is impossible even on an unexpected input.
  *

@@ -15,7 +15,7 @@
  * (Req 11.2, 11.3) and for rendering this text as auto-escaped React children.
  */
 
-import type { SignalProposal, SignalRationaleRow } from "../api/endpoints.ts";
+import type { SignalProposal, SignalRationaleRow } from "../api/types.ts";
 
 /** A single advisory proposal, copied verbatim from `signal_rationale.proposals`. */
 export type AiProposalVM = SignalProposal;

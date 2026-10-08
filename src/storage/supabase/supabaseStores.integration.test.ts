@@ -221,6 +221,8 @@ describe.skipIf(!isLocalTarget)(
       if (!shouldRun() || !client || !config) return;
       const persist = makeSupabaseViewPersister(config);
 
+      // No dashboard-level suppressors remain (Requirements 3.1, 3.3), so the
+      // view carries only firing cards and the writer emits only surfaced rows.
       const view: DashboardView = {
         decisionDate: TEST_DATE_1,
         cards: [
@@ -236,10 +238,6 @@ describe.skipIf(!isLocalTarget)(
             analogueLabels: ["trend-continuation"],
           },
         ],
-        suppressed: [
-          { pair: "GBPUSD", reason: "currency_concentration", competingPairs: ["EURUSD"] },
-          { pair: "USDJPY", reason: "too_choppy", efficiency: 0.12 },
-        ],
       };
       await persist(view, config);
 
@@ -253,9 +251,7 @@ describe.skipIf(!isLocalTarget)(
       const byPair = new Map(rows.map((r) => [r.pair, r]));
       expect(byPair.get("EURUSD")?.surfaced).toBe(true);
       expect(byPair.get("EURUSD")?.direction).toBe("UP");
-      expect(byPair.get("GBPUSD")?.surfaced).toBe(false);
-      expect(byPair.get("GBPUSD")?.suppression_reason).toBe("currency_concentration");
-      expect(byPair.get("USDJPY")?.suppression_reason).toBe("too_choppy");
+      expect(byPair.get("EURUSD")?.suppression_reason).toBeNull();
 
       // Idempotent on (decision_date, pair, strategy_id): re-persist, no dupes.
       await persist(view, config);
@@ -263,7 +259,7 @@ describe.skipIf(!isLocalTarget)(
         "firing_setups",
         `decision_date=eq.${TEST_DATE_1}`,
       );
-      expect(reread).toHaveLength(3);
+      expect(reread).toHaveLength(1);
     });
   },
 );

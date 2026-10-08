@@ -1,12 +1,18 @@
-// Realized-Outcome Journal with Strategy_Source attribution — Design Component 19
-// (Requirements 25.1, 25.2, 25.3, 25.4, 25.7, 17.1).
+// Realized-Outcome Journal — Design Component 19
+// (Requirements 25.2, 25.3, 25.4, 25.7, 17.1).
 //
 // This module records the growing predicted-versus-actual corpus. For each fired
-// setup it writes ONE `realized_outcomes` row keyed by (strategyId, pair,
-// decisionDate) pairing what a Strategy_Source predicted (direction, selected
-// horizon, Earned_Confidence, empirical Stop_Loss/Take_Profit) with the actual
-// matured forward outcome (terminal Direction_Class and MFE/MAE) — but ONLY once
-// the setup's Horizon window has closed.
+// setup it writes ONE `realized_outcomes` row keyed by (pair, decisionDate)
+// pairing what the deterministic system predicted (direction, selected horizon,
+// Earned_Confidence, empirical Stop_Loss/Take_Profit) with the actual matured
+// forward outcome (terminal Direction_Class and MFE/MAE) — but ONLY once the
+// setup's Horizon window has closed.
+//
+// Single-strategy: the Strategy_Source multi-strategy abstraction has been
+// removed (Requirement 7.4). The journal keys on (pair, decisionDate) alone;
+// there is no `strategy_id` in the domain model. The retained Supabase write
+// path hardcodes the single plain `'system'` column default where the schema
+// still requires it, until the schema reduction drops it in Phase 4.
 //
 // Look-ahead safety (Requirements 25.3, 4.2). The realized side is populated
 // EXCLUSIVELY from matured forward outcomes derived from candles dated strictly
@@ -22,23 +28,14 @@
 // computation byte-for-byte identical. It takes NO LLM input.
 //
 // Idempotency (Requirement 25.7). The upsert is keyed on the SQL primary key
-// (strategy_id, pair, decision_date), so re-running maturation for the same setup
-// UPDATES in place rather than duplicating — a day can be re-run any number of
-// times with the same stored result.
+// (pair, decision_date), so re-running maturation for the same setup UPDATES in
+// place rather than duplicating — a day can be re-run any number of times with
+// the same stored result.
 
 import { isMatured } from "../guard/lookAheadGuard.js";
 import type { TradingDate } from "../guard/types.js";
 import type { Pair } from "../ingestion/types.js";
 import type { DirectionClass, ForwardOutcome } from "../retrieval/types.js";
-import { SYSTEM_STRATEGY_ID } from "./persistFiringSetups.js";
-
-/**
- * Strategy_Source identifier (Requirement 25.1). The v1 deterministic pattern
- * system uses the default `"system"`; `"llm"` and `"algo"` are reserved for
- * future strategies. The open `(string & {})` arm keeps the union extensible
- * without losing autocomplete on the known values.
- */
-export type StrategyId = "system" | "llm" | "algo" | (string & {});
 
 /**
  * A single `realized_outcomes` row — the predicted-versus-actual pairing for one
@@ -51,8 +48,6 @@ export type StrategyId = "system" | "llm" | "algo" | (string & {});
  * (Requirements 25.2, 25.3); until then it is undefined and `matured` is false.
  */
 export interface RealizedOutcomeEntry {
-  /** Strategy_Source attribution; v1 deterministic system = 'system' (Req 25.1). */
-  readonly strategyId: StrategyId;
   readonly pair: Pair;
   /** The date the setup fired. */
   readonly decisionDate: TradingDate;
@@ -79,55 +74,47 @@ export interface RealizedOutcomeEntry {
  * journal depends only on this port, never on Supabase directly, mirroring the
  * storage-port + in-memory reference pattern used across the codebase (e.g.
  * `FiringSetupStore`, `AnalogueStore`). Implementations upsert by the SQL
- * composite primary key (strategy_id, pair, decision_date) so re-running a day
- * is idempotent (Requirement 25.7).
+ * composite primary key (pair, decision_date) so re-running a day is idempotent
+ * (Requirement 25.7).
  */
 export interface RealizedOutcomeStore {
-  /** Upsert one journal entry, keyed by (strategyId, pair, decisionDate). */
+  /** Upsert one journal entry, keyed by (pair, decisionDate). */
   upsert(entry: RealizedOutcomeEntry): Promise<void>;
   /** Read a single entry by its composite key, or null when absent. */
-  get(
-    strategyId: StrategyId,
-    pair: Pair,
-    decisionDate: TradingDate,
-  ): Promise<RealizedOutcomeEntry | null>;
+  get(pair: Pair, decisionDate: TradingDate): Promise<RealizedOutcomeEntry | null>;
   /** Read every entry recorded for a Decision_Date (order unspecified). */
   getByDecisionDate(decisionDate: TradingDate): Promise<readonly RealizedOutcomeEntry[]>;
 }
 
 /** Composite-key string used by the in-memory store (mirrors the SQL PK). */
-function entryKey(strategyId: StrategyId, pair: Pair, decisionDate: TradingDate): string {
-  return `${strategyId}|${pair}|${decisionDate}`;
+function entryKey(pair: Pair, decisionDate: TradingDate): string {
+  return `${pair}|${decisionDate}`;
 }
 
 /**
  * In-memory reference implementation of {@link RealizedOutcomeStore}.
  *
  * Deterministic and dependency-free; upserts by the same composite key as the
- * SQL primary key (strategy_id, pair, decision_date), so re-persisting the same
- * key REPLACES the entry rather than duplicating it (Requirement 25.7). Serves as
- * the reference for the Supabase adapter and lets the journaling flow run offline.
+ * SQL primary key (pair, decision_date), so re-persisting the same key REPLACES
+ * the entry rather than duplicating it (Requirement 25.7). Serves as the
+ * reference for the Supabase adapter and lets the journaling flow run offline.
  */
 export class InMemoryRealizedOutcomeStore implements RealizedOutcomeStore {
   readonly #entries = new Map<string, RealizedOutcomeEntry>();
 
   constructor(initial: readonly RealizedOutcomeEntry[] = []) {
     for (const entry of initial) {
-      this.#entries.set(entryKey(entry.strategyId, entry.pair, entry.decisionDate), entry);
+      this.#entries.set(entryKey(entry.pair, entry.decisionDate), entry);
     }
   }
 
   upsert(entry: RealizedOutcomeEntry): Promise<void> {
-    this.#entries.set(entryKey(entry.strategyId, entry.pair, entry.decisionDate), entry);
+    this.#entries.set(entryKey(entry.pair, entry.decisionDate), entry);
     return Promise.resolve();
   }
 
-  get(
-    strategyId: StrategyId,
-    pair: Pair,
-    decisionDate: TradingDate,
-  ): Promise<RealizedOutcomeEntry | null> {
-    return Promise.resolve(this.#entries.get(entryKey(strategyId, pair, decisionDate)) ?? null);
+  get(pair: Pair, decisionDate: TradingDate): Promise<RealizedOutcomeEntry | null> {
+    return Promise.resolve(this.#entries.get(entryKey(pair, decisionDate)) ?? null);
   }
 
   getByDecisionDate(decisionDate: TradingDate): Promise<readonly RealizedOutcomeEntry[]> {
@@ -164,11 +151,6 @@ export interface FiredSetupPrediction {
  */
 export interface JournalRealizedOutcomesOptions {
   /**
-   * Strategy_Source attribution for these entries; defaults to the v1
-   * deterministic system, `'system'` (Requirement 25.1).
-   */
-  readonly strategyId?: StrategyId;
-  /**
    * Resolved forward outcomes per pair, keyed by Pair. Supplied by the
    * forward-outcome resolver (`resolve`, Component 4). The realized side is read
    * from the entry's SELECTED horizon and written ONLY when that horizon has
@@ -190,14 +172,12 @@ export interface JournalRealizedOutcomesOptions {
  * the prediction alone with `matured = false` and no realized fields.
  */
 function buildEntry(
-  strategyId: StrategyId,
   decisionDate: TradingDate,
   evalDate: TradingDate,
   prediction: FiredSetupPrediction,
   forwardOutcome: ForwardOutcome | undefined,
 ): RealizedOutcomeEntry {
   const base = {
-    strategyId,
     pair: prediction.pair,
     decisionDate,
     predictedDirection: prediction.predictedDirection,
@@ -226,8 +206,8 @@ function buildEntry(
 
 /**
  * Journal the realized outcomes for a set of fired setups on a Decision_Date to
- * `realized_outcomes`, one entry per fired setup keyed by (strategyId, pair,
- * decisionDate) (Design Component 19, Requirement 25).
+ * `realized_outcomes`, one entry per fired setup keyed by (pair, decisionDate)
+ * (Design Component 19, Requirement 25).
  *
  * Each entry records the setup's prediction; its realized forward outcome
  * (terminal Direction_Class + MFE/MAE at the selected Horizon) is filled ONLY
@@ -251,7 +231,7 @@ function buildEntry(
  * @param evalDate    The current evaluation date — determines whether each
  *                    setup's Horizon window has matured.
  * @param predictions The fired setups' predictions to journal (one per pair).
- * @param options     Optional strategy id and resolved forward outcomes.
+ * @param options     Optional resolved forward outcomes.
  * @returns The entries that were persisted, in the input order.
  */
 export async function journalRealizedOutcomes(
@@ -261,13 +241,11 @@ export async function journalRealizedOutcomes(
   predictions: readonly FiredSetupPrediction[],
   options: JournalRealizedOutcomesOptions = {},
 ): Promise<readonly RealizedOutcomeEntry[]> {
-  const strategyId = options.strategyId ?? SYSTEM_STRATEGY_ID;
   const forwardOutcomes = options.forwardOutcomes;
 
   const entries: RealizedOutcomeEntry[] = [];
   for (const prediction of predictions) {
     const entry = buildEntry(
-      strategyId,
       decisionDate,
       evalDate,
       prediction,

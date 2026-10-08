@@ -2,8 +2,8 @@
 // seam in `src/scheduled-run/main.ts` (Requirements 15, 20, 23).
 //
 // This module connects the two OUTWARD-ONLY display producers end-to-end for a
-// Decision_Date, exactly as the comments in `main.ts` and
-// `displayDataPersister.ts` anticipated:
+// Decision_Date, producing the display-only writes the `dashboard.json` snapshot
+// carries (see `main.ts` and `snapshot.ts`):
 //
 //   1. AI rationale (Requirement 15): for every FIRING card in the produced
 //      dashboard view, generate the plain-language `signal_rationale` and the

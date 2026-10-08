@@ -14,10 +14,10 @@
 //   - Direction_Class (firing cards): a FiringCard conveys UP/DOWN/FLAT via a TEXT label
 //     ("Up"/"Down"/"Flat") AND a non-color SHAPE glyph (▲/▼/■) plus a self-describing
 //     aria-label — never color alone (Req 18.3).
-//   - Surfaced-vs-suppressed: a SuppressionList entry (currency_concentration with
-//     competing_pairs) conveys suppression via the TEXT "Suppressed" + reason phrase and a
-//     non-color SHAPE glyph (⦸) plus a self-describing aria-label — never color alone, and
-//     surfaces competing pairs (Req 18.3, 8.5, 9.3).
+//   - Surfaced-vs-suppressed: a SuppressionList entry conveys suppression via the TEXT
+//     "Suppressed" + reason phrase and a non-color SHAPE glyph (⦸) plus a self-describing
+//     aria-label — never color alone (Req 18.3). The dashboard-level suppressors are removed,
+//     so only `below_floor` / `not_fired` reasons remain.
 //   - Chart text/table equivalents: the Pattern & Outcomes tab renders a real `<table>`
 //     equivalent for each chart (confidence trend, excursion profile, price) so charted
 //     values are available without interpreting the visualization (Req 18.4).
@@ -28,13 +28,13 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { ApiResult } from "../api/client";
+import type { ApiResult } from "../api/snapshot";
 import type {
   AnalogueOutcomeRow,
   CandleRow,
   FiringSetupRow,
   RealizedOutcomeRow,
-} from "../api/endpoints";
+} from "../api/types";
 import { SelectionProvider, type PairSelection } from "../state/selection";
 import { FiringCard } from "./Setups/FiringCard";
 
@@ -135,8 +135,7 @@ describe("SuppressionList a11y — suppressed status via text + shape, not color
   it("conveys suppression with the 'Suppressed' text + reason phrase and the ⦸ shape glyph", () => {
     const suppression: SuppressionVM = {
       pair: "USDCHF",
-      reason: "currency_concentration",
-      competingPairs: ["EURUSD", "GBPUSD"],
+      reason: "below_floor",
     };
     renderWith("EURUSD", <SuppressionList suppressions={[suppression]} />);
 
@@ -144,31 +143,25 @@ describe("SuppressionList a11y — suppressed status via text + shape, not color
     const text = item.textContent ?? "";
     // Suppressed status is conveyed by TEXT...
     expect(text).toMatch(/Suppressed/);
-    expect(text).toMatch(/Currency concentration/);
+    expect(text).toMatch(/Below confidence floor/);
     // ...and by a non-color SHAPE glyph.
     expect(text).toContain("\u29B8"); // ⦸
-    // The self-describing aria-label names the suppression and its competing pairs.
+    // The self-describing aria-label names the suppression and its reason.
     const label = item.getAttribute("aria-label") ?? "";
     expect(label).toMatch(/USDCHF suppressed/i);
-    expect(label).toMatch(/Currency concentration/i);
-    expect(label).toMatch(/Competing pairs:.*EURUSD.*GBPUSD/i);
-
-    // Competing same-currency pairs are surfaced in the visible content (Req 8.5, 9.3).
-    expect(text).toMatch(/EURUSD/);
-    expect(text).toMatch(/GBPUSD/);
+    expect(label).toMatch(/Below confidence floor/i);
   });
 
   it("labels the suppressions section with a heading (labeled section, Req 18.1/18.3)", () => {
     const suppression: SuppressionVM = {
       pair: "USDJPY",
-      reason: "news",
-      competingPairs: null,
+      reason: "not_fired",
     };
     renderWith("EURUSD", <SuppressionList suppressions={[suppression]} />);
 
     const section = screen.getByRole("region", { name: /Suppressions/i });
     expect(section).toBeTruthy();
-    expect(within(section).getByText(/News embargo/i)).toBeTruthy();
+    expect(within(section).getByText(/Did not fire/i)).toBeTruthy();
   });
 });
 
@@ -188,7 +181,6 @@ function firingRow(overrides: Partial<FiringSetupRow> = {}): FiringSetupRow {
     take_profit_pips: 40,
     surfaced: true,
     suppression_reason: null,
-    competing_pairs: null,
     ...overrides,
   };
 }

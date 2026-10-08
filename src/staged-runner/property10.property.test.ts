@@ -35,12 +35,10 @@ const directionArb = fc.constantFrom<DirectionClass>("UP", "DOWN", "FLAT");
 const horizonArb = fc.constantFrom<Horizon>(1, 2, 3);
 
 // A full PairEvaluation for a given pair. Covers the fields `dailyRun` reads for
-// the firing decision (gatePassing, newsSuppressed, direction, earnedConfidence)
-// as well as the display fields carried onto a rendered card.
+// the firing decision (direction, earnedConfidence) as well as the display
+// fields carried onto a rendered card.
 function pairEvaluationArb(pair: Pair): fc.Arbitrary<PairEvaluation> {
   return fc.record({
-    gatePassing: fc.boolean(),
-    newsSuppressed: fc.boolean(),
     direction: directionArb,
     horizon: horizonArb,
     earnedConfidence: fc
@@ -50,18 +48,18 @@ function pairEvaluationArb(pair: Pair): fc.Arbitrary<PairEvaluation> {
     adversePips: fc.double({ min: 0, max: 200, noNaN: true }),
     stopLossPips: fc.option(fc.double({ min: 1, max: 200, noNaN: true }), { nil: null }),
     takeProfitPips: fc.option(fc.double({ min: 1, max: 200, noNaN: true }), { nil: null }),
+    choppiness: fc.double({ min: 0, max: 1, noNaN: true }),
     rationale: fc.string({ maxLength: 40 }),
     analogueLabels: fc.array(fc.string({ maxLength: 20 }), { maxLength: 3 }),
   }).map((r) => ({
     pair,
-    gatePassing: r.gatePassing,
-    newsSuppressed: r.newsSuppressed,
     direction: r.direction,
     horizon: r.horizon,
     earnedConfidence: r.earnedConfidence,
     excursionProfile: { favorablePips: r.favorablePips, adversePips: r.adversePips },
     stopLossPips: r.stopLossPips,
     takeProfitPips: r.takeProfitPips,
+    choppiness: r.choppiness,
     rationale: r.rationale,
     analogueLabels: r.analogueLabels,
   } satisfies PairEvaluation));

@@ -1,21 +1,20 @@
-// Tests for Strategy_Source attribution and the Realized-Outcome Journal —
-// Design Component 19 (Requirements 25.1, 25.2, 25.3, 25.4, 25.7).
+// Tests for the Realized-Outcome Journal — Design Component 19
+// (Requirements 25.2, 25.3, 25.4, 25.7).
 //
-// Task 11.9. These tests cover four behaviours:
+// The Strategy_Source multi-strategy abstraction has been removed
+// (Requirement 7.4): the journal keys on (pair, decisionDate) alone and there
+// is no `strategyId` in the domain model. These tests cover three behaviours:
 //
-//   1. `strategyId` defaults to `'system'` and participates in BOTH the
-//      `firing_setups` and `realized_outcomes` composite keys, so multiple
-//      strategies coexist for the same (pair, decision_date) with no collision.
-//   2. The realized side is populated ONLY from matured forward outcomes
+//   1. The realized side is populated ONLY from matured forward outcomes
 //      (candles strictly after the Decision_Date, gated by the shared
 //      Look-Ahead Guard); before maturation an entry is predicted-only with
 //      `matured=false` and no realized fields.
-//   3. Journaling is idempotent per (strategyId, pair, decision_date):
-//      re-running a day never duplicates, and a re-run on a later evalDate
-//      updates the same entry in place.
-//   4. Boundary: recording attribution + journal entries leaves the directional
-//      probability / Earned_Confidence / Kill_Gate verdict byte-for-byte
-//      identical — the journal never feeds scoring.
+//   2. Journaling is idempotent per (pair, decision_date): re-running a day
+//      never duplicates, and a re-run on a later evalDate updates the same
+//      entry in place.
+//   3. Boundary: recording journal entries leaves the directional probability /
+//      Earned_Confidence / Kill_Gate verdict byte-for-byte identical — the
+//      journal never feeds scoring.
 
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
@@ -29,7 +28,6 @@ import { dailyRun, type PairEvaluation } from "./dashboard.js";
 import {
   InMemoryFiringSetupStore,
   persistFiringSetups,
-  SYSTEM_STRATEGY_ID,
 } from "./persistFiringSetups.js";
 import { PAIRS, type Pair } from "../ingestion/types.js";
 import type { TradingDate } from "../guard/types.js";
@@ -41,7 +39,7 @@ import type {
   ForwardOutcome,
 } from "../retrieval/types.js";
 import { earnedConfidence, classify, selectHorizon } from "../confidence/index.js";
-import type { Confidence, Horizon } from "../confidence/types.js";
+import type { Horizon } from "../confidence/types.js";
 import { composeGateVerdict, type FoldGateInput } from "../kill-gate/index.js";
 import type { Gate1FiringSample } from "../kill-gate/index.js";
 
@@ -85,122 +83,7 @@ function forwardOutcome(o: {
 }
 
 // ---------------------------------------------------------------------------
-// 1. strategy_id defaults to 'system' and participates in both composite keys
-// ---------------------------------------------------------------------------
-
-describe("Strategy_Source attribution (Requirement 25.1)", () => {
-  it("journal entries default the strategyId to 'system'", async () => {
-    const store = new InMemoryRealizedOutcomeStore();
-
-    const entries = await journalRealizedOutcomes(store, DECISION_DATE, DECISION_DATE, [
-      prediction("EURUSD"),
-    ]);
-
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.strategyId).toBe(SYSTEM_STRATEGY_ID);
-    expect(SYSTEM_STRATEGY_ID).toBe("system");
-
-    const stored = await store.get("system", "EURUSD", DECISION_DATE);
-    expect(stored?.strategyId).toBe("system");
-  });
-
-  it("strategyId is part of the realized_outcomes key: two strategies coexist for the same (pair, date)", async () => {
-    const store = new InMemoryRealizedOutcomeStore();
-
-    await journalRealizedOutcomes(store, DECISION_DATE, DECISION_DATE, [
-      prediction("EURUSD", { predictedDirection: "UP" }),
-    ]);
-    await journalRealizedOutcomes(
-      store,
-      DECISION_DATE,
-      DECISION_DATE,
-      [prediction("EURUSD", { predictedDirection: "DOWN" })],
-      { strategyId: "llm" },
-    );
-
-    // Both entries persist without collision.
-    expect(store.size()).toBe(2);
-
-    const system = await store.get("system", "EURUSD", DECISION_DATE);
-    const llm = await store.get("llm", "EURUSD", DECISION_DATE);
-    expect(system?.strategyId).toBe("system");
-    expect(system?.predictedDirection).toBe("UP");
-    expect(llm?.strategyId).toBe("llm");
-    expect(llm?.predictedDirection).toBe("DOWN");
-
-    // Both are returned for the Decision_Date.
-    const byDate = await store.getByDecisionDate(DECISION_DATE);
-    expect(byDate).toHaveLength(2);
-    expect(new Set(byDate.map((e) => e.strategyId))).toEqual(
-      new Set(["system", "llm"]),
-    );
-  });
-
-  it("strategyId participates in the firing_setups key so strategies coexist there too", async () => {
-    const store = new InMemoryFiringSetupStore();
-    const evaluations: PairEvaluation[] = [
-      {
-        pair: "EURUSD",
-        gatePassing: true,
-        earnedConfidence: 0.9 as Confidence,
-        direction: "UP",
-        horizon: 2,
-        excursionProfile: { favorablePips: 40, adversePips: 15 },
-        stopLossPips: 15,
-        takeProfitPips: 40,
-        newsSuppressed: false,
-        rationale: "up",
-        analogueLabels: ["trend"],
-      },
-    ];
-    const view = dailyRun(DECISION_DATE, evaluations);
-
-    // Default 'system' plus a second strategy on the same (date, pair).
-    await persistFiringSetups(store, view, evaluations);
-    await persistFiringSetups(store, view, evaluations, { strategyId: "algo" });
-
-    // Five pairs written per strategy, no key collision across strategies.
-    expect(store.size()).toBe(10);
-    const system = await store.get(DECISION_DATE, "EURUSD", SYSTEM_STRATEGY_ID);
-    const algo = await store.get(DECISION_DATE, "EURUSD", "algo");
-    expect(system?.strategyId).toBe("system");
-    expect(algo?.strategyId).toBe("algo");
-  });
-
-  it("many distinct strategyIds coexist for the same (pair, date) without collision", async () => {
-    await fc.assert(
-      fc.asyncProperty(
-        fc.uniqueArray(
-          fc.string({ minLength: 1, maxLength: 8 }).filter((s) => s.trim().length > 0),
-          { minLength: 1, maxLength: 6 },
-        ),
-        async (strategyIds) => {
-          const store = new InMemoryRealizedOutcomeStore();
-          for (const strategyId of strategyIds) {
-            await journalRealizedOutcomes(
-              store,
-              DECISION_DATE,
-              DECISION_DATE,
-              [prediction("EURUSD")],
-              { strategyId },
-            );
-          }
-          // One entry per distinct strategyId — the (strategyId, pair, date) key
-          // keeps them all separate.
-          expect(store.size()).toBe(strategyIds.length);
-          for (const strategyId of strategyIds) {
-            const e = await store.get(strategyId, "EURUSD", DECISION_DATE);
-            expect(e?.strategyId).toBe(strategyId);
-          }
-        },
-      ),
-      { numRuns: 100 },
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 2. Realized side populated only from matured, strictly-after-date candles
+// 1. Realized side populated only from matured, strictly-after-date candles
 // ---------------------------------------------------------------------------
 
 describe("realized side is matured-only (Requirements 25.2, 25.3)", () => {
@@ -226,6 +109,11 @@ describe("realized side is matured-only (Requirements 25.2, 25.3)", () => {
     // The predicted side is still fully recorded.
     expect(entry?.predictedDirection).toBe("UP");
     expect(entry?.horizon).toBe(2);
+
+    // Keyed by (pair, decisionDate) — no strategy dimension.
+    const stored = await store.get("EURUSD", DECISION_DATE);
+    expect(stored?.pair).toBe("EURUSD");
+    expect(store.size()).toBe(1);
   });
 
   it("once the horizon window has closed the realized side is populated from the resolved outcome", async () => {
@@ -306,7 +194,7 @@ describe("realized side is matured-only (Requirements 25.2, 25.3)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 3. Idempotency per (strategyId, pair, decision_date) (Requirement 25.7)
+// 2. Idempotency per (pair, decision_date) (Requirement 25.7)
 // ---------------------------------------------------------------------------
 
 describe("journaling idempotency (Requirement 25.7)", () => {
@@ -337,7 +225,7 @@ describe("journaling idempotency (Requirement 25.7)", () => {
       [prediction("EURUSD", { horizon })],
       { forwardOutcomes: new Map([["EURUSD", outcome]]) },
     );
-    const before = await store.get("system", "EURUSD", DECISION_DATE);
+    const before = await store.get("EURUSD", DECISION_DATE);
     expect(before?.matured).toBe(false);
     expect(store.size()).toBe(1);
 
@@ -353,12 +241,12 @@ describe("journaling idempotency (Requirement 25.7)", () => {
 
     // Still exactly one entry — updated, not duplicated.
     expect(store.size()).toBe(1);
-    const after = await store.get("system", "EURUSD", DECISION_DATE);
+    const after = await store.get("EURUSD", DECISION_DATE);
     expect(after?.matured).toBe(true);
     expect(after?.realizedDirection).toBe("DOWN");
   });
 
-  it("property: N re-runs on the same (strategyId, pair, date) leave exactly one entry with the last-written value", async () => {
+  it("property: N re-runs on the same (pair, date) leave exactly one entry with the last-written value", async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.array(fc.constantFrom<DirectionClass>("UP", "DOWN", "FLAT"), {
@@ -376,7 +264,7 @@ describe("journaling idempotency (Requirement 25.7)", () => {
           }
           // Same key each time ⇒ exactly one entry, holding the last write.
           expect(store.size()).toBe(1);
-          const e = await store.get("system", "EURUSD", DECISION_DATE);
+          const e = await store.get("EURUSD", DECISION_DATE);
           expect(e?.predictedDirection).toBe(last);
         },
       ),
@@ -386,7 +274,7 @@ describe("journaling idempotency (Requirement 25.7)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4. Boundary: journaling + attribution never change scoring (Requirement 25.4)
+// 3. Boundary: journaling never changes scoring (Requirement 25.4)
 // ---------------------------------------------------------------------------
 
 // A neighborhood large enough to be actionable, with a clear directional
@@ -458,36 +346,34 @@ function foldInput(): FoldGateInput {
   return { foldIndex: 0, pair: "EURUSD", horizon: 2, firingSubset, modelOutcomes, baselineOutcomes };
 }
 
-describe("scoring boundary: journal + attribution never feed scoring (Requirement 25.4)", () => {
+describe("scoring boundary: journal never feeds scoring (Requirement 25.4)", () => {
   it("Earned_Confidence, Direction_Class, and horizon are byte-for-byte identical with and without journaling", async () => {
     const nb = neighborhood();
 
-    // Baseline scoring, computed BEFORE any journaling / attribution.
+    // Baseline scoring, computed BEFORE any journaling.
     const horizonBefore = selectHorizon(nb);
     const confidenceBefore = earnedConfidence(nb, horizonBefore);
     const classBefore = classify(20, 12);
 
-    // Record attribution (firing_setups) AND a journal entry (realized_outcomes).
+    // Record a firing row AND a journal entry.
     const firingStore = new InMemoryFiringSetupStore();
     const journalStore = new InMemoryRealizedOutcomeStore();
     const evaluations: PairEvaluation[] = [
       {
         pair: "EURUSD",
-        gatePassing: true,
         earnedConfidence: confidenceBefore,
         direction: "UP",
         horizon: horizonBefore,
         excursionProfile: { favorablePips: 40, adversePips: 15 },
         stopLossPips: 15,
         takeProfitPips: 40,
-        newsSuppressed: false,
+        choppiness: 0.8,
         rationale: "up",
         analogueLabels: ["trend"],
       },
     ];
     const view = dailyRun(DECISION_DATE, evaluations);
-    await persistFiringSetups(firingStore, view, evaluations, { strategyId: "system" });
-    await persistFiringSetups(firingStore, view, evaluations, { strategyId: "llm" });
+    await persistFiringSetups(firingStore, view, evaluations);
     await journalRealizedOutcomes(
       journalStore,
       DECISION_DATE,
@@ -496,29 +382,29 @@ describe("scoring boundary: journal + attribution never feed scoring (Requiremen
       { forwardOutcomes: new Map([["EURUSD", forwardOutcome({ d2: "UP" })]]) },
     );
 
-    // Re-compute scoring AFTER journaling / attribution on the SAME inputs.
+    // Re-compute scoring AFTER journaling on the SAME inputs.
     const horizonAfter = selectHorizon(nb);
     const confidenceAfter = earnedConfidence(nb, horizonAfter);
     const classAfter = classify(20, 12);
 
-    // Identical to the last bit — the journal/attribution never touch scoring.
+    // Identical to the last bit — the journal never touches scoring.
     expect(horizonAfter).toBe(horizonBefore);
     expect(confidenceAfter).toBe(confidenceBefore);
     expect(Object.is(confidenceAfter, confidenceBefore)).toBe(true);
     expect(classAfter).toBe(classBefore);
 
     // Sanity: something was actually recorded.
-    expect(firingStore.size()).toBe(10);
+    expect(firingStore.size()).toBe(5);
     expect(journalStore.size()).toBe(1);
   });
 
-  it("the Kill_Gate verdict is byte-for-byte identical with and without journaling / attribution", async () => {
+  it("the Kill_Gate verdict is byte-for-byte identical with and without journaling", async () => {
     const fold = foldInput();
 
     // Verdict computed BEFORE journaling.
     const verdictBefore = composeGateVerdict("cfg-eurusd", [fold]);
 
-    // Record attribution + a journal entry.
+    // Record a journal entry.
     const journalStore = new InMemoryRealizedOutcomeStore();
     await journalRealizedOutcomes(
       journalStore,
@@ -536,7 +422,7 @@ describe("scoring boundary: journal + attribution never feed scoring (Requiremen
     expect(journalStore.size()).toBe(1);
   });
 
-  it("property: for any recorded strategyId / prediction, scoring on fixed inputs is unchanged", async () => {
+  it("property: for any recorded prediction, scoring on fixed inputs is unchanged", async () => {
     const nb = neighborhood();
     const horizon = selectHorizon(nb);
     const confidenceRef = earnedConfidence(nb, horizon);
@@ -544,22 +430,18 @@ describe("scoring boundary: journal + attribution never feed scoring (Requiremen
 
     await fc.assert(
       fc.asyncProperty(
-        fc.string({ minLength: 1, maxLength: 8 }).filter((s) => s.trim().length > 0),
         fc.constantFrom<DirectionClass>("UP", "DOWN", "FLAT"),
-        async (strategyId, predictedDir) => {
+        async (predictedDir) => {
           const store = new InMemoryRealizedOutcomeStore();
           await journalRealizedOutcomes(
             store,
             DECISION_DATE,
             addTradingDays(DECISION_DATE, 5),
             [prediction("EURUSD", { predictedDirection: predictedDir })],
-            {
-              strategyId,
-              forwardOutcomes: new Map([["EURUSD", forwardOutcome({})]]),
-            },
+            { forwardOutcomes: new Map([["EURUSD", forwardOutcome({})]]) },
           );
 
-          // Recording an arbitrary strategy's prediction leaves scoring identical.
+          // Recording a prediction leaves scoring identical.
           expect(earnedConfidence(nb, horizon)).toBe(confidenceRef);
           expect(composeGateVerdict("cfg", [foldInput()])).toEqual(verdictRef);
         },

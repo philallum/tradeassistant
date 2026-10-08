@@ -29,10 +29,6 @@ import {
   InMemoryGateVerdictStore,
   type GateVerdictStore,
 } from "../../kill-gate/types.js";
-import {
-  InMemoryFeatureRegistryStore,
-  type FeatureRegistryStore,
-} from "../../feature-registry/types.js";
 import type {
   PairEvaluationLoader,
   DashboardViewPersister,
@@ -117,11 +113,6 @@ export interface HostedBackfillDeps {
    * reference since the Backfill_Stage never persists a verdict.
    */
   readonly gateVerdictStore?: GateVerdictStore;
-  /**
-   * FeatureRegistryStore PORT (unused by backfill); defaults to an in-memory
-   * reference since the Backfill_Stage never writes the feature registry.
-   */
-  readonly featureRegistryStore?: FeatureRegistryStore;
   /** Evaluation loader (unused by backfill); defaults to a no-op. */
   readonly loadEvaluations?: PairEvaluationLoader;
   /** Optional view persister (unused by backfill). */
@@ -175,8 +166,6 @@ export async function runHostedBackfill(
     vectorStore: stores.vectorStore,
     analogueStore: stores.analogueStore,
     gateVerdictStore: deps.gateVerdictStore ?? new InMemoryGateVerdictStore(),
-    featureRegistryStore:
-      deps.featureRegistryStore ?? new InMemoryFeatureRegistryStore(),
     dataDir,
     docs,
     config,

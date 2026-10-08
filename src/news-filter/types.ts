@@ -15,7 +15,7 @@
 // This file defines the module's typed vocabulary plus the two storage PORTs
 // (mirroring the `calendar_events` and `news_risk_flags` tables) and their
 // in-memory reference implementations, following the storage-port + in-memory
-// reference pattern used across the codebase (e.g. `FeatureRegistryStore`,
+// reference pattern used across the codebase (e.g. `GateVerdictStore`,
 // `RoleRejectionRecorder`, `CandleStore`).
 
 import type { TradingDate } from "../guard/types.js";

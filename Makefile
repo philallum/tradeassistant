@@ -1,8 +1,9 @@
 # Convenience targets. `make check` mirrors the `npm run check` script:
-# lint + type-check + tests. The Python cross-check is an isolated,
-# deterministic step (Requirement 3.4) run via `make py-check`.
+# lint + type-check + tests. The authoritative verification of the
+# confidence-shrinkage formula is the TypeScript property test
+# (`src/confidence/`); there is no separate language toolchain.
 
-.PHONY: install check lint typecheck test py-install py-check check-all
+.PHONY: install check lint typecheck test
 
 install:
 	npm install
@@ -18,12 +19,3 @@ typecheck:
 
 test:
 	npm run test
-
-py-install:
-	python3 -m pip install --require-hashes=false -r python/requirements.txt
-
-py-check:
-	python3 -m pytest python/tests
-
-# Full gate including the isolated Python cross-check.
-check-all: check py-check

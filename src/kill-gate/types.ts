@@ -214,6 +214,13 @@ export interface Gate1FiringSample {
   readonly baselinePrediction: DirectionClass;
   /** The actual matured forward-outcome direction at the selected horizon. */
   readonly actual: DirectionClass;
+  /**
+   * Optional model Earned_Confidence in [0, 1] on this firing Decision_Date.
+   * Used only to populate the Evaluation_Report's `strengthBreakdown` (counts
+   * by confidence band); it never affects any gate math. Absent samples are
+   * excluded from the strength breakdown. (Design C1, Requirement 1.2)
+   */
+  readonly confidence?: number;
 }
 
 /**
@@ -464,5 +471,189 @@ export class InMemoryGateVerdictStore implements GateVerdictStore {
   clear(): void {
     this.seq = 0;
     this.verdicts.clear();
+  }
+}
+
+// ===========================================================================
+// Evaluation Report (simplify-to-cloud-minimal, Requirement 1; Design C1).
+//
+// Reframes the two-stage Kill_Gate from an automatic PASS/CUT verdict into a
+// human-read EVALUATION REPORT. The Measurement_Engine math
+// (`evaluateGate1`/`evaluateGate2` and the walk-forward pooling) is unchanged
+// in behaviour; only the OUTPUT type changes. The report carries the measured
+// metrics plus a sample-size-aware uncertainty indication and NON-BINDING
+// annotation flags.
+//
+// It has NO `verdict` field (Requirement 1.3): the former Kill_Verdict collapse
+// is removed from the evaluation path, and the former GATE1_MIN_DELTA / Gate-2
+// `margin >= 0` thresholds survive only as `annotations.*` flags that annotate,
+// but never hide, suppress, or block any displayed data (Requirement 1.5).
+//
+// Appended as a separate block to avoid edit conflicts with the retained
+// GateVerdict definitions above; do not fold these into the definitions above.
+// ===========================================================================
+
+/**
+ * The chronological out-of-sample split an {@link EvaluationReport} was measured
+ * over. Mirrors the `evaluation_reports` columns `split_train_end`,
+ * `split_test_start`, `split_test_end`. The train window strictly precedes the
+ * test window (`trainEnd < testStart`), preserving look-ahead safety.
+ */
+export interface EvaluationSplit {
+  readonly trainEnd: TradingDate;
+  readonly testStart: TradingDate;
+  readonly testEnd: TradingDate;
+}
+
+/**
+ * The friction-adjusted MFE/MAE summary carried on an {@link EvaluationReport}.
+ * These are the mean favorable (MFE) and adverse (MAE) excursions of the model
+ * and the Weekly_Trend_Follow baseline over the matched firing subset, AFTER
+ * the symmetric pair-specific Friction_Penalty has been applied — the same
+ * friction model the Measurement_Engine uses for Gate 2. (Design C1)
+ */
+export interface MfeMaeSummary {
+  /** Mean friction-adjusted favorable excursion of the model (pips). */
+  readonly modelMfe: number;
+  /** Mean friction-adjusted adverse excursion of the model (pips). */
+  readonly modelMae: number;
+  /** Mean friction-adjusted favorable excursion of the baseline (pips). */
+  readonly baselineMfe: number;
+  /** Mean friction-adjusted adverse excursion of the baseline (pips). */
+  readonly baselineMae: number;
+}
+
+/**
+ * Counts of matched firing samples by model-confidence band (Design C1). Bands
+ * partition the Earned_Confidence [0, 1] range relative to the neutral prior
+ * (0.5): `weak` < 0.55, `moderate` in [0.55, 0.70), `strong` >= 0.70. Samples
+ * without a recorded confidence are excluded from all three counts, so the
+ * three counts need not sum to the sample size.
+ */
+export interface StrengthBreakdown {
+  readonly weak: number;
+  readonly moderate: number;
+  readonly strong: number;
+}
+
+/**
+ * Sample-size-aware statistical uncertainty on the accuracy delta
+ * (`modelAccuracy - baselineAccuracy`), carried on the {@link EvaluationReport}
+ * (Requirements 1.6, 2.5).
+ *
+ * `accuracyDeltaCI` is a Wald (normal-approximation) confidence interval
+ * `[lo, hi]` on the delta, derived deterministically from the matched sample
+ * size. `note` is a plain-language indication of the uncertainty, including an
+ * explicit LOW-N caveat when the matched subset is below the
+ * {@link GATE1_SAMPLE_SIZE_FLOOR} (30), so a thin read is never presented as a
+ * confident one.
+ */
+export interface EvaluationUncertainty {
+  readonly accuracyDeltaCI: readonly [number, number];
+  readonly note: string;
+}
+
+/**
+ * Non-binding annotation flags on an {@link EvaluationReport} (Requirement 1.5).
+ *
+ * These preserve the former thresholds as DESCRIPTIVE context only — they are
+ * never consulted to hide, suppress, or block any displayed data. `deltaExceeds3pp`
+ * reports whether the aggregate Gate 1 accuracy delta reaches the former
+ * {@link GATE1_MIN_DELTA} (+3pp); `riskAdjNonNegative` reports whether the
+ * aggregate Gate 2 friction-adjusted margin is non-negative (the former
+ * `margin >= 0` rule). Both are annotations, not gates.
+ */
+export interface EvaluationAnnotations {
+  readonly deltaExceeds3pp: boolean;
+  readonly riskAdjNonNegative: boolean;
+}
+
+/**
+ * The structured output of the Measurement_Engine for one configuration over
+ * the Out_Of_Sample_Test — a set of metrics with uncertainty intended for human
+ * interpretation (Requirement 1.2; Design C1). It replaces the {@link GateVerdict}
+ * on the evaluation path and carries **NO** `verdict`/`PASS`/`CUT`/`KILL` field
+ * (Requirement 1.3).
+ *
+ * All fields are measured deterministically from the pooled matched firing
+ * subset of the qualifying walk-forward folds; identical inputs always produce a
+ * byte-identical report (Requirement 1.6).
+ */
+export interface EvaluationReport {
+  readonly configId: string;
+  readonly split: EvaluationSplit;
+  /** Size of the pooled matched firing subset across qualifying folds. */
+  readonly sampleSize: number;
+  /** Total firing predictions supplied across all folds (incl. skipped). */
+  readonly predictionsCount: number;
+  /** Model directional accuracy on the matched subset, in [0, 1]. */
+  readonly modelAccuracy: number;
+  /** Weekly_Trend_Follow baseline accuracy on the SAME matched subset, in [0, 1]. */
+  readonly baselineAccuracy: number;
+  /** `modelAccuracy - baselineAccuracy`, as a fraction (0.03 == 3pp). */
+  readonly deltaVsBaseline: number;
+  /** Model friction-adjusted excursion-weighted hit metric (Gate 2 model side). */
+  readonly frictionAdjustedModel: number;
+  /** Baseline friction-adjusted excursion-weighted hit metric (Gate 2 baseline side). */
+  readonly frictionAdjustedBaseline: number;
+  readonly mfeMaeSummary: MfeMaeSummary;
+  readonly strengthBreakdown: StrengthBreakdown;
+  readonly uncertainty: EvaluationUncertainty;
+  readonly annotations: EvaluationAnnotations;
+  // NO `verdict` field (Requirement 1.3).
+}
+
+/**
+ * Storage PORT for the `evaluation_reports` table (simplify-to-cloud-minimal
+ * Requirement 1.3, 8.2; design C4 / Data Models). The successor to
+ * {@link GateVerdictStore} on the evaluation write path: it persists a measured
+ * {@link EvaluationReport} and reads one back by its generated id.
+ *
+ * The {@link EvaluationReport} already carries its {@link EvaluationSplit}, so —
+ * unlike {@link GateVerdictStore.persistVerdict} — no separate split argument is
+ * needed. Each call records a NEW report row (reports are an append-only
+ * research history, mirroring the Research_Log). It carries NO verdict in any
+ * form (Requirement 1.3).
+ */
+export interface EvaluationReportStore {
+  /**
+   * Persist one {@link EvaluationReport}, returning the generated `reportId`.
+   * Append-only: a repeat call records another row rather than overwriting.
+   */
+  persistReport(report: EvaluationReport): Promise<{ readonly reportId: string }>;
+
+  /** Read back a persisted {@link EvaluationReport} by its `reportId`, or null. */
+  getReport(reportId: string): Promise<EvaluationReport | null>;
+}
+
+/**
+ * In-memory reference implementation of {@link EvaluationReportStore}.
+ *
+ * Mirrors the `evaluation_reports` schema: each report is assigned a fresh id
+ * and stored by that id. Append-only, matching the Research_Log semantics. Ids
+ * are generated deterministically from an internal counter (`report-1`,
+ * `report-2`, …) so tests are reproducible without a UUID dependency — the same
+ * convention {@link InMemoryGateVerdictStore} uses for its verdict ids.
+ */
+export class InMemoryEvaluationReportStore implements EvaluationReportStore {
+  private seq = 0;
+  private readonly reports = new Map<string, EvaluationReport>();
+
+  persistReport(
+    report: EvaluationReport,
+  ): Promise<{ readonly reportId: string }> {
+    this.seq += 1;
+    const reportId = `report-${this.seq}`;
+    this.reports.set(reportId, report);
+    return Promise.resolve({ reportId });
+  }
+
+  getReport(reportId: string): Promise<EvaluationReport | null> {
+    return Promise.resolve(this.reports.get(reportId) ?? null);
+  }
+
+  clear(): void {
+    this.seq = 0;
+    this.reports.clear();
   }
 }

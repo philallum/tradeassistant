@@ -16,9 +16,6 @@ export * from "./guard/index.js";
 // OHLC Ingestion and Session Boundary Normalization (Requirement 7).
 export * from "./ingestion/index.js";
 
-// Sovereign Yield Feed Ingestion (Requirement 13.8).
-export * from "./yields/index.js";
-
 // Pattern Vector Encoder (Requirement 8).
 export * from "./encoder/index.js";
 
@@ -27,12 +24,6 @@ export * from "./retrieval/index.js";
 
 // Weekly-Trend-Follow Baseline (Requirement 11.1).
 export * from "./baseline/index.js";
-
-// Candidate Feature Computations (Requirements 13.5, 13.6, 13.8, 4.1).
-export * from "./features/index.js";
-
-// Feature Registry — one-at-a-time gated feature discovery (Requirement 13).
-export * from "./feature-registry/index.js";
 
 // LLM_Interface — role-gated, provenance-tagged AI gateway (Requirement 2).
 export * from "./llm/index.js";
@@ -45,12 +36,10 @@ export * from "./news-filter/index.js";
 // outward edge of the AI / Deterministic boundary.
 export * from "./rationale/index.js";
 
-// Research Assistant — human-gated proposals (Requirement 2.8).
-export * from "./research-assistant/index.js";
-
-// Silent-by-Default Dashboard + Currency Concentration Guard — the daily-run
-// entry point, per-pair firing decision, and dashboard-level suppression
-// (Requirements 16, 22, 1, 12.3).
+// Silent-by-Default Dashboard — the daily-run entry point and per-pair firing
+// decision. No dashboard-level suppressor remains: the Choppiness_Guard
+// (Requirement 3.1) and the Currency_Concentration_Guard (Requirement 3.3) have
+// been removed (Requirements 16, 1, 12.3).
 export * from "./dashboard/index.js";
 
 // Empirical Analogue-Derived Risk Boundaries (Requirement 21).
@@ -66,7 +55,7 @@ export * from "./scheduled-run/index.js";
 
 // End-to-End Daily-Run Pipeline — the single deterministic path wiring
 // ingestion → encoder → retrieval → resolver → confidence → kill-gate →
-// feature registry → news filter → risk boundaries → dashboard (task 11.1;
+// news filter → risk boundaries → dashboard (task 11.1;
 // Requirements 16.1, 16.7, 17.1, 3.1).
 export * from "./pipeline/index.js";
 

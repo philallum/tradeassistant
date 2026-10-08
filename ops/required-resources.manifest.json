@@ -1,0 +1,138 @@
+{
+  "description": "The authoritative, version-controlled Required_GCP_Resource_Set for the simplified cloud-minimal system (simplify-to-cloud-minimal spec R11.1, design C5). This is a POSITIVE keep-list: it enumerates ONLY the GCP resources the simplified daily loop needs in project trade-assistant-508806. Everything present in the live project that is NOT matched here is an Orphaned_GCP_Resource and is a candidate for operator-approved deletion in task 7.2. NO secret VALUE appears here — secrets are referenced by NAME only (R11.3). This manifest is diffed against a read-only live enumeration (ops/enumerate-gcp.sh); it never mutates any resource.",
+  "manifestVersion": 1,
+  "spec": "simplify-to-cloud-minimal",
+  "requirements": ["11.1", "11.2", "11.3", "6.1", "6.2", "6.3", "6.4"],
+  "project": "trade-assistant-508806",
+  "region": "europe-west1",
+  "cloudRunJobs": [
+    {
+      "name": "scheduled-daily-run",
+      "role": "The daily deterministic daily-run executed unattended once per trading day (R6.1). Deployed by GitHub Actions as a SHA-pinned image; runs as the Job runtime service account.",
+      "keep": true
+    }
+  ],
+  "cloudRunServices": [],
+  "cloudSchedulerJobs": [
+    {
+      "name": "scheduled-daily-run-session-close",
+      "schedule": "0 17 * * 1-5",
+      "timeZone": "America/New_York",
+      "triggers": "scheduled-daily-run",
+      "invokerServiceAccount": "scheduler-invoker@trade-assistant-508806.iam.gserviceaccount.com",
+      "role": "EXACTLY ONE Cloud Scheduler trigger firing the Job at Session_Close (NY close), Mon-Fri (R6.2). Source of truth: ops/scheduler-job.config.json.",
+      "keep": true
+    }
+  ],
+  "serviceAccounts": [
+    {
+      "selector": "jobRuntime",
+      "email": "job-runtime@trade-assistant-508806.iam.gserviceaccount.com",
+      "note": "The dedicated least-privilege runtime SA the Cloud Run Job runs as (deploy.yml RUNTIME_SERVICE_ACCOUNT GitHub var; confirmed live as the SA holding roles/secretmanager.secretAccessor).",
+      "roles": [
+        "roles/secretmanager.secretAccessor",
+        "roles/aiplatform.user"
+      ],
+      "rolesNote": "roles/aiplatform.user is required for the Vertex AI Gemini call (PROJECT-STATE open item); confirm it is granted to this SA when reconciling.",
+      "keep": true
+    },
+    {
+      "selector": "schedulerInvoker",
+      "email": "scheduler-invoker@trade-assistant-508806.iam.gserviceaccount.com",
+      "note": "Identity Cloud Scheduler uses to invoke the Job via OIDC (R6.2).",
+      "roles": [
+        "roles/run.invoker"
+      ],
+      "keep": true
+    },
+    {
+      "selector": "deploy",
+      "email": "gh-deploy@trade-assistant-508806.iam.gserviceaccount.com",
+      "note": "Deploy-time SA GitHub Actions impersonates via Workload Identity Federation (keyless). Builds + pushes the image, deploys the Job, publishes Hosting.",
+      "roles": [
+        "roles/run.developer",
+        "roles/cloudbuild.builds.editor",
+        "roles/artifactregistry.writer",
+        "roles/iam.serviceAccountUser",
+        "roles/storage.admin",
+        "roles/firebasehosting.admin"
+      ],
+      "rolesNote": "Minimal build/registry/deploy roles plus roles/firebasehosting.admin for the Hosting publish (R11 glossary; deploy.yml header). The exact granted role set is confirmed by the live IAM-policy enumeration; roles granted to this SA solely for removed subsystems are Orphaned bindings.",
+      "keep": true
+    }
+  ],
+  "secretManagerSecrets": [
+    {
+      "name": "supabase-key",
+      "role": "The single Write_Credential (R6.3, R4.6): the fx_writer scoped ES256 JWT the Job writes with. Referenced BY NAME only.",
+      "keep": true
+    },
+    {
+      "name": "supabase-publishable-key",
+      "role": "The publishable apikey the REST client sends alongside the Bearer write JWT (PostgREST API-gateway admission).",
+      "keep": true
+    },
+    {
+      "name": "supabase-url",
+      "role": "Hosted Supabase REST base URL.",
+      "keep": true
+    },
+    {
+      "name": "supabase-pooler-url",
+      "role": "IPv4-reachable pooler/REST endpoint (Cloud Run has no IPv6 egress).",
+      "keep": true
+    },
+    {
+      "name": "external-signal-api-key",
+      "role": "The External_Reference_Signal provider (FCS) key the retained external-signal adapter reads at runtime (R6.3).",
+      "keep": true
+    }
+  ],
+  "secretManagerSecretsNote": "The Gemini/Vertex AI path does NOT use a Secret Manager API-key secret: the Job calls Vertex AI with GOOGLE_GENAI_USE_VERTEXAI=true, authorized by the runtime SA's roles/aiplatform.user (R11 glossary 'the Gemini/Vertex path'). Any Secret Manager secret NOT listed above — in particular the obsolete scoped-JWT provider secrets superseded after the yields/news removals (alpha-vantage-api-key, finnhub-api-key, massive-api-key, news-api-key, news-calendar-api-key, twelve-data-api-key) — is an Orphaned_GCP_Resource (R11.8), subject to operator-approved deletion in task 7.2 only after confirming no retained --set-secrets entry references it.",
+  "artifactRegistry": {
+    "repositories": [
+      {
+        "name": "app-images",
+        "note": "The single Docker repository holding the scheduled-daily-run Job images (deploy.yml AR_REPOSITORY GitHub var; image path europe-west1-docker.pkg.dev/trade-assistant-508806/app-images/scheduled-run:SHA). Confirmed live. Also currently holds Orphaned image lines: dashboard-read-proxy/*, gate-run/*, seed-run/* and scheduled-run images beyond the retention window.",
+        "keep": true,
+        "retention": {
+          "policy": "keep-recent",
+          "keepMostRecentImages": 5,
+          "note": "Keep only a bounded number (5) of the most recent scheduled-run Job images; older Job images and ALL read-proxy (dashboard-read-proxy) images are stale and Orphaned (R11.9). Retention enforcement is an operator-approved mutation (task 7.2), not part of the read-only enumeration."
+        }
+      }
+    ]
+  },
+  "firebaseHosting": {
+    "site": "trade-assistant-508806",
+    "role": "The public, mobile-reachable dashboard SPA host (R6 constraint 2 / Public_Read_Path). Serves the static bundle + dashboard.json snapshot. Source of truth: web/.firebaserc, web/firebase.json.",
+    "keep": true
+  },
+  "workloadIdentityFederation": {
+    "note": "The pool/provider backing the keyless GitHub Actions deploy (deploy.yml WIF_PROVIDER GitHub var). Confirmed live via gcloud iam workload-identity-pools list (location=global).",
+    "location": "global",
+    "poolId": "github-pool",
+    "providerId": "github-provider",
+    "keep": true
+  },
+  "orphanedExamples": {
+    "note": "Non-exhaustive examples of Orphaned_GCP_Resources the task-7.2 reconcile is expected to remove, derived from the removed subsystems (R11.6-R11.10). The authoritative orphan set is whatever the live enumeration finds that is NOT matched above.",
+    "cloudRunServices": ["dashboard-read-proxy"],
+    "cloudRunJobs": ["dashboard-seed-run", "dashboard-gate-run"],
+    "secrets": [
+      "alpha-vantage-api-key",
+      "finnhub-api-key",
+      "massive-api-key",
+      "news-api-key",
+      "news-calendar-api-key",
+      "twelve-data-api-key",
+      "supabase-direct-connection",
+      "supabase-read-key",
+      "supabase-secret-key",
+      "supabase-token"
+    ],
+    "artifactRegistryImages": ["all dashboard-read-proxy/* images", "all gate-run/* images", "all seed-run/* images", "scheduled-run images beyond the retention window"],
+    "serviceAccounts": ["read-proxy-runtime@", "gate-run-runtime@", "trade-assistant@ (broad owner-like roles — review)", "794110228539-compute@ (default compute, roles/editor — review)", "firebase-adminsdk-fbsvc@ (review if Hosting deploy only needs gh-deploy)"],
+    "liveEnumerationNote": "This block was reconciled against a live read-only enumeration run on 2026-10-07. The authoritative orphan set is always whatever the current enumeration finds that is NOT matched by the keep-list above; this list is illustrative, not a deletion command."
+  }
+}

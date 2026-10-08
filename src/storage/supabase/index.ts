@@ -12,8 +12,10 @@
 // references, so `PipelineStores` and every downstream caller are untouched —
 // the only substitution is the concrete backend.
 
-import type { GateVerdictStore } from "../../kill-gate/types.js";
-import type { FeatureRegistryStore } from "../../feature-registry/types.js";
+import type {
+  EvaluationReportStore,
+  GateVerdictStore,
+} from "../../kill-gate/types.js";
 import type { PipelineStores } from "../../pipeline/index.js";
 import type { SupabaseConfig } from "../supabaseConfig.js";
 import { SupabaseRestClient } from "./client.js";
@@ -21,25 +23,23 @@ import { SupabaseCandleStore } from "./candleStore.js";
 import { SupabasePatternVectorStore } from "./patternVectorStore.js";
 import { SupabaseAnalogueStore } from "./analogueStore.js";
 import { SupabaseGateVerdictStore } from "./gateVerdictStore.js";
-import { SupabaseFeatureRegistryStore } from "./featureRegistryStore.js";
+import { SupabaseEvaluationReportStore } from "./evaluationReportStore.js";
 
 export { SupabaseRestClient, SupabaseRestError } from "./client.js";
 export { SupabaseCandleStore } from "./candleStore.js";
 export { SupabasePatternVectorStore } from "./patternVectorStore.js";
 export { SupabaseAnalogueStore } from "./analogueStore.js";
 export { SupabaseGateVerdictStore } from "./gateVerdictStore.js";
-export { SupabaseFeatureRegistryStore } from "./featureRegistryStore.js";
+export { SupabaseEvaluationReportStore } from "./evaluationReportStore.js";
 export {
   makeSupabaseViewPersister,
   firingSetupRows,
 } from "./viewPersister.js";
 export {
-  makeDisplayDataPersister,
-  type DisplayDataPersister,
   type DisplayOnlyWrite,
   type SignalRationaleWrite,
   type ReferenceComparisonWrite,
-} from "./displayDataPersister.js";
+} from "./displayOnlyTypes.js";
 
 /**
  * Build the three PORT implementations from a resolved {@link SupabaseConfig}.
@@ -65,20 +65,18 @@ export function buildSupabaseStores(
   };
 }
 
-/** The two gate-related PORT implementations sharing one transport. */
+/** The gate-verdict PORT implementation. */
 export interface SupabaseGateStores {
   readonly gateVerdictStore: GateVerdictStore;
-  readonly featureRegistryStore: FeatureRegistryStore;
 }
 
 /**
- * Build the gate-verdict + feature-registry adapters (design Component 3,
- * spec Req 1.2) from a SINGLE shared {@link SupabaseRestClient}, so both reach
- * storage through the same connection configuration (URL + secret key + fetch).
+ * Build the gate-verdict adapter (design Component 3) from a resolved
+ * {@link SupabaseConfig} or an existing shared {@link SupabaseRestClient}.
  *
  * This is an ADDITIVE sibling to {@link buildSupabaseStores}: it deliberately
  * does NOT widen {@link PipelineStores} — the pipeline's candle/vector/analogue
- * triple shape is unchanged — so the Gate_Run can wire these two gate stores
+ * triple shape is unchanged — so the Gate_Run can wire the gate-verdict store
  * alongside the pipeline stores without disturbing any pipeline caller.
  *
  * A caller that already holds a `SupabaseRestClient` (e.g. the Gate_Run sharing
@@ -101,8 +99,35 @@ export function buildSupabaseGateStores(
       : makeClient(supabase, fetchImpl);
   return {
     gateVerdictStore: new SupabaseGateVerdictStore(client),
-    featureRegistryStore: new SupabaseFeatureRegistryStore(client),
   };
+}
+
+/**
+ * Build the {@link EvaluationReportStore} adapter — the successor to the
+ * gate-verdict store on the evaluation write path (simplify-to-cloud-minimal
+ * Requirement 1.3, 8.2) — from a resolved {@link SupabaseConfig} or an existing
+ * shared {@link SupabaseRestClient}.
+ *
+ * Additive sibling to {@link buildSupabaseGateStores}: a caller that already
+ * holds a client (e.g. the evaluation flow sharing one client with
+ * {@link buildSupabaseStores}) passes it directly; otherwise one is built from
+ * `supabase` using the SAME construction as the other builders. The key is
+ * never logged.
+ *
+ * @param supabase  The resolved connection, OR an existing shared client to reuse.
+ * @param fetchImpl Injectable fetch (defaults to the global); tests inject a
+ *                  stub so no network is required. Ignored when `supabase` is
+ *                  already a `SupabaseRestClient`.
+ */
+export function buildSupabaseEvaluationReportStore(
+  supabase: SupabaseConfig | SupabaseRestClient,
+  fetchImpl?: typeof fetch,
+): EvaluationReportStore {
+  const client =
+    supabase instanceof SupabaseRestClient
+      ? supabase
+      : makeClient(supabase, fetchImpl);
+  return new SupabaseEvaluationReportStore(client);
 }
 
 /**

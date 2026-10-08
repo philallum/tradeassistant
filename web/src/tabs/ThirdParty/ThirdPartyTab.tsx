@@ -25,8 +25,9 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { fetchEndpoint, type ApiResult } from "../../api/client";
-import type { ExternalReferenceComparisonRow, Pair } from "../../api/endpoints";
+import type { ApiResult } from "../../api/snapshot";
+import { getSnapshot } from "../../api/snapshotCache";
+import type { ExternalReferenceComparisonRow, Pair } from "../../api/types";
 import {
   shapeExternal,
   type Comparison,
@@ -46,8 +47,17 @@ export type ExternalComparisonLoader = (
   options?: { readonly bustCache?: boolean; readonly signal?: AbortSignal },
 ) => Promise<ApiResult<ExternalReferenceComparisonRow>>;
 
-const defaultLoader: ExternalComparisonLoader = ({ decisionDate, pair }, options) =>
-  fetchEndpoint("/external-comparison", { decisionDate, pair }, options);
+const defaultLoader: ExternalComparisonLoader = async ({ decisionDate, pair }, options) => {
+  const snapshot = await getSnapshot(0, {
+    ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+  });
+  return {
+    rows: snapshot.externalComparison.filter(
+      (r) => r.decision_date === decisionDate && r.pair === pair,
+    ),
+    lastUpdated: snapshot.generatedAt === "" ? null : snapshot.generatedAt,
+  };
+};
 
 export interface ThirdPartyTabProps {
   /** The effective Decision_Date to query (the browsed date, or the resolved latest). */

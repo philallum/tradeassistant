@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { shapeDashboardView } from "./shapeDashboard";
 import type { CardVM, SuppressionVM } from "./shapeDashboard";
-import { PAIRS } from "./../api/endpoints";
-import type { FiringSetupRow, Direction, Horizon, Pair } from "./../api/endpoints";
+import { PAIRS } from "./../api/types";
+import type { FiringSetupRow, Direction, Horizon, Pair } from "./../api/types";
 
 // For any set of persisted `firing_setups` rows for a Decision_Date, the view model
 // produced by `shapeDashboardView` contains exactly one card per surfaced row (every
@@ -26,13 +26,7 @@ const NUM_RUNS = 300; // >= 100 iterations required by the task.
 
 const DIRECTIONS: readonly Direction[] = ["UP", "DOWN", "FLAT"];
 const HORIZONS: readonly Horizon[] = [1, 2, 3];
-const SUPPRESSION_REASONS = [
-  "news",
-  "currency_concentration",
-  "below_floor",
-  "not_fired",
-  "too_choppy",
-] as const;
+const SUPPRESSION_REASONS = ["below_floor", "not_fired"] as const;
 
 const directionArb: fc.Arbitrary<Direction> = fc.constantFrom(...DIRECTIONS);
 const horizonArb: fc.Arbitrary<Horizon> = fc.constantFrom(...HORIZONS);
@@ -48,8 +42,7 @@ const DECISION_DATE = "2026-09-16";
  *  - unsurfaced rows WITH a non-null `suppression_reason` (→ suppression entries), and
  *  - unsurfaced rows WITHOUT a reason (`null`) which the shaper fabricates nothing for.
  * All rows share the same `decision_date` so they belong to one Decision_Date, as the
- * shaper assumes. `competing_pairs` is sometimes present (bias toward the
- * `currency_concentration` case) and sometimes null.
+ * shaper assumes.
  */
 const rowArb: fc.Arbitrary<FiringSetupRow> = fc
   .record({
@@ -62,7 +55,6 @@ const rowArb: fc.Arbitrary<FiringSetupRow> = fc
     take_profit_pips: fc.option(fc.integer({ min: 1, max: 500 }), { nil: null }),
     surfaced: fc.boolean(),
     reason: fc.option(fc.constantFrom(...SUPPRESSION_REASONS), { nil: null }),
-    competing_pairs: fc.option(fc.array(pairArb, { maxLength: 4 }), { nil: null }),
   })
   .map(
     (r): FiringSetupRow => ({
@@ -77,7 +69,6 @@ const rowArb: fc.Arbitrary<FiringSetupRow> = fc
       surfaced: r.surfaced,
       // A surfaced row's reason is irrelevant to the shaper; keep it null for realism.
       suppression_reason: r.surfaced ? null : r.reason,
-      competing_pairs: r.competing_pairs,
     }),
   );
 
@@ -101,7 +92,7 @@ function cardKey(c: CardVM): string {
 
 /** Multiset key for a suppression entry. */
 function suppressionKey(s: SuppressionVM): string {
-  return JSON.stringify([s.pair, s.reason, s.competingPairs]);
+  return JSON.stringify([s.pair, s.reason]);
 }
 
 function bag(keys: readonly string[]): Map<string, number> {
@@ -160,7 +151,6 @@ describe("Property 3: Dashboard view model completeness, silent, and empty", () 
             pair: r.pair,
             // non-null on suppressed rows by construction of the filter above.
             reason: r.suppression_reason as SuppressionVM["reason"],
-            competingPairs: r.competing_pairs,
           }),
         );
         expectSameBag(vm.suppressions.map(suppressionKey), expectedSupKeys);

@@ -20,8 +20,8 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { ApiResult } from "../../api/client";
-import type { SignalProposal, SignalRationaleRow } from "../../api/endpoints";
+import type { ApiResult } from "../../api/snapshot";
+import type { SignalProposal, SignalRationaleRow } from "../../api/types";
 import { ALL_PAIRS, SelectionProvider, type PairSelection } from "../../state/selection";
 import { AiTab, type AiRationaleLoader } from "./AiTab";
 
@@ -57,12 +57,9 @@ function presentRow(overrides: Partial<SignalRationaleRow> = {}): SignalRational
   return {
     decision_date: "2026-09-16",
     pair: "EURUSD",
-    strategy_id: "strat-1",
     rationale_text: "The setup echoes a prior momentum continuation analogue.",
     analogue_labels: ["momentum-continuation", "low-volatility"],
     proposals: [proposal],
-    provenance: "llm:model-x",
-    is_display_only: true,
     ...overrides,
   };
 }

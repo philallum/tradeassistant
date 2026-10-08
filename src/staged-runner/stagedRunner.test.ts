@@ -34,18 +34,17 @@ const DATES: readonly string[] = Array.from({ length: 12 }, (_, i) =>
   new Date(Date.UTC(2015, 0, 5) + i * 86_400_000).toISOString().slice(0, 10),
 );
 
-/** Build a full, well-formed PairEvaluation for a pair (fires when gate passes). */
+/** Build a full, well-formed PairEvaluation for a pair (fires: directional + high confidence). */
 function firingEvaluation(pair: Pair): PairEvaluation {
   return {
     pair,
-    gatePassing: true,
-    newsSuppressed: false,
     direction: "UP",
     horizon: 1,
     earnedConfidence: 0.9 as Confidence,
     excursionProfile: { favorablePips: 40, adversePips: 10 },
     stopLossPips: 15,
     takeProfitPips: 45,
+    choppiness: 0.8,
     rationale: "test rationale",
     analogueLabels: ["a1"],
   };

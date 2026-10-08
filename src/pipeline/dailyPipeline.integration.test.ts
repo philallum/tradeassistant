@@ -2,15 +2,17 @@
 //
 // Exercises the SINGLE daily-run path wired in task 11.1 as one flow:
 //   ingestion (candles) → encoder → retrieval → resolver → confidence →
-//   risk boundaries → (gate + news resolvers) → dashboard `dailyRun`.
+//   risk boundaries → dashboard `dailyRun`.
 //
 // It seeds the in-memory storage PORTs (the same interfaces the Supabase
 // adapters implement), runs the real `runDailyPipeline` over all five pairs,
 // feeds the produced `PairEvaluation[]` into the real `dailyRun`, and asserts:
 //   - the pipeline returns exactly one evaluation per pair, in PAIRS order;
-//   - a gate-passing, high-confidence, news-permitted pair surfaces a card
-//     carrying the pipeline-derived direction / horizon / confidence / SL-TP;
-//   - the gate and news resolvers act as hard vetoes on the firing decision;
+//   - a high-confidence pair surfaces a card carrying the pipeline-derived
+//     direction / horizon / confidence / SL-TP;
+//   - there is NO suppression step (the news suppressor and Gate_Auto_Block are
+//     removed, Requirements 3.4, 3.5): a non-firing pair is an explicit
+//     "no trade" observation, never a hidden one;
 //   - the whole path is deterministic (identical inputs ⇒ identical view).
 
 import { describe, expect, it } from "vitest";
@@ -24,6 +26,8 @@ import { DEFAULT_DASHBOARD_CONFIG } from "../dashboard/index.js";
 import {
   runDailyPipeline,
   makePipelineLoader,
+  DEFAULT_PIPELINE_CONFIG,
+  type PipelineConfig,
   type PipelineDeps,
 } from "./index.js";
 
@@ -119,11 +123,8 @@ describe("End-to-end daily-run pipeline wiring (task 11.1)", () => {
     expect(evaluations.map((e) => e.pair)).toEqual([...PAIRS]);
   });
 
-  it("surfaces a gate-passing, high-confidence, news-permitted pair through dailyRun with pipeline-derived fields", async () => {
-    const deps = makeDeps({
-      // Only EURUSD is gate-passing; news permits all.
-      gatePassing: (pair) => pair === "EURUSD",
-    });
+  it("surfaces a high-confidence pair through dailyRun with pipeline-derived fields", async () => {
+    const deps = makeDeps();
 
     // Build EURUSD history and derive the exact query embedding the pipeline
     // will encode, so the seeded analogues sit within epsilon of the query.
@@ -136,8 +137,6 @@ describe("End-to-end daily-run pipeline wiring (task 11.1)", () => {
     const evaluations = await runDailyPipeline(DECISION_DATE, deps);
     const eur = evaluations.find((e) => e.pair === "EURUSD");
     expect(eur).toBeDefined();
-    expect(eur?.gatePassing).toBe(true);
-    expect(eur?.newsSuppressed).toBe(false);
     // Dominant matured direction is UP; confidence is high with 40 analogues.
     expect(eur?.direction).toBe<DirectionClass>("UP");
     expect(eur?.earnedConfidence).toBeGreaterThanOrEqual(DEFAULT_DASHBOARD_CONFIG.confidenceThreshold);
@@ -155,38 +154,38 @@ describe("End-to-end daily-run pipeline wiring (task 11.1)", () => {
     expect(card?.takeProfitPips).toBe(eur?.takeProfitPips);
   });
 
-  it("treats the gate resolver as a hard veto: a non-gate-passing pair never surfaces", async () => {
-    const deps = makeDeps({ gatePassing: () => false });
+  it("applies no suppression step: every pair is represented and a no-history pair is an explicit non-firing 'no trade' observation (Req 3.5)", async () => {
+    const deps = makeDeps();
+    // Only EURUSD gets history; the other four pairs have no candles at all, so
+    // the pipeline must still represent them — as explicit non-firing FLAT
+    // observations, never silently dropped.
     const candles = buildCandles("EURUSD", 1.1, 50);
     await deps.candleStore.upsertCandles(candles);
     const query = encodePatternVector(candles, DECISION_DATE);
     await seedFiringPair("EURUSD", deps, query.embedding, query.weeklyTrendSign);
 
     const evaluations = await runDailyPipeline(DECISION_DATE, deps);
-    const view = dailyRun(DECISION_DATE, evaluations);
-    expect(view.cards).toHaveLength(0); // silent by default
-  });
 
-  it("treats the news resolver as a hard veto: a suppressed pair never surfaces even when it would otherwise fire", async () => {
-    const deps = makeDeps({
-      gatePassing: () => true,
-      news: () => ({ suppressed: true, reason: "elevated event risk" }),
-    });
-    const candles = buildCandles("EURUSD", 1.1, 50);
-    await deps.candleStore.upsertCandles(candles);
-    const query = encodePatternVector(candles, DECISION_DATE);
-    await seedFiringPair("EURUSD", deps, query.embedding, query.weeklyTrendSign);
+    // Every one of the five pairs is represented in the observation set.
+    expect(evaluations.map((e) => e.pair)).toEqual([...PAIRS]);
 
-    const evaluations = await runDailyPipeline(DECISION_DATE, deps);
-    const eur = evaluations.find((e) => e.pair === "EURUSD");
-    expect(eur?.newsSuppressed).toBe(true);
+    // The no-history pairs are explicit non-firing FLAT observations.
+    for (const pair of PAIRS) {
+      if (pair === "EURUSD") continue;
+      const ev = evaluations.find((e) => e.pair === pair);
+      expect(ev).toBeDefined();
+      expect(ev?.direction).toBe<DirectionClass>("FLAT");
+    }
+
+    // The firing EURUSD pair surfaces; the FLAT pairs render no directional
+    // card (an explicit "no trade", not a suppressed one).
     const view = dailyRun(DECISION_DATE, evaluations);
-    expect(view.cards).toHaveLength(0);
+    expect(view.cards.map((c) => c.pair)).toEqual(["EURUSD"]);
   });
 
   it("is deterministic: identical stored inputs and config yield an identical view (Requirement 3.1, 16.7)", async () => {
     const build = async (): Promise<PipelineDeps> => {
-      const deps = makeDeps({ gatePassing: (p) => p === "EURUSD" });
+      const deps = makeDeps();
       const candles = buildCandles("EURUSD", 1.1, 50);
       await deps.candleStore.upsertCandles(candles);
       const query = encodePatternVector(candles, DECISION_DATE);
@@ -199,8 +198,112 @@ describe("End-to-end daily-run pipeline wiring (task 11.1)", () => {
     expect(JSON.stringify(second)).toBe(JSON.stringify(first));
   });
 
+  // --- Risk-boundaries is DISPLAY-ONLY (Requirement 7.6) -------------------
+  //
+  // Component 15 (`src/risk-boundaries/`) is retained ONLY to produce the
+  // firing-card SL/TP (`stopLossPips` / `takeProfitPips`). This test proves it
+  // feeds NO scoring path: perturbing the risk-boundary percentile config moves
+  // the derived SL/TP but leaves every scoring field — Direction_Class, Horizon,
+  // Earned_Confidence, the excursion profile, and the choppiness metric —
+  // byte-for-byte identical. If any scoring value depended on the risk
+  // boundaries, changing the config would perturb it; the equality below is the
+  // display-only guarantee.
+  it("is display-only: changing the risk-boundary config moves SL/TP but leaves all scoring fields byte-for-byte identical (Requirement 7.6)", async () => {
+    // A firing neighborhood whose MAE/MFE excursions SPREAD across a range (not
+    // a single constant), so distinct SL/TP percentiles yield distinct
+    // boundaries and the config change is observable on the display fields.
+    const seedSpreadFiringPair = async (
+      deps: PipelineDeps,
+      embedding: readonly number[],
+      weeklyTrendSign: "UP" | "DOWN",
+    ): Promise<void> => {
+      const analogueCount = 40;
+      for (let i = 0; i < analogueCount; i++) {
+        const d = new Date("2022-01-03T00:00:00Z");
+        d.setUTCDate(d.getUTCDate() + i);
+        const analogueDate = d.toISOString().slice(0, 10);
+        await deps.vectorStore.upsertVector("EURUSD", analogueDate, {
+          scale10: [],
+          scale20: [],
+          scale40: [],
+          embedding: embedding.map((v) => v + i * 1e-6),
+          weeklyTrendSign,
+          dim: embedding.length,
+        });
+        for (const horizon of [1, 2, 3] as const) {
+          const record: AnalogueRecord = {
+            asset: "EURUSD",
+            decisionDate: analogueDate,
+            horizon,
+            direction: "UP",
+            // Spread deterministically across the 40 analogues so 0th/75th and
+            // 50th/100th percentiles differ.
+            mfePips: 20 + i,
+            maePips: 8 + i * 0.5,
+            atr14: 15,
+            matured: true,
+          };
+          await deps.analogueStore.upsertOutcome(record);
+        }
+      }
+    };
+
+    const build = async (): Promise<PipelineDeps> => {
+      const deps = makeDeps();
+      const candles = buildCandles("EURUSD", 1.1, 50);
+      await deps.candleStore.upsertCandles(candles);
+      const query = encodePatternVector(candles, DECISION_DATE);
+      await seedSpreadFiringPair(deps, query.embedding, query.weeklyTrendSign);
+      return deps;
+    };
+
+    // Two configurations identical except for the risk-boundary percentiles.
+    // The second drives SL to the sample MIN (0th pct) and TP to the MAX
+    // (100th pct) of the SAME neighborhood, maximally diverging the boundaries.
+    const baseConfig: PipelineConfig = DEFAULT_PIPELINE_CONFIG;
+    const perturbedConfig: PipelineConfig = {
+      ...DEFAULT_PIPELINE_CONFIG,
+      riskBoundaries: { stopLossPercentile: 0, takeProfitPercentile: 100 },
+    };
+
+    const baseDeps = { ...(await build()), config: baseConfig };
+    const perturbedDeps = { ...(await build()), config: perturbedConfig };
+
+    const baseEvals = await runDailyPipeline(DECISION_DATE, baseDeps);
+    const perturbedEvals = await runDailyPipeline(DECISION_DATE, perturbedDeps);
+
+    const baseEur = baseEvals.find((e) => e.pair === "EURUSD");
+    const perturbedEur = perturbedEvals.find((e) => e.pair === "EURUSD");
+    expect(baseEur).toBeDefined();
+    expect(perturbedEur).toBeDefined();
+
+    // Precondition: the firing neighborhood is above the floor, so the boundary
+    // config actually bites. Both SL and TP must be actionable (non-null).
+    expect(baseEur?.stopLossPips).not.toBeNull();
+    expect(baseEur?.takeProfitPips).not.toBeNull();
+    expect(perturbedEur?.stopLossPips).not.toBeNull();
+    expect(perturbedEur?.takeProfitPips).not.toBeNull();
+
+    // The ONLY observable effect of the config change is on the SL/TP display
+    // fields: the different percentiles produce different boundaries.
+    expect(perturbedEur?.stopLossPips).not.toBe(baseEur?.stopLossPips);
+    expect(perturbedEur?.takeProfitPips).not.toBe(baseEur?.takeProfitPips);
+
+    // Every SCORING field is byte-for-byte identical across the two runs — the
+    // risk boundaries never cross into the firing / scoring computation.
+    for (const pair of PAIRS) {
+      const a = baseEvals.find((e) => e.pair === pair)!;
+      const b = perturbedEvals.find((e) => e.pair === pair)!;
+      expect(b.direction).toBe(a.direction);
+      expect(b.horizon).toBe(a.horizon);
+      expect(b.earnedConfidence).toBe(a.earnedConfidence);
+      expect(b.excursionProfile).toEqual(a.excursionProfile);
+      expect(b.choppiness).toBe(a.choppiness);
+    }
+  });
+
   it("makePipelineLoader adapts the pipeline to the scheduled-runner loader seam", async () => {
-    const deps = makeDeps({ gatePassing: () => false });
+    const deps = makeDeps();
     for (const pair of PAIRS) {
       await deps.candleStore.upsertCandles(buildCandles(pair, 1.2, 45));
     }

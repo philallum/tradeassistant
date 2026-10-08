@@ -1,18 +1,18 @@
-// Feature: dashboard-ui, task 10.2 — Firebase Hosting config unit test.
+// Firebase Hosting config unit test (simplify-to-cloud-minimal R4.1, R4.4, R5.1).
 //
-// This is an EXAMPLE / unit test (NOT a property test). It reads and parses the
-// committed `web/firebase.json` from disk and asserts the three invariants of the
-// hosting config task 10.1 authored:
+// This is an EXAMPLE / unit test (NOT a property test). It reads and parses the committed
+// `web/firebase.json` from disk and asserts the Public_Read_Path invariants after the
+// read-proxy removal:
 //
-//   - the `/api/**` rewrite targets the `dashboard-read-proxy` Cloud Run service,
-//   - a SPA catch-all fallback rewrite (`**` → `/index.html`) exists, and
-//   - the strict CSP + security headers are set under `headers` for source `**`.
+//   - there is NO `/api/**` rewrite to a Cloud Run service — the SPA fetches the static
+//     `dashboard.json` snapshot same-origin, with no proxy (R4.1, R5.1),
+//   - the SPA catch-all fallback rewrite (`**` → `/index.html`) still exists, and
+//   - the strict CSP + security headers remain under `headers` for source `**`.
 //
-// It parses the real file (relative to this test file) rather than hardcoding the
-// expected object, so it genuinely validates the committed `firebase.json` — if the
-// deployed config drifts, THIS test breaks.
+// It parses the real file so it genuinely validates the committed `firebase.json` — if the
+// deployed config regresses (e.g. a proxy rewrite is reintroduced) THIS test breaks.
 //
-// Validates: Requirements 1.6, 5.7
+// Validates: Requirements 4.1, 4.4, 5.1
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -55,7 +55,7 @@ function loadFirebaseConfig(): FirebaseConfig {
   return JSON.parse(raw) as FirebaseConfig;
 }
 
-describe("web/firebase.json hosting config (task 10.2)", () => {
+describe("web/firebase.json hosting config (Public_Read_Path)", () => {
   it("parses as valid JSON with a hosting block", () => {
     const config = loadFirebaseConfig();
     expect(config.hosting).toBeDefined();
@@ -63,17 +63,21 @@ describe("web/firebase.json hosting config (task 10.2)", () => {
     expect(Array.isArray(config.hosting.headers)).toBe(true);
   });
 
-  // --- /api/** → dashboard-read-proxy Cloud Run service (Req 1.6, 5.7) -----
+  // --- NO proxy rewrite remains (R4.1, R5.1) -------------------------------
 
-  it("routes the /api/** rewrite to the dashboard-read-proxy Cloud Run service", () => {
+  it("has NO /api/** rewrite (the read-proxy is removed; the SPA reads a static snapshot)", () => {
     const config = loadFirebaseConfig();
     const apiRewrite = config.hosting.rewrites.find((r) => r.source === "/api/**");
-    expect(apiRewrite, "a rewrite with source '/api/**' must exist").toBeDefined();
-    expect(apiRewrite!.run).toBeDefined();
-    expect(apiRewrite!.run!.serviceId).toBe("dashboard-read-proxy");
+    expect(apiRewrite, "the /api/** proxy rewrite must be gone").toBeUndefined();
   });
 
-  // --- SPA catch-all fallback (Req 1.6) ------------------------------------
+  it("has NO rewrite that targets any Cloud Run service", () => {
+    const config = loadFirebaseConfig();
+    const runRewrite = config.hosting.rewrites.find((r) => r.run !== undefined);
+    expect(runRewrite, "no rewrite may route to a Cloud Run service").toBeUndefined();
+  });
+
+  // --- SPA catch-all fallback still present (R5.1) -------------------------
 
   it("has a SPA catch-all fallback rewrite ** → /index.html", () => {
     const config = loadFirebaseConfig();
@@ -82,16 +86,7 @@ describe("web/firebase.json hosting config (task 10.2)", () => {
     expect(fallback!.destination).toBe("/index.html");
   });
 
-  it("orders the /api/** rewrite before the catch-all so API calls are not swallowed", () => {
-    const config = loadFirebaseConfig();
-    const apiIndex = config.hosting.rewrites.findIndex((r) => r.source === "/api/**");
-    const fallbackIndex = config.hosting.rewrites.findIndex((r) => r.source === "**");
-    expect(apiIndex).toBeGreaterThanOrEqual(0);
-    expect(fallbackIndex).toBeGreaterThanOrEqual(0);
-    expect(apiIndex).toBeLessThan(fallbackIndex);
-  });
-
-  // --- strict CSP + security headers for source ** (Req 5.7) ---------------
+  // --- strict CSP + security headers for source ** retained ----------------
 
   describe("strict CSP + security headers under headers for source **", () => {
     const EXPECTED_HEADERS: Record<string, string> = {
@@ -123,5 +118,11 @@ describe("web/firebase.json hosting config (task 10.2)", () => {
         expect(headers.get(key)).toBe(value);
       });
     }
+
+    it("the CSP connect-src allows same-origin, so the SPA can fetch /dashboard.json", () => {
+      const headers = headerMapForAllSources();
+      const csp = headers.get("Content-Security-Policy") ?? "";
+      expect(csp).toContain("connect-src 'self'");
+    });
   });
 });

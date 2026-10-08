@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Standalone read-only dashboard SPA (React + Vite + TypeScript). Deployed to Firebase Hosting; reads only through the Read_Proxy /api rewrite.",
+  "description": "Standalone read-only dashboard SPA (React + Vite + TypeScript). Deployed to Firebase Hosting; reads a single static dashboard.json snapshot (no proxy, no auth gate).",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
