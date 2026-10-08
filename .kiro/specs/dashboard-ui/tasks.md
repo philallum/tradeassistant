@@ -559,3 +559,88 @@ are never optional.
   ]
 }
 ```
+
+## Addendum tasks — Cross-pair "All pairs" rendering for the per-pair tabs (Req 8 criterion 8)
+
+- [ ] 19. Cross-pair "All pairs" rendering for the per-pair tabs (Req 8 criterion 8 / design addendum)
+  - **`web/`-only, read-only, recompute-nothing.** On `ALL_PAIRS` the AI, Third-party, and
+    Pattern/Outcomes tabs render a labeled per-pair section for all five pairs (canonical
+    `PAIRS` order: EURUSD, GBPUSD, USDJPY, USDCHF, USDCAD) **instead of** `PickPairPrompt`;
+    specific-pair selection is unchanged (Req 8.2); Setups and Gate are untouched. Every
+    section is drawn VERBATIM from the single `getSnapshot()` read (one read, filtered by
+    `decision_date` only), with per-pair no-data markers and the advisory / research-only /
+    inert labels preserved per section. No change to the `dashboard.json` schema, the daily
+    Job, or any `src/` core module. All subtasks are test-driven with injected loaders (NO
+    live network) and leave `make check` + the `web` build/tests green.
+
+  - [ ] 19.1 Implement the pure cross-pair grouping helper `web/src/pure/shapeAllPairs.ts`
+    - Per design D1: `shapeAllPairs(rows, decisionDate, shaper, pairOf, dateOf, pairs = PAIRS)`
+      groups already-fetched rows by pair in canonical `PAIRS` order and delegates each pair's
+      `decision_date`- and pair-filtered slice to the caller's EXISTING per-pair shaper
+      (`shapeAi` / `shapeExternal` / the Pattern/Outcomes shapers), returning one
+      `PairSection<VM>` per pair
+    - Copies/filters only — recomputes nothing, invents no new projection math; pure (no
+      `fetch`, no DOM, no clock; imports nothing from `src/`), so it stays within the
+      `web/src/pure/**` purity invariant
+    - _Requirements: 8.8, 20.1_
+
+  - [ ]* 19.2 Write property test `web/src/pure/shapeAllPairs.property.test.ts`
+    - **Property 16: Cross-pair "All pairs" view is the per-pair shapers, grouped in canonical order, verbatim**
+    - `// Feature: dashboard-ui, Property 16: Cross-pair "All pairs" view is the per-pair shapers, grouped in canonical order, verbatim`, `fast-check`, min 100 iterations
+    - Generate arbitrary snapshot slices (pairs present/absent, duplicate dates, empty sets, a
+      pair with no row for the date) and assert: exactly one section per pair in `PAIRS` order;
+      each section equals the existing per-pair shaper applied over the pair-and-date-filtered
+      rows (verbatim, no recomputation); a pair with no row yields the shaper's absent/empty
+      result
+    - **Validates: Requirements 8.8, 20.1**
+
+  - [ ] 19.3 Third-party tab cross-pair render (`web/src/tabs/ThirdParty/ThirdPartyTab.tsx`)
+    - Replace the `pair === ALL_PAIRS` `PickPairPrompt` branch with the cross-pair render: an
+      all-pairs loader path (per design D2 — filter `externalComparison` by `decision_date`
+      only, one `getSnapshot()` read, no per-pair fetch), map `PAIRS` → existing `shapeExternal`
+      per pair (via `shapeAllPairs`) → a labeled per-pair section (per-pair `aria-label`, theme
+      tokens, mobile-first vertical stack)
+    - Reuse the existing per-pair "no comparison" / "reference unavailable" markers (D3) and
+      render the research-only / never-a-decision-input banner for each section (D4). The
+      `loading`, `error`, and specific-pair branches are preserved verbatim (Req 8.2 unchanged)
+    - _Requirements: 8.8, 12.2, 12.3, 5.8, 20.1_
+
+  - [ ] 19.4 AI tab cross-pair render (`web/src/tabs/Ai/AiTab.tsx`)
+    - Same change as 19.3 using `shapeAi` (via `shapeAllPairs`): all-pairs loader filters
+      `aiRationale` by `decision_date` only (one `getSnapshot()` read), map `PAIRS` → per-pair
+      labeled sections (per-pair `aria-label`, theme tokens, mobile-first vertical stack)
+    - Reuse the existing omit-when-absent "No AI rationale was persisted for {pair} on this
+      date." per-pair marker (D3), and render the advisory / non-scoring banner plus per-proposal
+      advisory labels for each section (D4). `loading` / `error` / specific-pair branches
+      unchanged (Req 8.2)
+    - _Requirements: 8.8, 11.2, 11.3, 11.4, 5.8, 20.1_
+
+  - [ ] 19.5 Pattern/Outcomes tab cross-pair render (`web/src/tabs/PatternOutcomes/PatternOutcomesTab.tsx`)
+    - Same change as 19.3 using the tab's existing shapers (`shapePredictionActual`,
+      `shapeConfidenceTrend`, `shapeExcursionProfile`, `shapePriceSeries`): all-pairs loader
+      filters the Pattern/Outcomes inputs (`analogueOutcomes`, `realizedOutcomes`, `candles`,
+      `firingSetups`) by the date clause only (one `getSnapshot()` read), map `PAIRS` → per-pair
+      labeled sections (per-pair `aria-label`, theme tokens, mobile-first vertical stack), each
+      drawn verbatim
+    - Reuse the existing per-pair "No data for {pair}…" marker (D3) for a pair whose shapers all
+      yield empty. All five pairs MUST be represented with their data verbatim; note the
+      chart-density / render-cost consideration of five pairs' charts — a compact per-pair
+      summary is acceptable if full charts per pair are too heavy (exact compactness left to
+      implementation). `loading` / `error` / specific-pair branches unchanged (Req 8.2)
+    - _Requirements: 8.8, 20.1_
+
+  - [ ]* 19.6 Write DOM example tests for the three tabs (injected loader, NO network)
+    - For AI, Third-party, and Pattern/Outcomes, reusing each tab's existing injected-loader
+      test pattern: on `ALL_PAIRS`, assert all five pairs' labeled sections render — including an
+      explicit per-pair no-data / unavailable marker for a pair with no row — INSTEAD of the
+      pick-a-pair prompt
+    - Assert selecting a specific pair still narrows the tab to that one pair (Req 8.2); assert
+      the per-section advisory / research-only labels remain present in the cross-pair view
+    - _Requirements: 8.8, 8.2, 11.2, 12.2_
+
+  - [ ] 19.7 Verify and ship
+    - Run `make check` + the `web` build/tests and confirm green
+    - Ship via a dev→main PR (the Deploy workflow rebuilds and republishes the static SPA). The
+      live-deploy portion is an **operator-gated** step — open/merge the PR under operator
+      approval; this subtask performs no cloud commands directly
+    - _Requirements: 8.8_

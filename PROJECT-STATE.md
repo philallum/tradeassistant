@@ -26,9 +26,9 @@
 > the durable "how and why" lives in the prose. Keep both honest.
 
 <!-- BEGIN STATE -->
-- **Phase:** v1 feature-complete across the original four specs; `simplify-to-cloud-minimal` UNDER EXECUTION. Phases 1-6 COMPLETE. Phase 7 (end-to-end verify, task 8) IN PROGRESS and the active focus. Task 8.1 found + FIXED a look-ahead LEAK in the OOS evaluation path, then a FOLLOW-ON performance fix made that path cloud-runnable. The first leak-free recorded OOS evaluation is still NOT YET RECORDED (RESEARCH-LOG.md entries region is empty; hosted `evaluation_reports` has zero `shape-only` rows): it is blocked on redeploying the perf fix (PR #24, awaiting operator merge to `main`) and then re-running the one-off evaluation Cloud Run Job. Tasks 8/8.1/8.2 remain not-truly-complete pending that recorded entry (note: the task tracker auto-ticked 8.1 to [x] on an in-progress transition — premature; reconcile when the entry lands). Operator approved scope C, delete-not-quarantine, the kill-gate reframe, and each live-cloud action this session.
+- **Phase:** v1 feature-complete; `simplify-to-cloud-minimal` COMPLETE. TWO specs now fully specced (requirements + design + tasks, all format-valid) and ready to implement: (1) `daily-candle-freshness-and-cleanup` — the top priority (the live loop runs on ~3-week-stale candles); design + tasks written this turn. (2) `dashboard-ui` Req 8 criterion 8 (the "All pairs" UX fix) — design + tasks written previously. Neither is implemented yet. The candle-freshness design fixes the stale-data defect with a Candle_Freshness_Stage (daily top-up + bounded auto gap-backfill through the existing `OhlcIngestion`, Look_Ahead_Safe, fail-safe) fed by a capability-aware provider fallback chain FCS → Twelve Data → Massive (FCS is latest-only, so a multi-day backfill routes to Twelve Data/Massive), plus a one-off operator backfill; it also bundles the leftover cleanup (R7–R11). Operator approved proceeding to design/tasks.
 - **Updated:** 2026-10-08
-- **Summary:** This session executed Phase 7 task 8 and turned up two real defects on the OOS evaluation path, both now fixed and merged to `dev` (CI green). (1) LOOK-AHEAD LEAK: `buildFoldInputs` set `modelPrediction = outcome.direction` (the matured outcome it was then scored against) → tautological `model=1`, byte-identical model/baseline excursions, empty strength breakdown (confirmed by a first live ☁️ hosted evaluation run). Fixed test-first: model prediction now sourced honestly from the retrieved analogue neighborhood AS OF each decision date (same path as the live daily pipeline), with its own excursions + populated confidence; regression + property guards added; gate math unchanged. (2) PERFORMANCE: the honest path called `retrieve()` per firing date (~2 hosted round-trips each) ≈ ~2,500 sequential PostgREST round-trips, which TIMED OUT the Cloud Run Job (1h task-timeout, terminated mid-measurement). Fixed behaviour-preservingly: per pair, bulk-load vectors + the full matured set ONCE and serve per-date retrieval from in-memory mirrors implementing the same ports → ~10 round-trips, byte-identical results (two guard tests pass unchanged + a new preload test). Also fixed a seed-dependent flaky `news-filter` property28 test that broke CI on `main` (test-only). LIVE-CLOUD this session (all operator-approved): DELETED the single stale leaked `model=1` row from hosted `evaluation_reports` (scoped service-role DELETE) — now zero `shape-only` rows; a local corrected re-run died on a transient `fetch failed`; PR #23 (de-scope + leak fix) was MERGED to `main` and the Deploy workflow SUCCEEDED (leak-fixed image live on `scheduled-daily-run`, SPA republished to Firebase Hosting); a one-off evaluation Cloud Run Job execution (args overridden to `dist/ops/evaluation-run/main.js`, `EVALUATION_RUN_DOCS_DIR=/tmp`, `--task-timeout=3600s`) hit the timeout and was cancelled (no partial data). KEY OPS FACT: the Deploy workflow triggers ONLY on push to `main` (not `dev`), so fixes reach the live image only via a `dev`→`main` PR merge. Perf + flaky fixes are now PR #24 awaiting the operator's merge. HOUSEKEEPING flagged: `ops/backups/hosted-5.3-*.sql` (~50 MB) committed into git history; Dependabot reports 20 repo vulnerabilities (4 critical/2 high/12 moderate/2 low). SECURITY (standing): `.env` holds live production secrets in plaintext — rotate + untrack; gitignored `ops/fx-writer-key/` holds the `fx_writer` private signing key. Stack unchanged: TypeScript (Node 22, ESM, zero runtime deps) + Vitest/fast-check; Supabase Postgres (hosted PG 17.6) + pgvector; GCP Cloud Run Job + Scheduler + Secret Manager + Artifact Registry via keyless WIF; Firebase-hosted React/Vite SPA reading a static `dashboard.json` snapshot.
+- **Summary:** Spec design+tasks turn for `daily-candle-freshness-and-cleanup` (no code/cloud change). Wrote design.md and tasks.md; both pass the format validator — the spec is now requirements + design + tasks, ready to implement. Design (grounded in the real code): the OHLC_Feed_Provider port exposes two capabilities — fetchLatest (Daily_Top_Up) and fetchRange (Gap_Backfill) — because the KEY finding is that FCS `/forex/latest` is latest-only and cannot serve a date range on the free plan; so the Provider_Fallback_Chain FCS → Twelve Data → Massive routes a multi-day backfill to a range-capable provider (Twelve Data/Massive), first-usable-wins per pair, each adapter normalizing native JSON to the internal RawCandle over zero-SDK fetch and stamping `source`. The Candle_Freshness_Stage slots into `src/scheduled-run/main.ts` after the weekday gate and BEFORE runScheduledDaily, reusing the existing `OhlcIngestion` (validate / NY-close / look-ahead guard / idempotent (asset,date) upsert) and the existing encodePatternVector path so research integrity is untouched; Completed_Trading_Day via existing isTradingDay/addTradingDays; bounded backfill (default 90 trading days); fail-safe (provider failure advances the chain; all-fail ⇒ secret-free warning + proceed on stored history); a one-off operator backfill entry `src/ops/candle-backfill/main.ts`; no new persisted schema; 7 correctness properties; cleanup R7–R11 each scoped. Tasks: 22 tasks across 7 phases with a wave-based dependency graph (provider port+adapters+chain → Completed_Trading_Day+gap+freshness stage → daily-entry wiring → one-off backfill entry + ☁️ hosted run → read-only verification + ☁️ hosted verify → cleanup → living docs + checkpoint); live-cloud tasks (13/15/16/19) operator-gated; tests inject fetch (no live network). Implementation NOT started. dashboard-ui Req 8.8 (design + tasks already written) is also ready. STILL UNCOMMITTED from prior turns: RESEARCH-LOG.md evaluation entry, PROJECT-STATE.md updates, the task-8 checkbox, and the new/edited spec files (now including this spec's design.md + tasks.md). SECURITY (standing): `.env` holds live production secrets in plaintext — rotate + untrack (R10 of this spec); gitignored `ops/fx-writer-key/` holds the `fx_writer` private signing key. Stack unchanged.
 <!-- END STATE -->
 
 ## 1. What this project is
@@ -78,12 +78,17 @@ The authoritative design and task breakdown live in `PROJECT-PLAN.md` and under
   CI auth via Workload Identity Federation / OIDC (no stored SA key).
 - **Serving / UI:** React + Vite + TypeScript SPA (`web/`) on Firebase Hosting,
   strictly read-only. Under `simplify-to-cloud-minimal` Phase 5 task 6 the SPA
-  now reads the Public_Read_Path: a single static `dashboard.json` snapshot the
-  Cloud Run Job writes at the end of each daily run, fetched same-origin via
-  `web/src/api/snapshot.ts` `loadSnapshot()` (one shared `snapshotCache` across
-  all tabs). The former `services/read-proxy/` Node `http` service + its `/api`
-  rewrite + ten-endpoint allowlist are DELETED in code; the live GCP read-proxy
-  resource was also DELETED in the Phase 6 R11 reconcile (task 7.2).
+  reads the Public_Read_Path: a single `dashboard.json` snapshot the Cloud Run
+  Job writes at the end of each daily run, fetched via `web/src/api/snapshot.ts`
+  `loadSnapshot()` (one shared `snapshotCache` across all tabs). As of task 8,
+  the SPA fetches that snapshot CROSS-ORIGIN from a public-read GCS bucket: the
+  fetch URL comes from a build-time `VITE_SNAPSHOT_URL` (fallback same-origin
+  `/dashboard.json`), and the daily Cloud Run Job writes the object through the
+  new GCS `SnapshotSink` (`src/scheduled-run/gcsSnapshotSink.ts`). The CSP
+  `connect-src` includes `https://storage.googleapis.com`. The former
+  `services/read-proxy/` Node `http` service + its `/api` rewrite + ten-endpoint
+  allowlist are DELETED in code; the live GCP read-proxy resource was also
+  DELETED in the Phase 6 R11 reconcile (task 7.2).
 - **External providers (keys in Secret Manager, read at runtime):** market-data
   and news/calendar providers plus Gemini for the LLM layer. Data/LLM inputs
   only — never scoring.
@@ -149,8 +154,13 @@ authoritative export surface):
   `snapshot.ts` (added `simplify-to-cloud-minimal` task 6) builds + serialises
   the `dashboard.json` Public_Read_Path snapshot and writes it fail-safely
   through an injected `SnapshotSink` AFTER the DB rows persist (a failed write is
-  logged and swallowed, never corrupting the source-of-truth rows); the concrete
-  uploader is wired via `resolveSnapshotSink()` (a logged no-op until Phase 6).
+  logged and swallowed, never corrupting the source-of-truth rows). Its sink is
+  NO LONGER a no-op: `gcsSnapshotSink.ts` (added task 8) is the GCS-backed
+  `SnapshotSink` that uploads `dashboard.json` to the public-read bucket via the
+  GCS JSON media-upload REST API over built-in `fetch`, authed by the shared
+  `AccessTokenProvider` (runtime SA metadata token in prod / `gcloud` ADC
+  locally); `resolveSnapshotSink()` returns it when the non-secret
+  `DASHBOARD_SNAPSHOT_BUCKET` env is set, else the existing fail-safe no-op.
 - `csv-loader/`, `staged-runner/` — CSV backfill import + backfill/backtest/
   forward-look staged runner.
 - `storage/` — Supabase config + REST client + adapters (candle, vector,
@@ -193,9 +203,10 @@ snapshot), `supabase/migrations/` (schema),
 | --- | --- | --- |
 | `fx-daily-pattern-assistant` | **Complete** (all tasks `[x]`) | — |
 | `operational-wiring` | Near-complete | Task 13 (final checkpoint). Task 12's subtasks 12.1–12.4 are all `[x]` but the parent checkbox is unticked. |
-| `dashboard-ui` | Near-complete | Task 17 (post-deploy read-only smoke), Task 18 (final checkpoint). |
+| `dashboard-ui` | Near-complete | Task 17 (post-deploy read-only smoke), Task 18 (final checkpoint). PLUS a new Requirement 8 criterion 8 (added this turn, format-valid): on 'All pairs', the AI / Third-party / Pattern-Outcomes tabs must render a cross-pair view over all five pairs instead of a 'pick a pair' prompt — reverses the original 8.2 dead-end that made the dashboard look empty of third-party/AI content on first load. Design addendum + task 19 (subtasks 19.1–19.7) for criterion 8 are now WRITTEN and format-valid (web/-only: compose existing pure shapers via a thin `shapeAllPairs` helper, one getSnapshot() read, per-pair no-data markers, labels preserved; design Property 16 added). Implementation of task 19 pending. (Tasks 17/18 trailing checkpoints still open.) |
 | `dashboard-data-activation` | **Complete** (all tasks `[x]`) | — |
-| `simplify-to-cloud-minimal` | **Under execution** — Phases 1-6 COMPLETE; Phase 7 nearly complete (task 8.1 DONE, task 8.2 DONE); the FIRST leak-free OOS evaluation is now RECORDED. Only remaining item: the parent task 8 end-to-end cloud-loop proof (daily Job writes predictions + realized outcomes + `dashboard.json`, Scheduler triggers it, hosted dashboard renders) if not yet verified by the orchestrator. | De-scope spec: kill-gate reframed to a human-read evaluation report (task 1), the `evaluation_reports` persistence + report write path + first-evaluation entrypoint landed (task 2.x), Phase 2/3 removed the auto-block + suppressors + research/software complexity, Phase 5 task 6 (6.1-6.5) landed the Public_Read_Path (fail-safe `dashboard.json` snapshot writer wired into the daily run, SPA repointed to a single `loadSnapshot()`, `services/read-proxy/` + read-side `src/ops/write-credential/` deleted, proxy/allowlist tests replaced with snapshot-path tests, the last `signal_rationale`/`external_reference_comparison` writer removed and its write-shape types relocated to `displayOnlyTypes.ts`), and task 5.2a cut over the `fx_writer` Write_Credential. Phase 4 is LIVE-APPLIED (task 5.3, operator-approved): migration `...006` was applied to hosted (project `bffzhjnpzxxuqvmnmylk`) after a fresh backup, reducing the schema to the 6-table Required_Object_Set; the three read-side roles (pipeline_writer, dashboard_reader, diagnostic_reader) were dropped, leaving `fx_writer` the sole write role; data preserved; idempotency confirmed; `make check` green. Phase 6 COMPLETE: task 7 simplified `deploy.yml`, task 7.1 authored the GCP manifest + read-only enumeration, and task 7.2 EXECUTED the ☁️ operator-approved GCP reconcile deletions live against project `trade-assistant-508806`. Phase 7: task 8.1 DONE (research-integrity layer confirmed intact — look-ahead guard, weekly-trend baseline, measurement math, shrinkage, realized-outcome journal, AI-never-scores guard all behaviour-unchanged — AND it surfaced + FIXED a look-ahead LEAK in `src/staged-runner/stagedRunner.ts` `buildFoldInputs` plus a follow-on performance fix, both merged to `main` via PRs #23/#24 and redeployed); task 8.2 DONE (this living-docs update). FIRST OOS EVALUATION NOW RECORDED: hosted `evaluation_reports` holds exactly one `shape-only` row (id `7ae77f6a-8d98-4d7c-a0e2-a2e5acf258b5`) and RESEARCH-LOG.md carries the matching `[EVALUATION] shape-only` entry — model accuracy 0.4996 vs baseline 0.4871, delta +1.24pp, 95% Wald CI [+0.66pp, +1.82pp], n=28470, deltaExceeds3pp=false, strength weak=16071/moderate=12351/strong=48. The shape-only pattern beats the weekly-trend baseline by a small, statistically-positive margin (CI excludes zero) but below the 3pp annotation threshold; recorded as a measured FINDING, no verdict. This is the first time the project's central premise is measured in the living log. Scope C, delete-not-quarantine. Only remaining item is the parent task 8 end-to-end cloud-loop proof (handled by the orchestrator). |
+| `simplify-to-cloud-minimal` | **Complete** (all Phases 1-7 done; tasks 8, 8.1, 8.2 `[x]`). The first leak-free OOS evaluation was RECORDED (reportId `7ae77f6a-…`, +1.24pp vs baseline, below 3pp, no verdict), the Public_Read_Path snapshot uploader was IMPLEMENTED (GCS `SnapshotSink`) with its live bucket/IAM/CORS + repo vars PROVISIONED (operator-approved), and PR #25 was merged + deployed. The parent task 8 end-to-end cloud-loop proof is DONE: a live daily Cloud Run Job run (`scheduled-daily-run-2rrm6`, exit 0) wrote a `firing_setups` row for 2026-10-08 (EURUSD DOWN, conf ≈0.571, surfaced), maintained `realized_outcomes`, and published `dashboard.json` to the public bucket, verified anonymously fetchable (HTTP 200). | De-scope spec: kill-gate reframed to a human-read evaluation report (task 1), the `evaluation_reports` persistence + report write path + first-evaluation entrypoint landed (task 2.x), Phase 2/3 removed the auto-block + suppressors + research/software complexity, Phase 5 task 6 (6.1-6.5) landed the Public_Read_Path (fail-safe `dashboard.json` snapshot writer wired into the daily run, SPA repointed to a single `loadSnapshot()`, `services/read-proxy/` + read-side `src/ops/write-credential/` deleted, proxy/allowlist tests replaced with snapshot-path tests, the last `signal_rationale`/`external_reference_comparison` writer removed and its write-shape types relocated to `displayOnlyTypes.ts`), and task 5.2a cut over the `fx_writer` Write_Credential. Phase 4 is LIVE-APPLIED (task 5.3, operator-approved): migration `...006` was applied to hosted (project `bffzhjnpzxxuqvmnmylk`) after a fresh backup, reducing the schema to the 6-table Required_Object_Set; the three read-side roles (pipeline_writer, dashboard_reader, diagnostic_reader) were dropped, leaving `fx_writer` the sole write role; data preserved; idempotency confirmed; `make check` green. Phase 6 COMPLETE: task 7 simplified `deploy.yml`, task 7.1 authored the GCP manifest + read-only enumeration, and task 7.2 EXECUTED the ☁️ operator-approved GCP reconcile deletions live against project `trade-assistant-508806`. Phase 7: task 8.1 DONE (research-integrity layer confirmed intact — look-ahead guard, weekly-trend baseline, measurement math, shrinkage, realized-outcome journal, AI-never-scores guard all behaviour-unchanged — AND it surfaced + FIXED a look-ahead LEAK in `src/staged-runner/stagedRunner.ts` `buildFoldInputs` plus a follow-on performance fix, both merged to `main` via PRs #23/#24 and redeployed); task 8.2 DONE (this living-docs update). FIRST OOS EVALUATION NOW RECORDED: hosted `evaluation_reports` holds exactly one `shape-only` row (id `7ae77f6a-8d98-4d7c-a0e2-a2e5acf258b5`) and RESEARCH-LOG.md carries the matching `[EVALUATION] shape-only` entry — model accuracy 0.4996 vs baseline 0.4871, delta +1.24pp, 95% Wald CI [+0.66pp, +1.82pp], n=28470, deltaExceeds3pp=false, strength weak=16071/moderate=12351/strong=48. The shape-only pattern beats the weekly-trend baseline by a small, statistically-positive margin (CI excludes zero) but below the 3pp annotation threshold; recorded as a measured FINDING, no verdict. This is the first time the project's central premise is measured in the living log. Scope C, delete-not-quarantine. The Public_Read_Path snapshot uploader was then IMPLEMENTED (the GCS `SnapshotSink` in `src/scheduled-run/gcsSnapshotSink.ts`, wired via `resolveSnapshotSink()` on `DASHBOARD_SNAPSHOT_BUCKET`) and the live infra PROVISIONED (public-read bucket, runtime-SA object write, public read, CORS, repo vars) — all operator-approved. PR #25 was then merged + deployed, and the parent task 8 end-to-end cloud-loop proof was COMPLETED: a live daily Cloud Run Job run (`scheduled-daily-run-2rrm6`, exit 0) wrote a `firing_setups` row for 2026-10-08 (EURUSD DOWN, conf ≈0.571, surfaced), maintained `realized_outcomes`, and published `dashboard.json` to the public bucket — anonymously fetchable over HTTPS (HTTP 200). The only residue is follow-ups (the Vertex 403 for the display-only AI rationale; housekeeping), not spec work. |
+| `daily-candle-freshness-and-cleanup` | **Design + tasks phase** — requirements.md + design.md + tasks.md all written and format-valid; implementation not started. | New combined spec. Fixes a confirmed candle-data freshness DEFECT (hosted `candles` only to 2026-09-15; the daily Job never ingests fresh candles) via a Candle_Freshness_Stage that daily-tops-up + auto gap-backfills BEFORE the pipeline reads history, through the existing `OhlcIngestion` (Look_Ahead_Safe, idempotent, fail-safe), fed by a provider FALLBACK CHAIN FCS → Twelve Data → Massive (keys already in `.env`; first usable candles win, cascade on failure, normalize each response to one `RawCandle`), plus a one-off backfill for the current hole. Also bundles the leftover cleanup: Vertex AI 403 (R7), ~50MB git-history backup removal (R8), Dependabot triage/fix (R9), `.env` secret rotation+untrack (R10), trailing cross-spec checkpoint reconcile (R11), living docs/verification (R12). The design grounds the OHLC_Feed_Provider two-capability port (fetchLatest/fetchRange) + the FCS→Twelve Data→Massive fallback chain (FCS latest-only, so a multi-day range routes to Twelve Data/Massive), the Candle_Freshness_Stage reusing `OhlcIngestion` before the pipeline, a bounded 90-day backfill, a one-off operator backfill entry (`src/ops/candle-backfill/main.ts`), and cleanup R7–R11; tasks are 22 across 7 phases with the live-cloud items (one-off backfill, Vertex grant, secret rotation, hosted verify) operator-gated. Next: implement (start Phase 1). |
 
 Cross-spec note: `dashboard-data-activation` Task 16 marks the dashboard-ui
 Task 17 smoke as done, while `dashboard-ui` Task 17 itself is still `[ ]`. These
@@ -520,8 +531,28 @@ two documents are out of sync and should be reconciled.
   human-read evaluation report; and (e) the first evaluation is recorded (see §7).
   The historical bullets above are kept as the decision trail; this bullet marks
   the recommendation as DONE.
+- **Public_Read_Path realised as a public GCS bucket (Option A, operator-approved).**
+  The deferred snapshot uploader is now wired: the daily Cloud Run Job writes
+  `dashboard.json` to a public-read GCS bucket (`trade-assistant-508806-dashboard`)
+  via a zero-SDK `SnapshotSink` (`src/scheduled-run/gcsSnapshotSink.ts`) using the
+  GCS JSON media-upload REST API over built-in `fetch`, authed by the existing
+  `AccessTokenProvider` (runtime SA metadata token / local ADC) — no new auth, no
+  SDK, fail-safe (a failed upload is logged+swallowed and never corrupts the
+  persisted rows). The hosted SPA fetches that object cross-origin
+  (`VITE_SNAPSHOT_URL`), with the CSP `connect-src` widened to
+  `https://storage.googleapis.com` only. Firebase Hosting cannot rewrite to a raw
+  bucket and reintroducing a serving service was rejected, so under the public-data
+  decision a cross-origin fetch of a public bucket object is the minimal path. Live
+  infra (bucket, runtime-SA object write, public read, CORS, repo vars) provisioned
+  operator-approved.
+- **Candle freshness via a provider fallback chain (new spec `daily-candle-freshness-and-cleanup`, requirements phase).** The live loop was found to run on stale candles (hosted history ended 2026-09-15 with no daily ingestion). The chosen fix adds a Candle_Freshness_Stage to the daily run that tops-up the prior day's candle and auto-backfills any gap BEFORE the deterministic pipeline reads history, reusing the existing `OhlcIngestion` validation + idempotent `(asset,date)` upsert (Look_Ahead_Safe, no re-implementation). Data comes from an ordered Provider_Fallback_Chain — FCS (primary, the connection already used for the display-only cross-reference) → Twelve Data → Massive — each resolved from its own `.env` API key by name (`EXTERNAL_SIGNAL_API_KEY` / `TWELVE_DATA_API_KEY` / `MASSIVE_API_KEY`), tried in order with first-usable-wins and skip-and-proceed-on-total-failure, each native response normalized to the single internal `RawCandle` shape over zero-SDK `fetch`. This keeps the daily loop producing current-day signals and self-heals a missed run, without a new credential or provider dependency. Requirements only so far; design/tasks/implementation pending.
+- **Dashboard "All pairs" shows cross-pair detail, not a pick-a-pair prompt (dashboard-ui Req 8 criterion 8, this turn).** The operator's "nothing from the third-party API" report was diagnosed as a UX dead-end, not a data defect: the FCS external-comparison data is present in the live `dashboard.json` and the deployed SPA is current, but the AI, Third-party, and Pattern/Outcomes tabs each render a "pick a pair" prompt when the Pair_Selector is on the default "All pairs" (original dashboard-ui Req 8.2). Decision: those three per-pair tabs will render a cross-pair view over all five pairs on "All pairs" (verbatim snapshot values + explicit per-pair no-data markers), matching how the Setups tab already behaves, so the default landing view never hides present data. Requirements amended + format-valid; implementation pending.
 
 ## 7. Obstacles / open risks
+
+- **Dashboard per-pair tabs hide data on the default "All pairs" view (diagnosed; fix specced, not yet built).** AI, Third-party, and Pattern/Outcomes show a pick-a-pair prompt on "All pairs", so on first load the dashboard appears to carry no third-party/AI content even though the published `dashboard.json` has it (verified: `externalComparison` one row per pair; deployed SPA bundle current; date matches). Not a pipeline bug — selecting a specific pair reveals the data. Fix is dashboard-ui Req 8 criterion 8 (render those tabs cross-pair over all five pairs on "All pairs"); design/tasks/implementation pending. (Separately, the AI tab is also empty due to the Vertex 403 — tracked as `daily-candle-freshness-and-cleanup` R7.)
+
+- **Candle-data freshness defect (CONFIRMED; top priority, now owned by a spec).** Hosted `candles` hold daily history for all 5 pairs only through 2026-09-15 (per-pair ≈4183-4184 rows; verified read-only), while the current Decision_Date is ~16 trading days later and the gap grows by one trading day per run. Root cause: nothing ingests fresh candles (CSV loader backfill-only; `OHLC_PROVIDER`/`OHLC_BASE_URL` empty). Impact: encoding, retrieval, the firing view, the realized-outcome journal, and any future evaluation all read stale history — the live daily loop executes but is not producing current-day signals. Owned by the new spec `daily-candle-freshness-and-cleanup` (Candle_Freshness_Stage + FCS→Twelve Data→Massive fallback chain + one-off backfill). Requirements phase only; not yet implemented.
 
 - **`fx_writer` write-path cutover (5.2a) COMPLETE; the open ☁️ gate is now the 5.3 hosted reconcile itself.** The role exists on hosted and is granted to `authenticator`, `supabase-key` v3 carries a verifiable `role: fx_writer` ES256 JWT, and a live REST write-check is GREEN (INSERT/UPDATE succeed, DELETE refused 403). To get there, `...006` STEP 7 (grants) and STEP 3+4 (drop old RLS policies + disable RLS) were pulled forward out-of-band on the 5 existing retained tables; `pipeline_writer` still works so the daily run is unbroken. REMAINING RISK for task 5.3: it performs the DESTRUCTIVE drops (tables, views, the `pipeline_writer` role, diagnostic read path) and creates `evaluation_reports` — take a fresh hosted backup (schema+data+roles) and present the exact drop set before applying. Hosted SQL/REST from local MUST use the IPv4 `SUPABASE_POOLER` (direct `db.*:5432` is IPv6-only, unreachable here). Sensitive artifact: gitignored `ops/fx-writer-key/` holds the `fx_writer` private signing key.
 
@@ -615,6 +646,8 @@ two documents are out of sync and should be reconciled.
   name only here, never by value. These are LIVE production credentials now
   directly in the path of cloud operations. Rotate ALL of them and untrack `.env`
   before further live work; prior notes mentioned only the three Supabase secrets.
+  Now tracked as requirement R10 of the new spec
+  `daily-candle-freshness-and-cleanup`.
 - **Display-only features work locally but are undeployed and have prod-config
   prerequisites.** The Gemini + FCS wiring was verified only against live APIs
   from the dev machine. For the deployed Cloud Run Job to produce the data: the
@@ -626,6 +659,17 @@ two documents are out of sync and should be reconciled.
   Third-party tabs stay in their empty/unavailable states. Note the AI tab is
   per-firing-card, so on a silent (no-firing) day showing "no rationale" is
   correct, not a bug.
+- **Display-only Gemini rationale 403 on Vertex AI (new this turn).** The daily
+  Cloud Run Job's Gemini call returns HTTP 403 `aiplatform.endpoints.predict
+  denied` for the runtime SA `job-runtime@` on model `gemini-2.5-flash`. It is
+  FAIL-SAFE (the run logged a secret-free display_warning, degraded to "no
+  rationale", and completed exit 0), so the end-to-end loop is UNAFFECTED — but
+  the AI tab stays empty until the runtime SA is granted the Vertex AI predict
+  permission on publisher models. The GCP manifest lists `roles/aiplatform.user`;
+  the 403 suggests the needed predict permission on publisher models is missing or
+  mis-scoped, so verify/augment the SA's Vertex grant. Display-only — this path
+  never touches scoring. Now tracked as requirement R7 of the new spec
+  `daily-candle-freshness-and-cleanup`.
 - **Read-proxy CODE removed; the live GCP resource still exists.** The
   `services/read-proxy/` code, its `/api` rewrite, and the SPA's ten-endpoint
   allowlist were DELETED in `simplify-to-cloud-minimal` Phase 5 task 6; the SPA
@@ -639,8 +683,18 @@ two documents are out of sync and should be reconciled.
   jobs `dashboard-seed-run`/`dashboard-gate-run`, ~10 obsolete secrets, stale
   Artifact Registry images, and several review-SAs as ORPHANED deletion
   candidates — but NO deletion was executed. Until task 7.2 runs the stale service
-  remains but nothing points at it. Also note the snapshot sink is a no-op until
-  the Phase 6 uploader is wired, so no `dashboard.json` is actually published yet.
+  remains but nothing points at it.
+- **Snapshot sink no-op / `dashboard.json` not published — RESOLVED.** The daily
+  Job's `resolveSnapshotSink()` was a logged no-op, so no `dashboard.json` was ever
+  published and the SPA fetched a static asset Firebase Hosting cannot write at
+  runtime. The GCS `SnapshotSink` is now IMPLEMENTED
+  (`src/scheduled-run/gcsSnapshotSink.ts`, wired on `DASHBOARD_SNAPSHOT_BUCKET`) and
+  the live bucket/IAM/CORS + the `DASHBOARD_SNAPSHOT_BUCKET`/`VITE_SNAPSHOT_URL`
+  repo vars are provisioned (operator-approved). PR #25 was merged + deployed and
+  the loop is now PROVEN LIVE: the daily Cloud Run Job run
+  `scheduled-daily-run-2rrm6` published `dashboard.json` (1779 bytes) to the
+  public bucket, verified anonymously fetchable over HTTPS (HTTP 200). Fully
+  resolved under parent task 8.
 - **Frontend auto-deploy: IAM blocker cleared; green deploy not yet verified.**
   The first `deploy-frontend` run 403'd because the deploy SA
   (`gh-deploy@…`, the `DEPLOY_SERVICE_ACCOUNT`) lacked a Firebase Hosting role;
@@ -675,8 +729,10 @@ two documents are out of sync and should be reconciled.
   workflow (`.github/workflows/deploy.yml`) triggers ONLY on push to `main`;
   pushes to `dev` run CI only. So any fix (e.g. the leak fix in PR #23, the perf +
   flaky-test fix in PR #24) is NOT in the deployed Cloud Run Job image until the
-  operator merges the PR to `main`. PR #23 is merged + deployed; PR #24 is open
-  and awaiting merge.
+  operator merges the PR to `main`. PR #23 and PR #24 are merged + deployed;
+  PR #25 (the GCS snapshot sink + the
+  `DASHBOARD_SNAPSHOT_BUCKET`/`VITE_SNAPSHOT_URL` repo-var wiring) is the current
+  one open and awaiting the operator's merge to `main`.
 - **A flaky, seed-dependent property test exists in dormant `news-filter`.**
   `src/news-filter/property28-suppressionPure.test.ts` broke CI on `main` once
   (bad fast-check seed) because it scanned the pass-through `reason` for direction
@@ -689,46 +745,84 @@ two documents are out of sync and should be reconciled.
   commit and now lives in git history (GitHub flagged it over the 50 MB
   recommended size) — consider gitignoring/removing it and the `ops/backups/` dir.
   Separately, the repo's Dependabot reports 20 vulnerabilities (4 critical, 2
-  high, 12 moderate, 2 low) — worth a dedicated pass.
+  high, 12 moderate, 2 low) — worth a dedicated pass. Now tracked as requirements
+  of the new spec `daily-candle-freshness-and-cleanup`: the git-history backup
+  removal is R8, the Dependabot triage/fix is R9.
 
 ## 8. Immediate next steps
 
-1. Deploy the display-only features: set the GitHub `GEMINI_MODEL` repo variable
-   to `gemini-2.5-flash` and grant the Job runtime SA `roles/aiplatform.user`.
-   (The deploy SA `roles/firebasehosting.admin` grant for frontend auto-deploy is
-   DONE.) Commit/push the workflow edits (incl. the `FIREBASE_TOKEN` removal) to
-   `main` to redeploy the Cloud Run Job (now wired for Gemini + FCS and
-   weekday-gated) and auto-deploy the SPA, then run one Job execution
-   (`gcloud run jobs execute scheduled-daily-run`) so `signal_rationale` /
-   `external_reference_comparison` get populated. Verify the SPA hosting deploy
-   went green, and `/api/ai-rationale` + `/api/external-comparison`.
-2. DONE — PRs #23/#24 are merged to `main`, the leak-fixed + perf-fixed image is
-   redeployed, and the first leak-free `EvaluationReport` was INSERTed into hosted
-   `evaluation_reports` (id `7ae77f6a-…`) and synced into RESEARCH-LOG.md; tasks
-   8.1 and 8.2 are complete. REMAINING: the parent task 8 end-to-end cloud-loop
-   proof (daily Job writes predictions + realized outcomes + `dashboard.json`,
-   Scheduler triggers it, hosted dashboard renders), handled by the orchestrator.
-3. (SUPERSEDED by `simplify-to-cloud-minimal` Phase 5 task 6 — the read-proxy
+1. TOP PRIORITY — IMPLEMENT `daily-candle-freshness-and-cleanup`. Its
+   requirements + design + tasks are DONE and format-valid, so the next action
+   is to start Phase 1: the OHLC_Feed_Provider port (two capabilities —
+   fetchLatest/fetchRange) + the FCS/Twelve Data/Massive adapters (zero-SDK
+   fetch, normalize to `RawCandle`, stamp `source`) + the capability-aware
+   fallback chain (FCS→Twelve Data→Massive, FCS latest-only so a multi-day range
+   routes to Twelve Data/Massive), test-driven with injected fetch (no live
+   network). Then proceed through the later phases (Candle_Freshness_Stage into
+   `scheduled-run/main.ts` before the pipeline, daily wiring, the one-off
+   backfill entry, verification, cleanup R7–R11, living docs). Keep `make check`
+   + the web build green; the ☁️ live-cloud items (the one-off hosted backfill,
+   the Vertex predict grant, `.env` secret rotation, hosted verify) stay
+   operator-gated. Highest priority because the live loop is on stale data
+   (hosted candles end 2026-09-15, no daily ingestion). The previously standalone
+   follow-ups (Vertex 403, ~50MB git backup, Dependabot, `.env` rotation,
+   cross-spec checkpoints) are tracked as requirements R7-R11 of that spec, so
+   they are actioned under its tasks rather than as separate steps.
+2. HIGH PRIORITY — `dashboard-ui` Req 8 criterion 8 DESIGN + TASKS are DONE
+   (design addendum + task 19, subtasks 19.1–19.7, both format-valid). NEXT
+   ACTION: EXECUTE task 19 — implement the thin pure `shapeAllPairs` helper +
+   its property test (Property 16), edit the AI, Third-party, and
+   Pattern/Outcomes tabs to render a cross-pair all-five-pairs view on "All
+   pairs" (composing the existing `shapeExternal`/`shapeAi`/Pattern-Outcomes
+   shapers over one `getSnapshot()` read, per-pair no-data markers, labels
+   preserved), and add the DOM tests. Keep `make check` + the web build green,
+   then ship via a `dev`→`main` PR (operator-gated merge). web/-only; no
+   snapshot schema / daily Job / `src/` core change.
+3. DONE — PR #25 (`dev`→`main`) was merged + deployed (Job image `b4b27b2e…`,
+   env `DASHBOARD_SNAPSHOT_BUCKET=trade-assistant-508806-dashboard`, SPA rebuilt
+   with the bucket snapshot URL) and one daily Cloud Run Job run
+   (`scheduled-daily-run-2rrm6`, exit 0) PROVED the loop: it wrote the
+   `firing_setups` row for 2026-10-08, maintained `realized_outcomes`, and
+   published `dashboard.json` to the public bucket (anonymously fetchable, HTTP
+   200). Parent task 8 is marked `[x]` and `simplify-to-cloud-minimal` is
+   COMPLETE.
+4. (Now R7 of `daily-candle-freshness-and-cleanup`.) Fix the runtime SA
+   (`job-runtime@`) Vertex AI 403 (`aiplatform.endpoints.predict denied` on
+   `gemini-2.5-flash`) so the display-only AI rationale populates — grant/verify
+   the Vertex AI predict permission on publisher models for the runtime SA (the
+   manifest lists `roles/aiplatform.user`; augment if the predict permission is
+   missing or mis-scoped). The `GEMINI_MODEL` repo variable should be
+   `gemini-2.5-flash` (the previously configured `gemini-3.5-flash` 404s). The
+   display path is fail-safe, so this does not block the loop; it only unblocks
+   the AI tab.
+5. Commit the uncommitted living-doc/task edits still outstanding from prior
+   turns, now including the new spec files: the RESEARCH-LOG.md evaluation entry,
+   this PROJECT-STATE.md update, the task-8 checkbox in `tasks.md`, the new
+   `.kiro/specs/daily-candle-freshness-and-cleanup/` requirements.md (+ `.config`),
+   and the amended `.kiro/specs/dashboard-ui/requirements.md` (new Req 8
+   criterion 8).
+6. (SUPERSEDED by `simplify-to-cloud-minimal` Phase 5 task 6 — the read-proxy
    code is deleted and the SPA now reads the `dashboard.json` snapshot.) What
    remains: DELETE the orphaned `dashboard-read-proxy` Cloud Run service + images
-   from GCP in the Phase 6 R11 operator-approved sweep (task 7.2), and wire the
-   real snapshot uploader (currently a no-op) into the Job/deploy in Phase 6.
-4. DONE — the first real evaluation of the core premise is recorded in
+   from GCP in the Phase 6 R11 operator-approved sweep (task 7.2). (The real
+   snapshot uploader is now IMPLEMENTED as the GCS `SnapshotSink` and its live
+   infra provisioned; it shipped to the Job via the PR #25 merge in step 3.)
+7. DONE — the first real evaluation of the core premise is recorded in
    `RESEARCH-LOG.md` as an evaluation REPORT (model-vs-baseline accuracy, delta,
    friction-adjusted MFE/MAE, sample size, Wald CI), no `PASS`/`CUT` verdict, per
    audit §13. Result: +1.24pp over baseline, CI [+0.66pp, +1.82pp], below the 3pp
    annotation threshold. The DB-vs-log discrepancy is resolved (the report lives in
    both the hosted table and the log).
-5. Close `operational-wiring` Task 13 (final checkpoint) and tick Task 12's
+8. Close `operational-wiring` Task 13 (final checkpoint) and tick Task 12's
    parent checkbox.
-6. Run `dashboard-ui` Task 17 (post-deploy read-only smoke against real firing
+9. Run `dashboard-ui` Task 17 (post-deploy read-only smoke against real firing
    data) and close Task 18; reconcile with `dashboard-data-activation` Task 16.
-7. Push the reconciling merge on `dev` to the remote (directly or via PR), and
+10. Push the reconciling merge on `dev` to the remote (directly or via PR), and
    rename the remote `main` → `origin` to remove the branch/remote name clash.
-8. Decide on the simplicity/complexity audit
+11. Decide on the simplicity/complexity audit
    (`docs/architecture/PROJECT-SIMPLICITY-AUDIT.md`, incl. the §13 kill-gate
    review): its top recommendation is to run the existing measurement engine and
-   record the first evaluation report (step 4) BEFORE any rearchitecting, then
+   record the first evaluation report (step 7) BEFORE any rearchitecting, then
    de-scope infrastructure (defer-on-branch, don't delete) and reframe the
    kill-gate as a report rather than an auto-blocking PASS/CUT verdict. Per the
    operator's binding constraints (cloud execution + mobile access; see
@@ -739,9 +833,9 @@ two documents are out of sync and should be reconciled.
    carries §14 (authoritative constraint-adjusted architecture) plus annotated
    §7/§8/§9/§12 (edited this turn, document only). OUTSTANDING (implementation,
    not yet started): action the §14 recommendations in the codebase — but only
-   after step 4 (run the measurement engine, record the first evaluation report)
+   after step 7 (run the measurement engine, record the first evaluation report)
    per the audit's own ordering.
-9. Execute the `simplify-to-cloud-minimal` spec. Phases 1-3 are DONE, Phase 4
+12. Execute the `simplify-to-cloud-minimal` spec. Phases 1-3 are DONE, Phase 4
    schema authoring (tasks 5.1 + 5.2) is authored locally, and THIS TURN Phase 5
    task 6 (6.1-6.4) landed: the fail-safe `dashboard.json` snapshot writer is
    wired into the daily run, the SPA reads it via `loadSnapshot()`, the
@@ -763,7 +857,8 @@ two documents are out of sync and should be reconciled.
    verification. STILL PENDING: the ACTUAL first OOS evaluation run — the single
    highest-value measurement step. Its code is now fixed and leak-free; it is no
    longer blocked on code or on a local Supabase but specifically on the PR #24
-   redeploy + the one-off evaluation Cloud Run Job re-run (see step 2).
+   redeploy + the one-off evaluation Cloud Run Job re-run — now DONE and recorded
+   (see step 7).
 
 ## Notes on maintenance
 

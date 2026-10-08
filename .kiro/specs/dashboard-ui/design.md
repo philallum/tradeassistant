@@ -834,3 +834,213 @@ produces the static `web/dist` bundle (Req 1.5); `firebase deploy` publishes it.
 **Smoke verification (Req 21.6).** After deploy, a read-only check confirms the public URL
 serves the latest Decision_Date, and that the proxy rejects a write attempt and a
 disallowed query (expecting `405`/`400`), recording only non-secret references.
+## Addendum: Cross-pair "All pairs" rendering for the per-pair tabs (Requirement 8 criterion 8)
+
+> **Status: addendum.** This section is appended after the original design and does not
+> replace anything above it. It designs ONLY the newly-added Requirement 8 criterion 8.
+
+### Grounding note — the original design predates `simplify-to-cloud-minimal`
+
+The body of this document above describes an earlier architecture — a `services/read-proxy/`
+Cloud Run service, curated `Read_Only_View`s, a `dashboard_reader` role with
+`Default_Deny_RLS`, a Firebase Hosting `/api/**` rewrite, and a ten-endpoint per-view fetch
+allowlist. **That architecture no longer exists.** It was superseded by
+`simplify-to-cloud-minimal`. This addendum does NOT re-document the whole system; it only
+records the current reality it builds on:
+
+- The SPA is **read-only** and holds no credential. It fetches **ONE static
+  `dashboard.json` snapshot** cross-origin from a public-read GCS bucket via
+  `web/src/api/snapshot.ts` → `loadSnapshot()`, shared through
+  `web/src/api/snapshotCache.ts` → `getSnapshot()`. There is **no proxy** and **no
+  per-endpoint fetch** — every tab reads slices of that one snapshot.
+- The snapshot slices this addendum uses are already present and correct:
+  `externalComparison` (one row per pair), `aiRationale`, and the Pattern/Outcomes inputs
+  (`analogueOutcomes`, `realizedOutcomes`, `candles`, plus `firingSetups` for the
+  confidence trend).
+- Pair selection lives in `web/src/state/selection.ts`: `ALL_PAIRS` (the `"ALL"` sentinel),
+  `useSelection()`, and `PairSelection = Pair | typeof ALL_PAIRS`. The canonical pair order
+  is `PAIRS = ["EURUSD","GBPUSD","USDJPY","USDCHF","USDCAD"]` from `web/src/api/types.ts`.
+
+Wherever the original text above references the proxy, `/api`, views, or RLS, read it
+through this lens: the mechanism is now the single `getSnapshot()` read.
+
+### What criterion 8 adds
+
+Requirement 8 criterion 8: when the `Pair_Selector` is on **"All pairs"** (`ALL_PAIRS`),
+the three per-pair tabs — **AI** (`web/src/tabs/Ai/AiTab.tsx`), **Third-party**
+(`web/src/tabs/ThirdParty/ThirdPartyTab.tsx`), and **Pattern/Outcomes**
+(`web/src/tabs/PatternOutcomes/PatternOutcomesTab.tsx`) — must render a **cross-pair view
+over all five pairs** for the selected Decision_Date, instead of today's
+"Select a specific currency pair…" prompt (`PickPairPrompt`). Selecting a specific pair is
+**unchanged** (Req 8.2): each tab still narrows to that one pair.
+
+Scope boundary (unchanged tabs): **Setups** already renders cross-pair on "All pairs" and
+is not touched; **Gate** is not per-pair and is not touched. This is a **`web/`-only**
+change: no change to the `dashboard.json` schema, the daily Cloud Run Job, or any `src/`
+core module.
+
+### Current shared shape of the three tabs (as-built)
+
+All three tabs today share one structure, which this addendum extends at exactly one branch:
+
+1. An **injected per-pair loader** (`defaultLoader` / `defaultLoaders`) that calls
+   `getSnapshot(0, …)` once and filters the relevant slice by
+   `decision_date === decisionDate && pair === activePair` (AI, Third-party) or the
+   equivalent `asset`/`pair` + date filter (Pattern/Outcomes).
+2. A **pure shaper** over the filtered rows: `shapeAi` (`web/src/pure/shapeAi.ts`),
+   `shapeExternal` (`web/src/pure/shapeExternal.ts`), and the Pattern/Outcomes shapers
+   (`shapeConfidenceTrend` / `shapeExcursionProfile` / `shapePriceSeries` in
+   `web/src/pure/shapeCharts.ts`, `shapePredictionActual` in
+   `web/src/pure/shapePredictionActual.ts`).
+3. A small **load-state machine** (`idle | loading | error | loaded/ready`).
+4. A `PickPairPrompt` rendered when `pair === ALL_PAIRS`.
+
+Only item 4's `pair === ALL_PAIRS` branch changes — from a prompt to the cross-pair render.
+The `loading`, `error`, and specific-pair branches are preserved verbatim.
+
+### Design decisions
+
+**D1 — Compose the existing per-pair shapers; invent no new shaper math.** For the
+"All pairs" case each tab iterates the five pairs in canonical `PAIRS` order and runs the
+**same per-pair shaper** it already uses, on that pair's rows (the snapshot slice filtered
+to `decision_date === decisionDate && pair === p`). Each pair's shaper result is rendered as
+a **compact per-pair section stacked vertically** (mobile-first). The per-pair shapers
+remain the single source of truth; nothing is recomputed and no new projection logic is
+introduced.
+
+The grouping is a thin, pure, property-testable helper rather than ad-hoc tab code — but it
+delegates entirely to the existing shapers:
+
+```typescript
+// web/src/pure/shapeAllPairs.ts  (PURE — no fetch, no DOM, no clock; imports nothing from src/)
+//
+// Groups already-fetched rows by pair, in canonical PAIRS order, and delegates each pair's
+// slice to the caller's existing per-pair shaper. It copies/filters only — never recomputes.
+export interface PairSection<VM> {
+  readonly pair: Pair;            // the pair this section is for
+  readonly view: VM;             // the EXISTING per-pair shaper's output for this pair
+}
+
+export function shapeAllPairs<Row, VM>(
+  rows: readonly Row[],
+  decisionDate: string,
+  shaper: (pairRows: readonly Row[]) => VM,            // e.g. shapeAi / shapeExternal
+  pairOf: (row: Row) => string,                        // r => r.pair  or  r => r.asset
+  dateOf: (row: Row) => string,                        // r => r.decision_date / r.date
+  pairs: readonly Pair[] = PAIRS,
+): readonly PairSection<VM>[] {
+  return pairs.map((pair) => ({
+    pair,
+    view: shaper(
+      rows.filter((r) => dateOf(r) === decisionDate && pairOf(r) === pair),
+    ),
+  }));
+}
+```
+
+If a tab's "All pairs" composition is simpler done inline in the tab/view layer (mapping
+`PAIRS` and calling the existing shaper per pair), that is acceptable and preferred —
+`shapeAllPairs` is specified as the thin, testable extraction when the same grouping repeats
+across tabs. Either way the invariant is identical: **one section per pair, in `PAIRS`
+order, each delegating to the existing per-pair shaper over the pair-and-date-filtered
+rows.** The empty per-pair result naturally yields each shaper's existing absent state
+(`present: false` for `shapeAi`/`shapeExternal`; empty series / `!hasData` for the
+Pattern/Outcomes shapers), which the render layer turns into the per-pair no-data marker
+(D3).
+
+**D2 — One snapshot read, filtered by date only.** The data source stays the single
+`getSnapshot()` read. For the all-pairs case the loader returns **all pairs' rows for the
+Decision_Date in ONE snapshot read**, filtering the already-fetched slice by
+`decision_date === decisionDate` **only** (not by pair) — there is never one `fetch` per
+pair. Concretely, each tab's `defaultLoader` grows an all-pairs path that drops the
+`&& pair === activePair` / `&& r.asset === pair` clause and keeps the date clause, returning
+the full set of rows for the date; the cross-pair grouping (D1) then partitions those rows
+by pair in memory. This preserves the existing "fetch once, every tab shares one read"
+contract.
+
+**D3 — Per-pair empty handling: explicit marker, never blank, never fabricated.** A pair
+with no row for the Decision_Date renders an explicit per-pair "no data" / "unavailable"
+marker, **reusing each tab's existing absent/unavailable rendering** — not a blank and not
+an error:
+
+- AI: the pair's `shapeAi` returns `present: false`, so that pair's section shows the
+  existing "No AI rationale was persisted for {pair} on this date." text (the per-pair
+  analogue of today's omit-when-absent branch, Req 11.4).
+- Third-party: the pair's `shapeExternal` returns `present: false` → a per-pair
+  "No third-party comparison was persisted for {pair} on this date." marker; and when a
+  pair's comparison is `unavailable` the existing non-error "reference unavailable" marker
+  (Req 12.3) is shown for that pair.
+- Pattern/Outcomes: a pair whose four shapers all yield empty renders the existing
+  "No data for {pair}…" marker for that pair's section.
+
+No per-pair section is ever blank, and no content is fabricated for a missing pair.
+
+**D4 — The AI/Deterministic boundary and read-only invariants hold per section.** Every
+per-pair section is still drawn VERBATIM from the snapshot and recomputes nothing
+(Req 9.10, 10.4, 20.1). The research-only / advisory / inert-rendering labels apply to
+**every** per-pair section in the cross-pair view, exactly as they do today for a single
+pair: the AI advisory / non-scoring banner and per-proposal advisory label (Req 11.2, 11.3),
+the Third-party research-only / never-a-decision-input banner (Req 12.2), and inert
+auto-escaped React-text rendering with no `dangerouslySetInnerHTML` (Req 5.8). The cross-pair
+view is pure composition over persisted rows; the AI/Deterministic separation is unchanged.
+
+**D5 — Accessibility and styling.** Each per-pair section is **labeled with its pair** — a
+per-pair heading and/or `aria-label` (e.g. `aria-label={`AI rationale for ${pair}`}`),
+consistent with the existing per-pair `aria-label` usage already in these tabs — and uses
+the existing `theme` tokens (`web/src/theme/darkTheme.ts`). The layout is a **mobile-first
+vertical stack** of the five sections. The tab's existing loading and error states are
+preserved unchanged; only the `pair === ALL_PAIRS` branch changes from `PickPairPrompt` to
+the cross-pair render.
+
+**D6 — Scope boundary (restated).** ONLY the three per-pair tabs change. Setups
+(cross-pair already) and Gate (not per-pair) are untouched. No change to the snapshot
+schema (`web/src/api/snapshot.ts` / `src/scheduled-run/snapshot.ts`), the daily Job, or any
+`src/` core module.
+
+### Rendering flow (per tab, "All pairs" branch)
+
+```mermaid
+flowchart TB
+  Sel["Pair_Selector == ALL_PAIRS"] --> Load["loader: getSnapshot() once\nfilter slice by decision_date ONLY (all pairs)"]
+  Load --> Group["iterate PAIRS in canonical order\n(EURUSD, GBPUSD, USDJPY, USDCHF, USDCAD)"]
+  Group --> Shape["per pair: run the EXISTING per-pair shaper\non that pair's date-filtered rows (verbatim)"]
+  Shape --> Render["render a labeled per-pair section per pair\n(mobile-first vertical stack)"]
+  Render --> Empty["pair with no row => existing per-pair\nno-data / unavailable marker (never blank/error)"]
+  Render --> Labels["per-section advisory / research-only / inert\nlabels preserved (Req 11.2/11.3/12.2/5.8)"]
+```
+
+### Correctness property (addendum)
+
+Grounded in the prework analysis for criterion 8, the data-shaping concern is a universal
+property over the pure cross-pair grouping; the rendering concern (five sections vs prompt,
+per-pair no-data marker, narrowing on specific-pair selection) is covered by example-based
+DOM tests (see Testing approach below), not by a property.
+
+### Property 16: Cross-pair "All pairs" view is the per-pair shapers, grouped in canonical order, verbatim
+
+*For any* set of snapshot rows and any Decision_Date, the cross-pair "All pairs" result
+contains exactly one section per pair in canonical `PAIRS` order (EURUSD, GBPUSD, USDJPY,
+USDCHF, USDCAD), and each pair's section equals the existing per-pair shaper applied to the
+rows filtered by `decision_date === decisionDate` **and** that pair — so the cross-pair view
+introduces no new value, reorders no pair, and recomputes nothing; a pair with no matching
+row yields that shaper's absent/empty result (which the UI renders as the per-pair no-data
+marker).
+
+**Validates: Requirements 8.8, 20.1**
+
+### Testing approach (for the later tasks — do NOT implement here)
+
+- **Property test (`fast-check`, ≥100 iterations)** for the cross-pair grouping helper
+  (`shapeAllPairs`, or the equivalent in-tab composition if extraction is deferred): generate
+  arbitrary snapshot slices — pairs present/absent, duplicate dates, empty sets, a pair with
+  no row for the date — and assert Property 16 (one section per pair in `PAIRS` order; each
+  section equals the existing per-pair shaper over the pair-and-date-filtered rows;
+  verbatim, no recomputation). Tag:
+  `// Feature: dashboard-ui, Property 16: Cross-pair "All pairs" view is the per-pair shapers, grouped in canonical order, verbatim`.
+- **DOM example tests (injected loader, no live network)** per tab: on `ALL_PAIRS`, assert
+  all five pairs' labeled sections render (including an explicit per-pair no-data /
+  unavailable marker for a pair with no row) **instead of** the pick-a-pair prompt; and
+  assert that selecting a specific pair still narrows the tab to that one pair (Req 8.2
+  unchanged). Also assert the per-section advisory / research-only labels remain present in
+  the cross-pair view (Req 11.2/11.3/12.2). These reuse the existing injected-loader test
+  pattern already used by the three tabs — pure, no network.
