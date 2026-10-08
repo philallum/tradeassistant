@@ -67,6 +67,19 @@ env:
   DEPLOY_SERVICE_ACCOUNT: ${{ vars.DEPLOY_SERVICE_ACCOUNT }}
   # Non-secret runtime config for the Job (selected model id).
   GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+  # Public_Read_Path (simplify-to-cloud-minimal R5.1/R5.2, Option A). Both are
+  # NON-SECRET GitHub repository variables, referenced BY NAME only:
+  #   - DASHBOARD_SNAPSHOT_BUCKET: the public-read GCS bucket the Cloud Run Job
+  #     writes `dashboard.json` to (injected as the Job's runtime env var).
+  #   - VITE_SNAPSHOT_URL: the bucket object's public URL the SPA fetches
+  #     cross-origin (baked into the Vite bundle at build time), e.g.
+  #     https://storage.googleapis.com/<bucket>/dashboard.json.
+  # OUT-OF-BAND (operator) prerequisites, NOT done by this workflow: create the
+  # public-read bucket, grant the runtime SA object write on it (e.g.
+  # roles/storage.objectAdmin), set the bucket's public read + a CORS rule
+  # allowing the Hosting origin, and set these two repo variables.
+  DASHBOARD_SNAPSHOT_BUCKET: ${{ vars.DASHBOARD_SNAPSHOT_BUCKET }}
+  VITE_SNAPSHOT_URL: ${{ vars.VITE_SNAPSHOT_URL }}
 
 jobs:
   # Stage 0 — detect which part of the monorepo changed so each target deploys
@@ -210,7 +223,7 @@ jobs:
             --region "${GCP_REGION}" \
             --image "${{ steps.image.outputs.uri }}" \
             --service-account "${RUNTIME_SERVICE_ACCOUNT}" \
-            --set-env-vars "GCP_PROJECT_ID=${GCP_PROJECT_ID},GCP_REGION=${GCP_REGION},GEMINI_MODEL=${GEMINI_MODEL},GOOGLE_GENAI_USE_VERTEXAI=true,EXTERNAL_SIGNAL_PROVIDER=FCS,SUPABASE_TARGET=hosted" \
+            --set-env-vars "GCP_PROJECT_ID=${GCP_PROJECT_ID},GCP_REGION=${GCP_REGION},GEMINI_MODEL=${GEMINI_MODEL},GOOGLE_GENAI_USE_VERTEXAI=true,EXTERNAL_SIGNAL_PROVIDER=FCS,SUPABASE_TARGET=hosted,DASHBOARD_SNAPSHOT_BUCKET=${DASHBOARD_SNAPSHOT_BUCKET}" \
             --set-secrets "EXTERNAL_SIGNAL_API_KEY=external-signal-api-key:latest,SUPABASE_HOSTED_KEY=supabase-key:latest,SUPABASE_PUBLISHABLE_KEY=supabase-publishable-key:latest,SUPABASE_HOSTED_URL=supabase-url:latest,SUPABASE_POOLER_URL=supabase-pooler-url:latest"
 
   # Stage 1 (frontend) — build + test the dashboard SPA. This mirrors the `web`
@@ -238,7 +251,13 @@ jobs:
         run: npm ci
 
       # `npm run build` is `tsc --noEmit && vite build` — type-check + bundle.
+      # VITE_SNAPSHOT_URL (non-secret repo var) is baked into the bundle so the
+      # SPA fetches the snapshot from the public GCS bucket cross-origin
+      # (simplify-to-cloud-minimal R5.1, Option A). Unset → the SPA falls back to
+      # same-origin /dashboard.json, so dev/preview still work.
       - name: Build
+        env:
+          VITE_SNAPSHOT_URL: ${{ env.VITE_SNAPSHOT_URL }}
         run: npm run build
 
       - name: Tests
@@ -283,8 +302,13 @@ jobs:
 
       # Rebuild the bundle on the deploy runner so dist/ reflects this exact
       # commit (the build is cheap and keeps the deploy self-contained).
+      # VITE_SNAPSHOT_URL (non-secret repo var) is baked in here too so the
+      # DEPLOYED bundle points the SPA at the public GCS snapshot URL
+      # (simplify-to-cloud-minimal R5.1, Option A).
       - name: Build web bundle
         working-directory: web
+        env:
+          VITE_SNAPSHOT_URL: ${{ env.VITE_SNAPSHOT_URL }}
         run: npm run build
 
       - name: Install Firebase CLI

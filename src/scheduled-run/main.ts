@@ -48,6 +48,7 @@ import {
   writeDashboardSnapshot,
   type SnapshotSink,
 } from "./snapshot.js";
+import { makeGcsSnapshotSink } from "./gcsSnapshotSink.js";
 
 /**
  * Load the deterministic per-pair evaluations for the Decision_Date by running
@@ -134,17 +135,33 @@ async function buildDisplayDeps(
  * Resolve the destination sink for the `dashboard.json` snapshot
  * (simplify-to-cloud-minimal R5.1, R5.2).
  *
- * The snapshot is published to the Firebase Hosting site / public bucket by the
- * deploy-side wiring (Phase 6). Until a concrete destination is configured for
- * the Job's runtime, no sink is wired here, so {@link writeDashboardSnapshot}
- * logs a secret-free "no destination configured" no-op and the run completes
- * cleanly. Returning `undefined` keeps the snapshot step fail-safe by
- * construction: there is nothing that can corrupt the persisted rows. A real
- * uploader is injected by replacing this resolver when the hosting target is
- * wired.
+ * Under the public-data decision (Option A), the snapshot is published to a
+ * PUBLIC-READ GCS bucket the hosted SPA fetches cross-origin. When the
+ * non-secret `DASHBOARD_SNAPSHOT_BUCKET` env var names that bucket, this returns
+ * the GCS uploader built with the SAME injected access-token provider the Gemini
+ * adapter uses (the runtime SA's metadata token in Cloud Run, local ADC
+ * otherwise) — NO new auth mechanism. When the var is UNSET (local/dev runs with
+ * no bucket), it returns `undefined`, so {@link writeDashboardSnapshot} logs a
+ * secret-free "no destination configured" no-op and the run completes cleanly.
+ * Either way the snapshot step stays fail-safe by construction: a failing upload
+ * is logged+swallowed and can never corrupt the persisted rows.
  */
-function resolveSnapshotSink(): SnapshotSink | undefined {
-  return undefined;
+async function resolveSnapshotSink(
+  config: ReturnType<typeof loadScheduledRunConfig>,
+): Promise<SnapshotSink | undefined> {
+  const bucket = config.dashboardSnapshotBucket;
+  if (bucket === undefined) {
+    return undefined;
+  }
+  try {
+    const tokens = await resolveAccessTokenProvider();
+    return makeGcsSnapshotSink({ bucket, tokens });
+  } catch (err) {
+    // A failure resolving the token provider must not break the run: degrade to
+    // the no-op sink (the snapshot step is best-effort). Logged secret-free.
+    logStartupWarning("snapshot_sink", err);
+    return undefined;
+  }
 }
 
 /** Structured, secret-free warning for an optional-collaborator wiring failure. */
@@ -202,7 +219,7 @@ async function main(): Promise<void> {
    * reference for that pair and never prevents the firing view from being
    * persisted.
    */
-  const snapshotSink = resolveSnapshotSink();
+  const snapshotSink = await resolveSnapshotSink(config);
 
   const persistView: DashboardViewPersister = async (view: DashboardView, supabase) => {
     // The persisted DB rows are the source of truth and are written FIRST.
