@@ -14,7 +14,7 @@
 
 import { PAIRS } from "../ingestion/types.js";
 import type { TradingDate } from "../guard/types.js";
-import { encodePatternVector } from "../encoder/patternEncoder.js";
+import { encodeAllForPair } from "../encoder/encodeStoredCandles.js";
 import { walkForwardFolds } from "../kill-gate/walkForward.js";
 import {
   composeGateVerdict,
@@ -55,9 +55,6 @@ import { runScheduledDaily } from "../scheduled-run/scheduledRun.js";
 import type { StageName, StageResult, StagedRunnerDeps } from "./types.js";
 import type { DataSourceRole } from "./types.js";
 
-/** Default trailing window size fed to the encoder (≥40 for the widest scale). */
-const DEFAULT_WINDOW_SIZE = 60;
-
 /**
  * Backfill stage (Requirement 2.1, 2.2):
  *   1. Load candles from CSV files (and live API providers when `role="feed"`)
@@ -76,38 +73,14 @@ export async function backfill(
   await deps.csvLoader.loadAll(deps.dataDir, role);
 
   // Step 2: for each pair, encode and upsert a PatternVector for every stored
-  // candle date that has enough history. We read from the CandleStore (via
-  // ingestion's getCandles) and encode at each trading date as the decisionDate.
+  // candle date so stored vectors correspond 1:1 with stored candles
+  // (Requirement 2.2). This now delegates to the SHARED look-ahead-safe encode
+  // helper (`encodeAllForPair`) — the same path the Candle_Freshness_Stage uses
+  // — rather than inlining the window-slice + encode flow. The helper encodes
+  // the trailing window of candles dated STRICTLY BEFORE each date (the decision
+  // date itself is excluded) and skips dates whose encode throws.
   for (const pair of PAIRS) {
-    const candles = await deps.ingestion.getCandles(pair);
-    if (candles.length === 0) {
-      continue; // Nothing loaded for this pair — skip silently.
-    }
-
-    // Sort chronologically (already sorted by CandleStore, but be explicit).
-    const sorted = [...candles].sort((a, b) => a.date.localeCompare(b.date));
-
-    // Encode and store one PatternVector per stored candle date so stored
-    // vectors correspond 1:1 with stored candles (Requirement 2.2). The vector
-    // for a candle date encodes the trailing window of candles dated STRICTLY
-    // BEFORE that date (Look-Ahead safe — the decision date itself is excluded).
-    // The earliest stored candle has an empty prior window; the encoder pads
-    // short/empty windows to the fixed dimension, so every candle still yields
-    // a vector.
-    for (let i = 0; i < sorted.length; i++) {
-      const decisionDate: TradingDate = sorted[i]!.date;
-      // The window is the trailing candles strictly before decisionDate.
-      const window = sorted.slice(Math.max(0, i - DEFAULT_WINDOW_SIZE), i);
-
-      try {
-        const vector = encodePatternVector(window, decisionDate);
-        await deps.vectorStore.upsertVector(pair, decisionDate, vector);
-      } catch {
-        // Skip dates where encoding fails (e.g. the look-ahead guard fires for
-        // an edge-case window); subsequent dates still succeed.
-        continue;
-      }
-    }
+    await encodeAllForPair(deps.candleStore, deps.vectorStore, pair);
   }
 
   return { ok: true };

@@ -252,7 +252,7 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
 
 ### Phase 2 — Completed_Trading_Day + freshness stage (Components 3–5; R2, R3, R4)
 
-- [ ] 6. Implement most-recent-Completed_Trading_Day computation
+- [x] 6. Implement most-recent-Completed_Trading_Day computation
   - Create `src/scheduled-run/completedTradingDay.ts` (Component 3): a pure
     `mostRecentCompletedTradingDay(decisionDate): TradingDate` returning the
     latest weekday strictly before `decisionDate` via
@@ -261,7 +261,7 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
     calendar), handled benignly downstream.
   - _Requirements: 2.2, 3.1_
 
-  - [ ] 6.1 Write property test — look-ahead safety of Completed_Trading_Day
+  - [x] 6.1 Write property test — look-ahead safety of Completed_Trading_Day
     - **Property 2: Look-ahead safety of ingested candles** (the
       Completed_Trading_Day half: the stage only ever targets dates strictly
       before the Decision_Date)
@@ -271,7 +271,7 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
       `d`, and that no weekend date is ever returned.
     - **Validates: Requirements 2.2, 3.1**
 
-- [ ] 7. Implement gap computation and the bounded-lookback helper
+- [x] 7. Implement gap computation and the bounded-lookback helper
   - Add gap detection (Component 5) alongside the stage: compute the Candle_Gap
     as the completed trading days in `(latestDate, target]` with no stored
     candle, and a bounded range-start helper `from = max(addTradingDays(latestDate,
@@ -281,7 +281,7 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
     non-secret, default **90**) via a `resolveMaxLookback(env)` reader.
   - _Requirements: 3.1, 3.2_
 
-  - [ ] 7.1 Write property test — bounded backfill lookback
+  - [x] 7.1 Write property test — bounded backfill lookback
     - **Property 4: Bounded backfill lookback**
     - `// Feature: daily-candle-freshness-and-cleanup, Property 4: bounded backfill lookback`
     - Generate random (possibly ancient or `null`) last-stored dates and
@@ -289,7 +289,7 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
       `addTradingDays(mostRecentCompletedTradingDay(decisionDate), -maxLookbackTradingDays)`.
     - **Validates: Requirements 3.2, 4.4**
 
-- [ ] 8. Factor the shared candle→vector encode helper out of the staged runner
+- [x] 8. Factor the shared candle→vector encode helper out of the staged runner
   - Extract the `backfill()` candle → `encodePatternVector(window, decisionDate)`
     → `vectorStore.upsertVector` flow from `src/staged-runner/stagedRunner.ts`
     into a small shared, look-ahead-safe encode helper (trailing window strictly
@@ -298,7 +298,7 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
     green.
   - _Requirements: 2.1, 6.3_
 
-- [ ] 9. Implement the Candle_Freshness_Stage
+- [x] 9. Implement the Candle_Freshness_Stage
   - Create `src/scheduled-run/candleFreshness.ts` (Component 4):
     `runCandleFreshnessStage(deps)` where `deps` carries the injectable
     collaborators (`decisionDate`, `ingestion`, `candleStore`, `vectorStore`,
@@ -315,7 +315,7 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
     residual gap). The stage never throws for a provider failure.
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.2, 3.3, 3.4, 4.1, 4.2, 4.3, 4.4_
 
-  - [ ] 9.1 Write unit tests for the stage with injected chain + in-memory stores
+  - [x] 9.1 Write unit tests for the stage with injected chain + in-memory stores
     - No network: a single-day top-up ingests the latest candle; a multi-day
       backfill ingests the range; a no-gap pair triggers no range fetch; a
       partial catch-up ingests what it got and logs the residual; an invalid
@@ -324,7 +324,7 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
       secret.
     - _Requirements: 2.1, 2.3, 2.4, 3.1, 3.3, 3.4, 4.1, 4.2, 4.3_
 
-  - [ ] 9.2 Write property test — idempotent ingestion
+  - [x] 9.2 Write property test — idempotent ingestion
     - **Property 1: Idempotent ingestion**
     - `// Feature: daily-candle-freshness-and-cleanup, Property 1: idempotent ingestion`
     - Generate random candle batches; ingest once then again through an in-memory
@@ -332,7 +332,7 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
       (no duplicate rows, no mutated values).
     - **Validates: Requirements 2.3, 4.3, 5.2**
 
-  - [ ] 9.3 Write property test — look-ahead safety of ingested candles
+  - [x] 9.3 Write property test — look-ahead safety of ingested candles
     - **Property 2: Look-ahead safety of ingested candles**
     - `// Feature: daily-candle-freshness-and-cleanup, Property 2: look-ahead safety of ingested candles`
     - Generate `RawCandle`s with dates straddling a random Decision_Date; after
@@ -340,7 +340,7 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
       is dated on/after the Decision_Date (at/after rows rejected, not stored).
     - **Validates: Requirements 2.2, 4.2**
 
-  - [ ] 9.4 Write property test — all-fail degradation is non-destructive
+  - [x] 9.4 Write property test — all-fail degradation is non-destructive
     - **Property 6: All-fail degradation is non-destructive**
     - `// Feature: daily-candle-freshness-and-cleanup, Property 6: all-fail degradation is non-destructive`
     - Generate runs where every provider fails/unconfigured for a pair; assert the
@@ -348,7 +348,7 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
       while a secret-free warning is logged.
     - **Validates: Requirements 1.5, 4.1, 4.3**
 
-  - [ ] 9.5 Write property test — no gap ⇒ no range fetch
+  - [x] 9.5 Write property test — no gap ⇒ no range fetch
     - **Property 7: No gap ⇒ no range fetch**
     - `// Feature: daily-candle-freshness-and-cleanup, Property 7: no gap means no range fetch`
     - Generate pairs whose last stored date already equals the most recent
@@ -356,12 +356,12 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
       pair.
     - **Validates: Requirements 3.4**
 
-- [ ] 10. Checkpoint — provider chain + freshness stage
+- [x] 10. Checkpoint — provider chain + freshness stage
   - Ensure all tests pass, ask the user if questions arise.
 
 ### Phase 3 — Daily entry wiring (Component 6; R2.1, R4.1)
 
-- [ ] 11. Wire the Candle_Freshness_Stage into the daily entry
+- [x] 11. Wire the Candle_Freshness_Stage into the daily entry
   - In `src/scheduled-run/main.ts` (Component 6), after the
     `isTradingDay(config.decisionDate)` gate and before `runScheduledDaily`,
     insert the stage call inside a `try/catch`: build stores with
@@ -375,7 +375,7 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
     history.
   - _Requirements: 2.1, 1.4, 1.5, 4.1_
 
-  - [ ] 11.1 Write unit/integration test for the wiring with injected deps
+  - [x] 11.1 Write unit/integration test for the wiring with injected deps
     - The stage runs after the weekday gate and before `runScheduledDaily`; a
       thrown stage error is caught and the run still proceeds (fail-safe); a
       `null` provider config skips the stage with a secret-free log.

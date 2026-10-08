@@ -42,3 +42,17 @@ export {
   type SnapshotExternalComparisonRow,
   type SnapshotEvaluationReportRow,
 } from "./snapshot.js";
+export { mostRecentCompletedTradingDay } from "./completedTradingDay.js";
+export {
+  MAX_LOOKBACK_ENV,
+  DEFAULT_MAX_LOOKBACK_TRADING_DAYS,
+  resolveMaxLookback,
+  classifyGap,
+  backfillRangeStart,
+  type GapClass,
+} from "./candleGap.js";
+export {
+  runCandleFreshnessStage,
+  type CandleFreshnessDeps,
+  type CandleFreshnessPairSummary,
+} from "./candleFreshness.js";
