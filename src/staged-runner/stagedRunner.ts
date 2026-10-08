@@ -41,7 +41,16 @@ import {
 } from "../pipeline/dailyPipeline.js";
 import { DEFAULT_RETRIEVAL_CONFIG } from "../pipeline/types.js";
 import { earnedConfidence, selectHorizon } from "../confidence/index.js";
-import type { PatternVector } from "../encoder/types.js";
+import type {
+  AnalogueStore as AnalogueStorePort,
+} from "../retrieval/types.js";
+import { InMemoryAnalogueStore } from "../retrieval/types.js";
+import type {
+  PatternVector,
+  PatternVectorStore as PatternVectorStorePort,
+  StoredPatternVector,
+} from "../encoder/types.js";
+import { InMemoryPatternVectorStore } from "../encoder/types.js";
 import { runScheduledDaily } from "../scheduled-run/scheduledRun.js";
 import type { StageName, StageResult, StagedRunnerDeps } from "./types.js";
 import type { DataSourceRole } from "./types.js";
@@ -162,7 +171,50 @@ export async function hasBacktestData(
  * (non-fire) model: it does NOT contribute a firing sample, mirroring the live
  * path, so the Sample_Size_Floor behaviour is preserved and no prediction is
  * fabricated.
+ *
+ * PERFORMANCE (simplify-to-cloud-minimal, task 8): `retrieve(...)` is called
+ * once per firing Decision_Date, and each hosted call does ~2 PostgREST
+ * round-trips (`queryNearest` over-fetch + `getMaturedOutcomes`). Across all
+ * pairs × all OOS trading days that is thousands of sequential round-trips —
+ * enough to exceed the Cloud_Run_Job task timeout. The DATA ACCESS, not the
+ * MEASUREMENT, is the bottleneck. So for each pair we bulk-load its stored
+ * vectors and matured outcomes from the injected (hosted) stores EXACTLY ONCE,
+ * mirror them into a fresh {@link InMemoryPatternVectorStore} /
+ * {@link InMemoryAnalogueStore}, and serve every per-date `retrieve(...)` from
+ * those in-memory mirrors. The in-memory stores implement the SAME ports with
+ * the SAME `queryNearest` filtering + tie-break ordering + `computeCosineDistance`
+ * and the SAME `getMaturedOutcomes` (`matured && decisionDate < beforeDate`)
+ * filter as the Supabase adapters, so serving `retrieve(...)` from the mirror
+ * yields BYTE-IDENTICAL results — only the round-trip count collapses (~10
+ * bulk reads instead of thousands of per-date reads). The look-ahead-safe
+ * filters are UNCHANGED: they run against the mirror, which holds the same rows.
  */
+
+/** Map a bulk-loaded {@link StoredPatternVector} to the {@link PatternVector}
+ * shape `InMemoryPatternVectorStore.upsertVector` / `retrieve` expect. This is
+ * the SAME mapping the per-date path uses when it builds the retrieval query
+ * from a stored vector (`dim = embedding.length`); no embedding value is
+ * dropped or altered. */
+function storedToPatternVector(vec: StoredPatternVector): PatternVector {
+  return {
+    scale10: vec.scaleDims.scale10,
+    scale20: vec.scaleDims.scale20,
+    scale40: vec.scaleDims.scale40,
+    embedding: vec.embedding,
+    weeklyTrendSign: vec.weeklyTrendSign,
+    dim: vec.embedding.length,
+  };
+}
+
+/**
+ * A `beforeDate` sentinel strictly greater than any real trading date, used to
+ * bulk-load the FULL matured-outcome set for a pair in one call. The per-date
+ * `getMaturedOutcomes(pair, D)` served from the in-memory mirror then re-applies
+ * the real `decisionDate < D` filter, reproducing every original per-date call
+ * exactly (the mirror is a superset; the store filters it down per call).
+ */
+const FAR_FUTURE_BEFORE_DATE: TradingDate = "9999-12-31";
+
 export async function buildFoldInputs(deps: StagedRunnerDeps): Promise<{
   readonly foldInputs: readonly FoldGateInput[];
   readonly allFolds: readonly WalkForwardFold[];
@@ -185,6 +237,42 @@ export async function buildFoldInputs(deps: StagedRunnerDeps): Promise<{
     const folds = walkForwardFolds(pair, history);
     allFolds.push(...folds);
 
+    // --- PRE-LOAD per pair ONCE (performance; byte-identical reads) ---------
+    // Bulk-load this pair's stored vectors and its full matured-outcome set from
+    // the injected (hosted) stores in just two round-trips, then mirror them
+    // into fresh in-memory stores. Every per-fold / per-date read below is then
+    // served from `vectorMirror` / `analogueMirror` — the SAME ports with the
+    // SAME filtering + ordering as the hosted adapters — so results are
+    // identical while the per-date hosted round-trips disappear.
+    const vectorMirror = new InMemoryPatternVectorStore();
+    const analogueMirror = new InMemoryAnalogueStore();
+
+    const storedVectors = await deps.vectorStore.getVectorsByAsset(pair);
+    for (const vec of storedVectors) {
+      await vectorMirror.upsertVector(
+        vec.asset,
+        vec.decisionDate,
+        storedToPatternVector(vec),
+      );
+    }
+
+    // The full matured set for the pair (sentinel beforeDate → superset). The
+    // in-memory store re-applies `decisionDate < beforeDate` on each per-date /
+    // per-fold `getMaturedOutcomes` call below, so loading the superset once and
+    // letting the mirror re-filter reproduces every original call's result.
+    const allMatured = await deps.analogueStore.getMaturedOutcomes(
+      pair,
+      FAR_FUTURE_BEFORE_DATE,
+    );
+    for (const record of allMatured) {
+      await analogueMirror.upsertOutcome(record);
+    }
+
+    // From here on, read ONLY from the mirrors for this pair. Keep the port
+    // types so the swap is purely about WHERE the rows come from.
+    const vectorStore: PatternVectorStorePort = vectorMirror;
+    const analogueStore: AnalogueStorePort = analogueMirror;
+
     for (const fold of folds) {
       // Build the firing subset and outcome arrays for each fold.
       // We read stored vectors to get dates; the actual gate evaluation
@@ -195,8 +283,9 @@ export async function buildFoldInputs(deps: StagedRunnerDeps): Promise<{
       const modelOutcomes: ForwardOutcome[] = [];
       const baselineOutcomes: ForwardOutcome[] = [];
 
-      // Read matured analogue outcomes for this fold's test window.
-      const maturedOutcomes = await deps.analogueStore.getMaturedOutcomes(
+      // Read matured analogue outcomes for this fold's test window (from the
+      // in-memory mirror; same `matured && decisionDate < fold.testEnd` filter).
+      const maturedOutcomes = await analogueStore.getMaturedOutcomes(
         pair,
         fold.testEnd,
       );
@@ -215,7 +304,7 @@ export async function buildFoldInputs(deps: StagedRunnerDeps): Promise<{
         // The stored pattern vector at this Decision_Date is BOTH the baseline's
         // weekly-trend source AND the query for honest model retrieval. Absent →
         // the date cannot be evaluated (no query, no baseline), so skip it.
-        const vec = await deps.vectorStore.getVector(pair, outcome.decisionDate);
+        const vec = await vectorStore.getVector(pair, outcome.decisionDate);
         if (vec === null) continue;
 
         // --- MODEL prediction, sourced HONESTLY as of the Decision_Date ---
@@ -237,8 +326,8 @@ export async function buildFoldInputs(deps: StagedRunnerDeps): Promise<{
           pair,
           outcome.decisionDate,
           outcome.decisionDate,
-          deps.vectorStore,
-          deps.analogueStore,
+          vectorStore,
+          analogueStore,
           retrievalConfig,
         );
 
