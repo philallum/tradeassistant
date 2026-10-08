@@ -299,7 +299,7 @@ reconcile, then end-to-end verification.
 
 ## Phase 7 — End-to-end verification + living docs (R9)
 
-- [~] 8. ☁️ Prove the simplified cloud loop end-to-end
+- [x] 8. ☁️ Prove the simplified cloud loop end-to-end
   - Execute the Cloud Run Job once; confirm it writes predictions + realized outcomes +
     the `dashboard.json` snapshot, the Scheduler triggers it, and the hosted mobile
     dashboard renders from the snapshot. Confirm the deploy pipeline still deploys the Job

@@ -366,7 +366,10 @@ I can focus on one pair's detail while still seeing the cross-pair daily picture
 
 Note: The exact Pair_Selector control and the precise set of which views are per-pair
 versus cross-pair are refined in design (confirmable). The hybrid model — per-pair detail
-views plus a cross-pair Setups overview — is required. The system has exactly five FX
+views plus a cross-pair Setups overview — is required. The per-pair detail tabs (AI,
+Third-party, Pattern/Outcomes) MUST additionally offer an all-pairs view when 'All pairs'
+is selected, so the default landing view never hides data behind a pick-a-pair prompt
+(see criterion 8). The system has exactly five FX
 pairs (EURUSD, GBPUSD, USDJPY, USDCHF, USDCAD per the `PAIRS` set in
 `src/ingestion/types.ts`); no other pairs exist.
 
@@ -396,6 +399,16 @@ pairs (EURUSD, GBPUSD, USDJPY, USDCHF, USDCAD per the `PAIRS` set in
 7. WHERE the selected pair has no data for the selected Decision_Date, THE Dashboard_UI
    SHALL display a non-secret "no data for this pair on this date" message rather than a
    blank view.
+8. WHEN the "All pairs" option is selected, THE Dashboard_UI SHALL, in addition to the
+   cross-pair Setups overview, render the per-pair tabs — AI (Signal_Rationale /
+   pattern-description / Research_Proposal), Third-party (External_Reference_Signal
+   Reference_Comparison), and Pattern/Outcomes — as a cross-pair view covering ALL FIVE
+   pairs (e.g. a compact per-pair row/section for each pair that has data), rather than
+   prompting the viewer to pick a single pair. Each pair's values are still drawn VERBATIM
+   from the snapshot for the selected Decision_Date (no recomputation, no fabrication); a
+   pair with no data for that date shows an explicit per-pair 'no data'/'unavailable'
+   marker, not a blank or an error. Selecting a specific pair still narrows each tab to
+   that pair (criterion 2).
 
 ### Requirement 9: Visual rendering of firing cards, suppressions, and charts
 
