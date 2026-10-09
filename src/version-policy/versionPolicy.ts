@@ -9,25 +9,34 @@
 // default in-memory store keeps this task self-contained and testable.
 
 import {
+  auditCeilings,
   auditSpecs,
   availableUpgradesFor,
   collectSpecs,
+  SUPPORTED_MAJOR_CEILINGS,
 } from "./audit.js";
 import type {
   AuditResult,
+  CeilingAuditResult,
   CollectOptions,
+  SupportedMajorCeilings,
   UpgradeCandidate,
   VersionSpec,
 } from "./audit.js";
 
 export type {
   AuditResult,
+  CeilingAuditResult,
+  CeilingViolation,
   CollectOptions,
   SpecClassification,
   SpecViolation,
+  SupportedMajorCeilings,
   UpgradeCandidate,
   VersionSpec,
 } from "./audit.js";
+
+export { SUPPORTED_MAJOR_CEILINGS };
 
 /**
  * A single row of the version ledger (mirrors the `version_ledger` table in the
@@ -105,6 +114,19 @@ export class VersionPolicyCheck {
    */
   auditPackage(pkg: unknown, options?: CollectOptions): AuditResult {
     return this.audit(collectSpecs(pkg, options));
+  }
+
+  /**
+   * Audit specifications against the supported-major CEILINGS: fail when any
+   * specification's major version exceeds the ceiling declared for its package.
+   * Defaults to the canonical `SUPPORTED_MAJOR_CEILINGS` (kept consistent with
+   * the Dependabot `ignore:` rules), but callers may pass a custom map. Pure.
+   */
+  auditCeilings(
+    specs: readonly VersionSpec[],
+    ceilings: SupportedMajorCeilings = SUPPORTED_MAJOR_CEILINGS,
+  ): CeilingAuditResult {
+    return auditCeilings(specs, ceilings);
   }
 
   /**

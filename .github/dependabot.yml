@@ -20,6 +20,21 @@ updates:
         dependency-type: development
         patterns:
           - "*"
+    # Supported-major ceilings. These MUST stay consistent with
+    # SUPPORTED_MAJOR_CEILINGS in src/version-policy/audit.js, which CI enforces
+    # via scripts/version-policy.mjs — the two guard the same ceilings from
+    # opposite ends (Dependabot stops proposing the holds; CI fails if a hold is
+    # ever breached in a manifest).
+    ignore:
+      # typescript-eslint@8.x peer requires typescript >=4.8.4 <6.1.0, so TS 7
+      # cannot install; TS7 support is blocked upstream until the TS 7.1 API
+      # (see typescript-eslint#12518). Hold typescript below major 7.
+      - dependency-name: "typescript"
+        versions: [">=7"]
+      # Keep @types/node on the Node 22 engine line (.nvmrc = "22";
+      # engines.node ">=22.0.0 <23.0.0"). Hold below major 23.
+      - dependency-name: "@types/node"
+        versions: [">=23"]
 
   # Standalone read-only dashboard SPA (web/). Separate lockfile + toolchain.
   - package-ecosystem: npm
@@ -37,6 +52,16 @@ updates:
           - "@vitejs/*"
           - "tinypool"
           - "esbuild"
+      # The React runtime + its type packages are tightly coupled peers:
+      # react/react-dom must move together, and @types/react(-dom) must track
+      # them. Grouping makes Dependabot propose them as one atomic PR instead of
+      # bumping one half into an ERESOLVE peer conflict.
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
       web-dev-tooling:
         dependency-type: development
         exclude-patterns:
@@ -46,6 +71,39 @@ updates:
           - "@vitejs/*"
           - "tinypool"
           - "esbuild"
+          # Excluded so the coupled React type packages do not double-group;
+          # they belong to the dedicated `react` group above.
+          - "@types/react"
+          - "@types/react-dom"
+    # Supported-major ceilings for the web SPA. These MUST stay consistent with
+    # SUPPORTED_MAJOR_CEILINGS in src/version-policy/audit.js (enforced in CI by
+    # scripts/version-policy.mjs). Each hold below is a deliberate deferred
+    # migration, not an oversight.
+    ignore:
+      # Same typescript-eslint peer / TS7-blocked-upstream reason as root
+      # (typescript-eslint#12518). Hold typescript below major 7.
+      - dependency-name: "typescript"
+        versions: [">=7"]
+      # Keep @types/node on the Node 22 engine line (.nvmrc = "22";
+      # engines.node ">=22.0.0 <23.0.0"). Hold below major 23.
+      - dependency-name: "@types/node"
+        versions: [">=23"]
+      # React 19 is a deliberate deferred migration; the recharts 2 peer accepts
+      # React 16/17/18 only. react and react-dom must move together, so both are
+      # held below major 19 until the migration is scheduled.
+      - dependency-name: "react"
+        versions: [">=19"]
+      - dependency-name: "react-dom"
+        versions: [">=19"]
+      # React type packages track the runtime; hold them with react below 19.
+      - dependency-name: "@types/react"
+        versions: [">=19"]
+      - dependency-name: "@types/react-dom"
+        versions: [">=19"]
+      # recharts 3 changes the Tooltip `Formatter` type (breaking API change,
+      # TS2322 in the chart components) — deferred migration. Hold below major 3.
+      - dependency-name: "recharts"
+        versions: [">=3"]
 
   # Keep GitHub Actions used by CI/deploy workflows current.
   - package-ecosystem: github-actions

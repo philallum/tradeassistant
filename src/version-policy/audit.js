@@ -177,6 +177,72 @@ export function collectSpecs(pkg, options = {}) {
 }
 
 /**
+ * Canonical supported-major CEILINGS: the maximum major version allowed for a
+ * package until its (currently blocked or deferred) migration is scheduled.
+ *
+ * These MUST stay consistent with the Dependabot `ignore:` rules in
+ * `.github/dependabot.yml` — the two guard the same holds from opposite ends:
+ * Dependabot stops PROPOSING a bump above the ceiling, and this check FAILS CI
+ * if a manifest is ever pinned above the ceiling anyway. When you change one,
+ * change the other.
+ *
+ * Why each is held:
+ *   - typescript (<=6): typescript-eslint@8.x peer requires typescript
+ *     >=4.8.4 <6.1.0; TS7 is blocked upstream until the TS 7.1 API
+ *     (typescript-eslint#12518).
+ *   - @types/node (<=22): match the Node 22 engine line (.nvmrc / engines.node).
+ *   - react / react-dom / @types/react / @types/react-dom (<=18): React 19 is a
+ *     deferred migration; recharts 2 peer accepts React 16/17/18 only.
+ *   - recharts (<=2): recharts 3 changes the Tooltip `Formatter` type (breaking
+ *     API change) — deferred migration.
+ *
+ * @type {{ readonly [name: string]: number }}
+ */
+export const SUPPORTED_MAJOR_CEILINGS = {
+  typescript: 6,
+  "@types/node": 22,
+  react: 18,
+  "react-dom": 18,
+  "@types/react": 18,
+  "@types/react-dom": 18,
+  recharts: 2,
+};
+
+/**
+ * Audit a flat list of version specifications against a map of supported-major
+ * ceilings. A specification violates the policy when its MAJOR version exceeds
+ * the ceiling declared for its package name. Packages absent from `ceilings`
+ * are unconstrained (not audited here). Reuses `numericCore` so parsing is not
+ * duplicated.
+ *
+ * @param {ReadonlyArray<{name: string, spec: string, source?: string}>} specs
+ * @param {{ readonly [name: string]: number }} ceilings map name -> max major
+ * @returns {{ok: boolean, violations: Array<{name: string, source: string, spec: string, major: number, ceiling: number, reason: string}>}}
+ */
+export function auditCeilings(specs, ceilings) {
+  /** @type {Array<{name: string, source: string, spec: string, major: number, ceiling: number, reason: string}>} */
+  const violations = [];
+  for (const s of specs) {
+    const ceiling = ceilings[s.name];
+    if (ceiling === undefined) {
+      continue;
+    }
+    const major = numericCore(s.spec)[0] ?? 0;
+    if (major > ceiling) {
+      violations.push({
+        name: s.name,
+        source: s.source ?? "unknown",
+        spec: s.spec,
+        major,
+        ceiling,
+        reason: `exceeds-supported-major (<=${String(ceiling)})`,
+      });
+    }
+  }
+  return { ok: violations.length === 0, violations };
+}
+
+/**
  * Compare pinned specifications against the newest known available versions and
  * surface entries where a newer STABLE (non-prerelease) version exists, for
  * human review (Requirement 18.7). Pure: no network access here.
