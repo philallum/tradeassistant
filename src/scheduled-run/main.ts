@@ -52,6 +52,7 @@ import { resolveAccessTokenProvider } from "./accessToken.js";
 import { buildDisplayOnly, type DisplayOnlyDeps } from "./displayOnly.js";
 import {
   buildDashboardSnapshot,
+  pairEvaluationRows,
   writeDashboardSnapshot,
   type SnapshotSink,
 } from "./snapshot.js";
@@ -350,7 +351,20 @@ async function main(): Promise<void> {
     const history = await loadSnapshotHistory(new SupabaseRestClient(supabase), {
       decisionDate: view.decisionDate,
     });
-    const snapshot = buildDashboardSnapshot(view, displayOnly, history);
+    // Per-pair run-completion readout (schema v2): carry EVERY evaluated pair —
+    // fired or not — so a silent (no-fire) day shows a credible "run evaluated
+    // all five pairs" summary instead of a bare "no data" notice. The full
+    // evaluations are the exact deterministic ones the view was built from
+    // (captured by `cachingLoader`); the run uses the default dashboard config,
+    // so `pairEvaluationRows` derives the same `fired` flag the view used.
+    const pairEvaluations = pairEvaluationRows(view.decisionDate, cached.get());
+    const snapshot = buildDashboardSnapshot(
+      view,
+      displayOnly,
+      history,
+      undefined,
+      pairEvaluations,
+    );
     await writeDashboardSnapshot(snapshot, snapshotSink);
   };
 

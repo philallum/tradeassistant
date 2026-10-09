@@ -30,8 +30,17 @@ import type { Confidence } from "../confidence/types.js";
 import type { DashboardView, FiringCard } from "../dashboard/index.js";
 import type { PairEvaluation } from "../dashboard/index.js";
 import type { LlmInterface } from "../llm/index.js";
-import { generateSignalRationale, generatePatternDescription } from "../rationale/index.js";
-import type { SignalNumericInputs, AnalogueSummary } from "../rationale/index.js";
+import {
+  generateSignalRationale,
+  generatePatternDescription,
+  generateDailyCommentary,
+} from "../rationale/index.js";
+import type {
+  SignalNumericInputs,
+  AnalogueSummary,
+  DailyCommentaryInput,
+} from "../rationale/index.js";
+import { DEFAULT_CONFIDENCE_THRESHOLD } from "../dashboard/index.js";
 import {
   fetchAllReferences,
   toReferenceDisplays,
@@ -42,6 +51,7 @@ import type {
   DisplayOnlyWrite,
   SignalRationaleWrite,
   ReferenceComparisonWrite,
+  DailyNoteWrite,
 } from "../storage/supabase/index.js";
 
 /** The collaborators the daily display-only producer needs. All optional. */
@@ -171,6 +181,61 @@ async function buildComparisons(
   }));
 }
 
+/**
+ * Generate the pair-INDEPENDENT whole-day AI commentary note for the
+ * Decision_Date — produced on EVERY trading day, fired or not (unlike
+ * {@link buildRationales}, which is per firing card and empty on a no-fire day).
+ * This is the LLM-path liveness signal: a short note derived ONLY from the
+ * deterministic per-pair evaluations (direction, Earned_Confidence vs the
+ * threshold, choppiness), routed through the sanctioned `signal_rationale` role
+ * so its output is a display-only `LlmTagged<string>`.
+ *
+ * Fail-safe and optional: returns `undefined` when no LLM is configured, when
+ * there are no evaluations to summarise, or when the model errors (logged
+ * secret-free) — so a provider outage degrades to "no note" and never blocks the
+ * firing view or the snapshot write. The note NEVER re-enters scoring (the
+ * tagged value is excluded by `Deterministic<T>` + the `ScoringInputGuard`).
+ */
+async function buildDailyNote(
+  decisionDate: TradingDate,
+  evaluations: readonly PairEvaluation[],
+  deps: DisplayOnlyDeps,
+): Promise<DailyNoteWrite | undefined> {
+  const llm = deps.llm;
+  if (llm === undefined || evaluations.length === 0) {
+    return undefined;
+  }
+
+  const input: DailyCommentaryInput = {
+    decisionDate,
+    confidenceThreshold: DEFAULT_CONFIDENCE_THRESHOLD,
+    pairs: evaluations.map((ev) => ({
+      pair: ev.pair,
+      direction: ev.direction,
+      earnedConfidence: ev.earnedConfidence,
+      choppiness: ev.choppiness,
+      fired:
+        ev.direction !== "FLAT" && ev.earnedConfidence >= DEFAULT_CONFIDENCE_THRESHOLD,
+    })),
+  };
+
+  try {
+    const note = await generateDailyCommentary(llm, input);
+    return { decisionDate, note };
+  } catch (err) {
+    logDailyNoteWarning(err);
+    return undefined;
+  }
+}
+
+/** Structured, secret-free warning for a daily-note producer failure. */
+function logDailyNoteWarning(err: unknown): void {
+  const message = err instanceof Error ? err.message : String(err);
+  console.warn(
+    JSON.stringify({ event: "scheduled_run.display_warning", producer: "daily_note", message }),
+  );
+}
+
 /** Structured, secret-free warning for a per-pair display producer failure. */
 function logDisplayWarning(producer: string, pair: Pair, err: unknown): void {
   const message = err instanceof Error ? err.message : String(err);
@@ -191,17 +256,19 @@ export async function buildDisplayOnly(
   evaluations: readonly PairEvaluation[],
   deps: DisplayOnlyDeps,
 ): Promise<DisplayOnlyWrite | undefined> {
-  const [rationales, comparisons] = await Promise.all([
+  const [rationales, comparisons, dailyNote] = await Promise.all([
     buildRationales(view, deps),
     buildComparisons(view.decisionDate, evaluations, deps),
+    buildDailyNote(view.decisionDate, evaluations, deps),
   ]);
 
-  if (rationales.length === 0 && comparisons.length === 0) {
+  if (rationales.length === 0 && comparisons.length === 0 && dailyNote === undefined) {
     return undefined;
   }
   return {
     ...(rationales.length > 0 ? { rationales } : {}),
     ...(comparisons.length > 0 ? { comparisons } : {}),
+    ...(dailyNote !== undefined ? { dailyNote } : {}),
   };
 }
 

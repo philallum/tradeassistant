@@ -22,14 +22,27 @@
 // exactly as the two allowlists used to be kept in lockstep by hand.
 
 import type { DashboardView } from "../dashboard/index.js";
+import type { PairEvaluation } from "../dashboard/index.js";
+import { DEFAULT_CONFIDENCE_THRESHOLD } from "../dashboard/index.js";
 import type {
+  DailyNoteWrite,
   DisplayOnlyWrite,
   ReferenceComparisonWrite,
   SignalRationaleWrite,
 } from "../storage/supabase/index.js";
 
-/** The schema version of the snapshot envelope, bumped if the shape changes. */
-export const SNAPSHOT_SCHEMA_VERSION = 1 as const;
+/**
+ * The schema version of the snapshot envelope, bumped if the shape changes.
+ * v2 added the `pairEvaluations` slice (the per-pair run-completion readout: all
+ * five pairs' deterministic direction + earned confidence + choppiness for the
+ * run, so a no-fire day shows a credible "run completed" summary rather than a
+ * bare "no data" notice). v3 added the pair-INDEPENDENT `dailyCommentary` slice
+ * (a short display-only AI note produced every trading day, fired or not, as an
+ * LLM-path liveness signal). The SPA tolerates a version mismatch (best-effort
+ * render) and defaults an absent slice to its empty value, so each bump is
+ * backward- and forward-compatible.
+ */
+export const SNAPSHOT_SCHEMA_VERSION = 3 as const;
 
 /** The canonical file name the SPA fetches as a same-origin static asset. */
 export const SNAPSHOT_FILE_NAME = "dashboard.json" as const;
@@ -88,6 +101,28 @@ export interface SnapshotRealizedOutcomeRow {
   readonly matured: boolean;
 }
 
+/**
+ * A per-pair deterministic evaluation row for the run-completion readout
+ * (schema v2). Unlike `firing_setups` — which exists only for pairs that fired —
+ * this carries EVERY evaluated pair for the Decision_Date, whether or not it
+ * fired, so a silent (no-fire) day can show a credible "the run evaluated all
+ * five pairs" summary with each pair's deterministic Direction_Class, Earned
+ * Confidence, and displayed Choppiness. These are the same deterministic values
+ * the firing decision reads; carrying them outward is display-only and never
+ * re-enters any firing / scoring path.
+ */
+export interface SnapshotPairEvaluationRow {
+  readonly decision_date: string;
+  readonly pair: string;
+  readonly direction: SnapshotDirection;
+  readonly horizon: SnapshotHorizon;
+  readonly earned_confidence: number;
+  /** Whether this pair fired (direction !== FLAT AND confidence >= threshold). */
+  readonly fired: boolean;
+  /** Efficiency-Ratio Choppiness_Metric in [0,1] (~1 clean trend, ~0 chop); displayed only. */
+  readonly choppiness: number;
+}
+
 /** A price (OHLC) candle row. */
 export interface SnapshotCandleRow {
   readonly asset: string;
@@ -113,6 +148,21 @@ export interface SnapshotAiRationaleRow {
   readonly analogue_labels: readonly string[];
   /** Advisory proposals; the daily-run display path emits none, so typically empty. */
   readonly proposals: readonly SnapshotProposal[];
+}
+
+/**
+ * The pair-INDEPENDENT whole-day AI commentary (schema v3). A short display-only
+ * note produced every trading day — fired or not — summarising the day's scan,
+ * doubling as an LLM-path liveness signal. `generated` is `true` only when the
+ * model actually produced a note this run; when the LLM is unavailable (or the
+ * call failed) `generated` is `false` and `note_text` is empty, so the SPA can
+ * show an explicit "commentary unavailable" state rather than fabricating text.
+ * The note is derived only from deterministic numbers and never re-enters scoring.
+ */
+export interface SnapshotDailyCommentary {
+  readonly decision_date: string;
+  readonly note_text: string;
+  readonly generated: boolean;
 }
 
 /** A third-party external-reference comparison row (display-only, research-only). */
@@ -158,10 +208,23 @@ export interface DashboardSnapshot {
   /** Every Decision_Date with persisted data, newest-last (drives the browse selector). */
   readonly decisionDates: readonly string[];
   readonly firingSetups: readonly SnapshotFiringSetupRow[];
+  /**
+   * Every pair evaluated this run (fired or not) with its deterministic
+   * direction + earned confidence + choppiness — the run-completion readout
+   * (schema v2). Empty only when the run supplied no evaluations.
+   */
+  readonly pairEvaluations: readonly SnapshotPairEvaluationRow[];
   readonly analogueOutcomes: readonly SnapshotAnalogueOutcomeRow[];
   readonly realizedOutcomes: readonly SnapshotRealizedOutcomeRow[];
   readonly candles: readonly SnapshotCandleRow[];
   readonly aiRationale: readonly SnapshotAiRationaleRow[];
+  /**
+   * The pair-independent whole-day AI commentary (schema v3). Always present:
+   * when no note was generated this run it carries `generated: false` + an empty
+   * `note_text` for today's Decision_Date, so the SPA renders an explicit state
+   * without guarding for a missing key.
+   */
+  readonly dailyCommentary: SnapshotDailyCommentary;
   readonly externalComparison: readonly SnapshotExternalComparisonRow[];
   readonly evaluationReports: readonly SnapshotEvaluationReportRow[];
 }
@@ -224,6 +287,32 @@ function firingSetupRow(decisionDate: string, card: DashboardView["cards"][numbe
   };
 }
 
+/**
+ * Map the run's full per-pair evaluations into the `pairEvaluations` readout
+ * rows (schema v2). EVERY evaluated pair is carried — fired or not — with its
+ * deterministic direction, earned confidence, horizon, and displayed choppiness,
+ * plus the derived `fired` flag (direction !== FLAT AND confidence >= threshold).
+ * These are display-only outward values and never re-enter the firing / scoring
+ * path. Pure given its inputs. The `confidenceThreshold` defaults to the
+ * dashboard default so a caller that does not thread a custom threshold still
+ * computes the same `fired` flag the view used.
+ */
+export function pairEvaluationRows(
+  decisionDate: string,
+  evaluations: readonly PairEvaluation[],
+  confidenceThreshold: number = DEFAULT_CONFIDENCE_THRESHOLD,
+): readonly SnapshotPairEvaluationRow[] {
+  return evaluations.map((ev) => ({
+    decision_date: decisionDate,
+    pair: ev.pair,
+    direction: ev.direction,
+    horizon: ev.horizon,
+    earned_confidence: ev.earnedConfidence,
+    fired: ev.direction !== "FLAT" && ev.earnedConfidence >= confidenceThreshold,
+    choppiness: ev.choppiness,
+  }));
+}
+
 /** Map a display-only rationale write into a wire-format AI rationale row. */
 function aiRationaleRow(decisionDate: string, write: SignalRationaleWrite): SnapshotAiRationaleRow {
   return {
@@ -237,6 +326,30 @@ function aiRationaleRow(decisionDate: string, write: SignalRationaleWrite): Snap
     // The daily-run display path does not generate research proposals; the slice
     // is present (empty) so the SPA renders without guarding for a missing key.
     proposals: [],
+  };
+}
+
+/**
+ * Map the optional display-only daily note into the wire-format
+ * `dailyCommentary` record. When a note was produced, unwrap its `LlmTagged`
+ * `.value` to plain display text (exactly as `aiRationaleRow` does) and mark
+ * `generated: true`. When absent (no LLM / failed / nothing to summarise), emit
+ * a well-formed `generated: false` record with empty text for `decisionDate`, so
+ * the slice is always present and the SPA shows an explicit "unavailable" state.
+ */
+function dailyCommentaryRecord(
+  decisionDate: string,
+  write: DailyNoteWrite | undefined,
+): SnapshotDailyCommentary {
+  if (write === undefined) {
+    return { decision_date: decisionDate, note_text: "", generated: false };
+  }
+  return {
+    decision_date: decisionDate,
+    // `note` is `LlmTagged<string>` at the write boundary; unwrap `.value` to the
+    // plain display string — display-only, never re-entering scoring.
+    note_text: write.note.value,
+    generated: true,
   };
 }
 
@@ -263,16 +376,19 @@ function externalComparisonRow(
  * slices the run supplied. Pure and deterministic given its inputs (plus the
  * injected `now` for the freshness marker), so it is unit-testable without I/O.
  *
- * @param view        The produced dashboard view (the firing cards).
- * @param displayOnly The display-only writes (AI rationale + external comparison), if any.
- * @param history     History slices already loaded by the run, if any.
- * @param now         Injected clock for the freshness marker (defaults to `new Date()`).
+ * @param view            The produced dashboard view (the firing cards).
+ * @param displayOnly     The display-only writes (AI rationale + external comparison), if any.
+ * @param history         History slices already loaded by the run, if any.
+ * @param now             Injected clock for the freshness marker (defaults to `new Date()`).
+ * @param pairEvaluations The per-pair run-completion readout rows (every pair
+ *                        evaluated this run, fired or not). Omitted → `[]`.
  */
 export function buildDashboardSnapshot(
   view: DashboardView,
   displayOnly: DisplayOnlyWrite | undefined,
   history: SnapshotHistory = {},
   now: Date = new Date(),
+  pairEvaluations: readonly SnapshotPairEvaluationRow[] = [],
 ): DashboardSnapshot {
   const decisionDate = view.decisionDate;
   const todayFiring = view.cards.map((card) => firingSetupRow(decisionDate, card));
@@ -283,6 +399,7 @@ export function buildDashboardSnapshot(
   const externalComparison = (displayOnly?.comparisons ?? []).map((w) =>
     externalComparisonRow(decisionDate, w),
   );
+  const dailyCommentary = dailyCommentaryRecord(decisionDate, displayOnly?.dailyNote);
 
   // The browse selector lists every Decision_Date with persisted data. Union
   // today's date with the supplied history and sort ascending (newest-last, as
@@ -298,10 +415,12 @@ export function buildDashboardSnapshot(
     generatedAt: now.toISOString(),
     decisionDates,
     firingSetups,
+    pairEvaluations,
     analogueOutcomes: history.analogueOutcomes ?? [],
     realizedOutcomes: history.realizedOutcomes ?? [],
     candles: history.candles ?? [],
     aiRationale,
+    dailyCommentary,
     externalComparison,
     evaluationReports: history.evaluationReports ?? [],
   };

@@ -13,7 +13,11 @@
 // They are pure structural types with type-only dependencies — no secret, no
 // REST client, no DB access.
 
-import type { AnalogueLabels, SignalRationaleText } from "../../rationale/index.js";
+import type {
+  AnalogueLabels,
+  DailyCommentaryText,
+  SignalRationaleText,
+} from "../../rationale/index.js";
 import type {
   ExternalReferenceSignal,
   ReferenceComparison,
@@ -54,11 +58,27 @@ export interface ReferenceComparisonWrite {
 }
 
 /**
+ * A display-only whole-day AI commentary note for a Decision_Date — a short
+ * plain-language summary of the day's scan, produced EVERY trading day (fired or
+ * not) as an LLM-path liveness signal. The note arrives as its `LlmTagged<…>`
+ * provenance marker (`DailyCommentaryText` from `src/rationale`); it is unwrapped
+ * at the snapshot boundary and never re-enters scoring. Pair-INDEPENDENT (one
+ * note per Decision_Date, not per pair).
+ */
+export interface DailyNoteWrite {
+  readonly decisionDate: string;
+  /** LLM-produced whole-day commentary (provenance-tagged, display-only). */
+  readonly note: DailyCommentaryText;
+}
+
+/**
  * The display-only payload carried alongside a Decision_Date's firing view into
- * the snapshot. Both collections are optional so a run with no rationale / no
- * reference simply carries nothing for that slice.
+ * the snapshot. Every field is optional so a run with no rationale / no
+ * reference / no note simply carries nothing for that slice.
  */
 export interface DisplayOnlyWrite {
   readonly rationales?: readonly SignalRationaleWrite[];
   readonly comparisons?: readonly ReferenceComparisonWrite[];
+  /** The pair-independent whole-day AI commentary note, when generated. */
+  readonly dailyNote?: DailyNoteWrite;
 }

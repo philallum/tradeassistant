@@ -38,12 +38,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ApiResult } from "../../api/snapshot";
 import { getSnapshot } from "../../api/snapshotCache";
-import type { DecisionDateRow, FiringSetupRow } from "../../api/types";
+import type {
+  DailyCommentary,
+  DecisionDateRow,
+  FiringSetupRow,
+  PairEvaluationRow,
+} from "../../api/types";
+import { shapeDailyNote } from "../../pure/shapeDailyNote";
 import { selectBrowseDate } from "../../pure/selectDates";
 import { shapeDashboardView } from "../../pure/shapeDashboard";
+import { shapeRunSummary } from "../../pure/shapeRunSummary";
 import { ALL_PAIRS, useSelection } from "../../state/selection";
 import { theme } from "../../theme/darkTheme";
+import { DailyNote } from "./DailyNote";
 import { FiringCard } from "./FiringCard";
+import { RunSummary } from "./RunSummary";
 import { resolveSetupsViewState } from "./setupsViewState";
 import { SuppressionList } from "./SuppressionList";
 
@@ -65,6 +74,18 @@ export type FiringSetupsLoader = (
   decisionDate: string,
   options?: SetupsLoadOptions,
 ) => Promise<ApiResult<FiringSetupRow>>;
+
+/** Loader for a Decision_Date's per-pair evaluation rows (the run-completion readout). */
+export type PairEvaluationsLoader = (
+  decisionDate: string,
+  options?: SetupsLoadOptions,
+) => Promise<ApiResult<PairEvaluationRow>>;
+
+/** Loader for the pair-independent daily AI commentary (the LLM-path liveness note). */
+export type DailyCommentaryLoader = (
+  decisionDate: string,
+  options?: SetupsLoadOptions,
+) => Promise<DailyCommentary>;
 
 /** Resolve the shared snapshot for a load, forwarding the generation + abort signal. */
 function snapshotFor(options?: SetupsLoadOptions) {
@@ -91,11 +112,36 @@ const defaultLoadFiringSetups: FiringSetupsLoader = async (decisionDate, options
   };
 };
 
+const defaultLoadPairEvaluations: PairEvaluationsLoader = async (decisionDate, options) => {
+  // Every evaluated pair for the date (fired or not) — drives the silent-day run-completion
+  // readout. Scoped to the Decision_Date, consistent with the firing-setups loader.
+  const snapshot = await snapshotFor(options);
+  return {
+    rows: snapshot.pairEvaluations.filter((r) => r.decision_date === decisionDate),
+    lastUpdated: snapshot.generatedAt === "" ? null : snapshot.generatedAt,
+  };
+};
+
+const defaultLoadDailyCommentary: DailyCommentaryLoader = async (decisionDate, options) => {
+  // The snapshot's single pair-independent note. Return it only when it matches the browsed
+  // Decision_Date (the snapshot carries today's note); otherwise an absent record so a
+  // historical date never shows today's note.
+  const snapshot = await snapshotFor(options);
+  const c = snapshot.dailyCommentary;
+  return c.decision_date === decisionDate
+    ? c
+    : { decision_date: "", note_text: "", generated: false };
+};
+
 export interface SetupsTabProps {
   /** Decision_Dates loader; defaults to the real `/decision-dates` fetch. */
   readonly loadDecisionDates?: DecisionDatesLoader;
   /** Firing-setups loader; defaults to the real `/firing-setups` fetch. */
   readonly loadFiringSetups?: FiringSetupsLoader;
+  /** Per-pair evaluations loader (run-completion readout); defaults to the snapshot slice. */
+  readonly loadPairEvaluations?: PairEvaluationsLoader;
+  /** Daily AI commentary loader (the LLM-path liveness note); defaults to the snapshot slice. */
+  readonly loadDailyCommentary?: DailyCommentaryLoader;
   /** Bumped by the shell to force a cache-busting refresh (Req 17.1, 17.2). */
   readonly refreshNonce?: number;
 }
@@ -104,7 +150,12 @@ export interface SetupsTabProps {
 type LoadState =
   | { readonly kind: "loading" }
   | { readonly kind: "error"; readonly message: string }
-  | { readonly kind: "ready"; readonly rows: readonly FiringSetupRow[] };
+  | {
+      readonly kind: "ready";
+      readonly rows: readonly FiringSetupRow[];
+      readonly pairEvaluations: readonly PairEvaluationRow[];
+      readonly dailyCommentary: DailyCommentary;
+    };
 
 /** Shared tabpanel wrapper so every state renders inside the correct ARIA panel + heading. */
 function Panel({ children }: { children: React.ReactNode }): JSX.Element {
@@ -148,6 +199,8 @@ function StatusMessage({
 export function SetupsTab({
   loadDecisionDates = defaultLoadDecisionDates,
   loadFiringSetups = defaultLoadFiringSetups,
+  loadPairEvaluations = defaultLoadPairEvaluations,
+  loadDailyCommentary = defaultLoadDailyCommentary,
   refreshNonce = 0,
 }: SetupsTabProps): JSX.Element {
   const { pair, date } = useSelection();
@@ -177,14 +230,31 @@ export function SetupsTab({
         const effectiveDate = selectBrowseDate(dates, date);
 
         if (effectiveDate === null) {
-          // No runs persisted at all → "no data for this date" with an empty row set.
-          setState({ kind: "ready", rows: [] });
+          // No runs persisted at all → "no data for this date" with empty rows + no note.
+          setState({
+            kind: "ready",
+            rows: [],
+            pairEvaluations: [],
+            dailyCommentary: { decision_date: "", note_text: "", generated: false },
+          });
           return;
         }
 
-        const rowsResult = await loadFiringSetups(effectiveDate, opts);
+        // All reads share the one cached snapshot (same generation), so this is a single
+        // fetch. The per-pair readout drives the silent-day summary; the daily note is the
+        // pair-independent AI commentary shown every trading day.
+        const [rowsResult, evalResult, commentary] = await Promise.all([
+          loadFiringSetups(effectiveDate, opts),
+          loadPairEvaluations(effectiveDate, opts),
+          loadDailyCommentary(effectiveDate, opts),
+        ]);
         if (signal.aborted || !mounted.current) return;
-        setState({ kind: "ready", rows: rowsResult.rows });
+        setState({
+          kind: "ready",
+          rows: rowsResult.rows,
+          pairEvaluations: evalResult.rows,
+          dailyCommentary: commentary,
+        });
       } catch (cause) {
         if (signal.aborted || !mounted.current) return;
         if (cause instanceof DOMException && cause.name === "AbortError") return;
@@ -196,7 +266,7 @@ export function SetupsTab({
         setState({ kind: "error", message });
       }
     },
-    [date, loadDecisionDates, loadFiringSetups, refreshNonce],
+    [date, loadDecisionDates, loadFiringSetups, loadPairEvaluations, loadDailyCommentary, refreshNonce],
   );
 
   // (Re)load whenever the browsed date or the refresh signal changes. A bumped
@@ -236,6 +306,13 @@ export function SetupsTab({
   const scope = pair === ALL_PAIRS ? ALL_PAIRS : pair;
   const model = shapeDashboardView(state.rows, scope);
   const viewState = resolveSetupsViewState(model, pair);
+  // The run-completion readout for the silent (no-fire) state (schema v2). Absent on an
+  // older v1 snapshot, in which case the silent branch keeps the plain message.
+  const runSummary = shapeRunSummary(state.pairEvaluations);
+  // The pair-independent daily AI commentary (schema v3) — shown on EVERY trading day as an
+  // LLM-path liveness signal, in both the silent and content states. `absent` on an older
+  // snapshot (the component renders nothing then).
+  const dailyNote = shapeDailyNote(state.dailyCommentary);
 
   if (viewState === "no-data-date") {
     return (
@@ -254,11 +331,17 @@ export function SetupsTab({
   }
 
   // `silent` and `content` both render the suppression list; `silent` additionally shows an
-  // explicit "no setups fired" message and no cards (Req 13.1, 13.2).
+  // explicit "no setups fired" message and no cards (Req 13.1, 13.2). The daily AI note is
+  // rendered FIRST in both states so it appears every trading day (Req: liveness signal).
   return (
     <Panel>
+      <DailyNote note={dailyNote} />
       {viewState === "silent" ? (
-        <StatusMessage text="No setups fired for this date." />
+        runSummary.present ? (
+          <RunSummary summary={runSummary} />
+        ) : (
+          <StatusMessage text="No setups fired for this date." />
+        )
       ) : (
         <section aria-labelledby="setups-cards-heading" style={{ marginBottom: theme.spacing.lg }}>
           <h3

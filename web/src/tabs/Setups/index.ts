@@ -11,8 +11,12 @@ export type {
   SetupsTabProps,
   DecisionDatesLoader,
   FiringSetupsLoader,
+  PairEvaluationsLoader,
+  DailyCommentaryLoader,
 } from "./SetupsTab";
 export { FiringCard } from "./FiringCard";
+export { RunSummary } from "./RunSummary";
+export { DailyNote } from "./DailyNote";
 export { SuppressionList } from "./SuppressionList";
 export { resolveSetupsViewState } from "./setupsViewState";
 export type { SetupsViewState } from "./setupsViewState";

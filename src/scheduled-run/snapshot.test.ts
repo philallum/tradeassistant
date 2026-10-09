@@ -25,6 +25,7 @@ import type {
 import type { ExternalReferenceSignal } from "../external-signal/index.js";
 import {
   buildDashboardSnapshot,
+  pairEvaluationRows,
   serializeSnapshot,
   writeDashboardSnapshot,
   SNAPSHOT_FILE_NAME,
@@ -134,6 +135,40 @@ describe("buildDashboardSnapshot — serialises the view + display-only + histor
     ]);
   });
 
+  it("maps a generated daily note into the dailyCommentary record (unwrapped, generated:true)", () => {
+    const dailyNote = {
+      decisionDate: "2024-03-15",
+      note: tagLlmOutput(
+        "No setups cleared the 55% threshold today; conditions were choppy.",
+        "signal_rationale",
+        FIXED_NOW.toISOString(),
+      ),
+    };
+    const snapshot = buildDashboardSnapshot(
+      viewFor("2024-03-15"),
+      { dailyNote },
+      {},
+      FIXED_NOW,
+    );
+
+    expect(snapshot.dailyCommentary).toEqual({
+      decision_date: "2024-03-15",
+      note_text: "No setups cleared the 55% threshold today; conditions were choppy.",
+      generated: true,
+    });
+    // The unwrapped text is a plain string — the LlmTagged brand never serialises.
+    expect(JSON.stringify(snapshot.dailyCommentary)).not.toContain("provenance");
+  });
+
+  it("emits an explicit generated:false dailyCommentary when no note was produced", () => {
+    const snapshot = buildDashboardSnapshot(viewFor("2024-03-15"), undefined, {}, FIXED_NOW);
+    expect(snapshot.dailyCommentary).toEqual({
+      decision_date: "2024-03-15",
+      note_text: "",
+      generated: false,
+    });
+  });
+
   it("carries supplied history slices verbatim", () => {
     const snapshot = buildDashboardSnapshot(
       viewFor("2024-03-15"),
@@ -168,12 +203,20 @@ describe("buildDashboardSnapshot — serialises the view + display-only + histor
     const snapshot = buildDashboardSnapshot(dailyRun("2024-03-16", []), undefined, {}, FIXED_NOW);
 
     expect(snapshot.firingSetups).toEqual([]);
+    expect(snapshot.pairEvaluations).toEqual([]);
     expect(snapshot.analogueOutcomes).toEqual([]);
     expect(snapshot.realizedOutcomes).toEqual([]);
     expect(snapshot.candles).toEqual([]);
     expect(snapshot.aiRationale).toEqual([]);
     expect(snapshot.externalComparison).toEqual([]);
     expect(snapshot.evaluationReports).toEqual([]);
+    // The daily-commentary slice is ALWAYS present; with no note it carries an
+    // explicit generated:false record for today's Decision_Date.
+    expect(snapshot.dailyCommentary).toEqual({
+      decision_date: "2024-03-16",
+      note_text: "",
+      generated: false,
+    });
     // decisionDates always carries at least today's Decision_Date so it is
     // selectable in the browse control even with no history supplied.
     expect(snapshot.decisionDates).toEqual(["2024-03-16"]);
@@ -234,6 +277,86 @@ describe("buildDashboardSnapshot — serialises the view + display-only + histor
     // decisionDates comes from history.decisionDates (not supplied here) unioned
     // with today — the firing-setups merge does not itself contribute dates.
     expect(snapshot.decisionDates).toEqual(["2024-03-15"]);
+  });
+
+  it("carries the per-pair run-completion readout (pairEvaluations) for every evaluated pair", () => {
+    // Two pairs evaluated: one fires (UP, 0.9 ≥ 0.55), one does not (DOWN, 0.4 < 0.55).
+    const evals: PairEvaluation[] = [
+      firingEvaluation(), // EURUSD UP 0.9 → fired
+      {
+        pair: "GBPUSD",
+        earnedConfidence: 0.4 as Confidence,
+        direction: "DOWN",
+        horizon: 1,
+        excursionProfile: { favorablePips: 10, adversePips: 8 },
+        stopLossPips: null,
+        takeProfitPips: null,
+        choppiness: 0.3,
+        rationale: "",
+        analogueLabels: [],
+      },
+    ];
+    const rows = pairEvaluationRows("2024-03-15", evals);
+    const snapshot = buildDashboardSnapshot(
+      viewFor("2024-03-15"),
+      undefined,
+      {},
+      FIXED_NOW,
+      rows,
+    );
+
+    expect(snapshot.pairEvaluations).toHaveLength(2);
+    const eur = snapshot.pairEvaluations.find((r) => r.pair === "EURUSD")!;
+    const gbp = snapshot.pairEvaluations.find((r) => r.pair === "GBPUSD")!;
+    // Verbatim deterministic values, plus the derived fired flag.
+    expect(eur).toMatchObject({
+      decision_date: "2024-03-15",
+      direction: "UP",
+      earned_confidence: 0.9,
+      choppiness: 0.8,
+      fired: true,
+    });
+    expect(gbp).toMatchObject({
+      direction: "DOWN",
+      earned_confidence: 0.4,
+      choppiness: 0.3,
+      fired: false,
+    });
+  });
+
+  it("pairEvaluationRows: a FLAT pair never counts as fired even at high confidence", () => {
+    const rows = pairEvaluationRows("2024-03-15", [
+      {
+        pair: "USDJPY",
+        earnedConfidence: 0.99 as Confidence,
+        direction: "FLAT",
+        horizon: 1,
+        excursionProfile: { favorablePips: 0, adversePips: 0 },
+        stopLossPips: null,
+        takeProfitPips: null,
+        choppiness: 0.5,
+        rationale: "",
+        analogueLabels: [],
+      },
+    ]);
+    expect(rows[0]!.fired).toBe(false);
+  });
+
+  it("pairEvaluationRows: respects a custom confidence threshold for the fired flag", () => {
+    const ev: PairEvaluation = {
+      pair: "USDCHF",
+      earnedConfidence: 0.6 as Confidence,
+      direction: "UP",
+      horizon: 2,
+      excursionProfile: { favorablePips: 20, adversePips: 10 },
+      stopLossPips: 10,
+      takeProfitPips: 20,
+      choppiness: 0.7,
+      rationale: "",
+      analogueLabels: [],
+    };
+    expect(pairEvaluationRows("2024-03-15", [ev], 0.55)[0]!.fired).toBe(true);
+    expect(pairEvaluationRows("2024-03-15", [ev], 0.7)[0]!.fired).toBe(false);
   });
 
   it("round-trips through serializeSnapshot → JSON.parse unchanged", () => {

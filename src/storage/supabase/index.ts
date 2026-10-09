@@ -39,6 +39,7 @@ export {
   type DisplayOnlyWrite,
   type SignalRationaleWrite,
   type ReferenceComparisonWrite,
+  type DailyNoteWrite,
 } from "./displayOnlyTypes.js";
 
 /**

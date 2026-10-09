@@ -15,3 +15,9 @@ export type {
   AnalogueLabels,
 } from "./types.js";
 export { generateSignalRationale, generatePatternDescription } from "./rationale.js";
+export type {
+  DailyCommentaryPair,
+  DailyCommentaryInput,
+  DailyCommentaryText,
+} from "./dailyCommentary.js";
+export { generateDailyCommentary, toDailyCommentaryInput } from "./dailyCommentary.js";

@@ -46,10 +46,12 @@ const FULL_SNAPSHOT: DashboardSnapshot = {
   generatedAt: "2024-03-15T21:00:00.000Z",
   decisionDates: ["2024-03-14", "2024-03-15"],
   firingSetups: [],
+  pairEvaluations: [],
   analogueOutcomes: [],
   realizedOutcomes: [],
   candles: [],
   aiRationale: [],
+  dailyCommentary: { decision_date: "", note_text: "", generated: false },
   externalComparison: [],
   evaluationReports: [],
 };
@@ -131,6 +133,8 @@ describe("loadSnapshot — parsing + empty slices (R5.5)", () => {
     expect(snapshot.aiRationale).toEqual([]);
     expect(snapshot.externalComparison).toEqual([]);
     expect(snapshot.evaluationReports).toEqual([]);
+    expect(snapshot.pairEvaluations).toEqual([]);
+    expect(snapshot.dailyCommentary).toEqual({ decision_date: "", note_text: "", generated: false });
     expect(snapshot.decisionDates).toEqual([]);
   });
 
