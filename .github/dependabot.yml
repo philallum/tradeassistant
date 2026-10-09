@@ -1,0 +1,59 @@
+# Dependabot configuration.
+#
+# Rationale: the vite / vitest / @vitejs/plugin-react trio in /web share tightly
+# coupled peer-dependency ranges. Ungrouped (default) updates bumped one package
+# while leaving its peers behind, which made `npm ci` fail with ERESOLVE in CI
+# (e.g. vitest@5 requires vite ^6||^7||^8 but the pin stayed on vite 5). Grouping
+# makes Dependabot propose them as a single atomic PR so the peer set moves
+# together and stays installable. All resulting bumps are pinned to exact
+# versions by the manifests (no ranges), per the repo version policy.
+version: 2
+updates:
+  # Root deterministic core (src/). Core has no runtime deps; these are dev/tooling.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      dev-tooling:
+        dependency-type: development
+        patterns:
+          - "*"
+
+  # Standalone read-only dashboard SPA (web/). Separate lockfile + toolchain.
+  - package-ecosystem: npm
+    directory: "/web"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # The coupled build/test toolchain whose peer ranges must move together.
+      vite-vitest-toolchain:
+        patterns:
+          - "vite"
+          - "vitest"
+          - "@vitest/*"
+          - "@vitejs/*"
+          - "tinypool"
+          - "esbuild"
+      web-dev-tooling:
+        dependency-type: development
+        exclude-patterns:
+          - "vite"
+          - "vitest"
+          - "@vitest/*"
+          - "@vitejs/*"
+          - "tinypool"
+          - "esbuild"
+
+  # Keep GitHub Actions used by CI/deploy workflows current.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"
