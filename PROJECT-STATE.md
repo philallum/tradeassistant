@@ -263,6 +263,20 @@ liveness was proven under `simplify-to-cloud-minimal` task 8.
   tsconfig `types`, so the build type-checks the Node-built-in imports in its
   test files under a clean CI install. (The Python cross-check is not wired into
   CI.)
+- **Version-policy stage (hardened).** The Version-policy CI stage
+  (`scripts/version-policy.mjs`) now (a) audits BOTH the root AND the `web/`
+  package trees for exact, non-prerelease pins (previously it only audited root),
+  and (b) enforces `SUPPORTED_MAJOR_CEILINGS` (`typescript<=6`,
+  `@types/node<=22`, `react`/`react-dom`/`@types/react`/`@types/react-dom<=18`,
+  `recharts<=2`) via the pure `auditCeilings` logic in the shared
+  `src/version-policy/audit.js` (typed by `audit.d.ts`, surfaced through
+  `versionPolicy.ts` as `VersionPolicyCheck.auditCeilings`), failing CI
+  (non-zero exit) if any pin exceeds its supported major. The ceilings are kept
+  consistent with the `.github/dependabot.yml` ignore rules and exist because
+  TypeScript 7 is blocked upstream (typescript-eslint peer stops `<6.1.0` until
+  the TS 7.1 API) and React 19 / recharts 3 are deferred breaking migrations.
+  Covered by `src/version-policy/ceilings.test.ts` (7 unit + 2 fast-check
+  property tests).
 - **Deploy** (`.github/workflows/deploy.yml`): on push to `main`, a two-target
   path-filtered pipeline. A `changes` job (`dorny/paths-filter@v3`) emits
   `backend`/`frontend` flags. BACKEND (gated on `backend`): full quality gate →
@@ -584,6 +598,7 @@ liveness was proven under `simplify-to-cloud-minimal` task 8.
 - **Candle freshness via a provider fallback chain (new spec `daily-candle-freshness-and-cleanup`, requirements phase).** The live loop was found to run on stale candles (hosted history ended 2026-09-15 with no daily ingestion). The chosen fix adds a Candle_Freshness_Stage to the daily run that tops-up the prior day's candle and auto-backfills any gap BEFORE the deterministic pipeline reads history, reusing the existing `OhlcIngestion` validation + idempotent `(asset,date)` upsert (Look_Ahead_Safe, no re-implementation). Data comes from an ordered Provider_Fallback_Chain — FCS (primary, the connection already used for the display-only cross-reference) → Twelve Data → Massive — each resolved from its own `.env` API key by name (`EXTERNAL_SIGNAL_API_KEY` / `TWELVE_DATA_API_KEY` / `MASSIVE_API_KEY`), tried in order with first-usable-wins and skip-and-proceed-on-total-failure, each native response normalized to the single internal `RawCandle` shape over zero-SDK `fetch`. This keeps the daily loop producing current-day signals and self-heals a missed run, without a new credential or provider dependency. Requirements only so far; design/tasks/implementation pending.
 - **Incremental CI/CD delivery cadence (operator).** Work ships milestone-by-milestone: implement a coherent task set locally (keeping `make check` + web build green), the operator merges `dev`→`main` to trigger the Deploy workflow, verify, then the next milestone. The agent builds + verifies locally and does NOT run GitHub/PR/merge/deploy actions — the operator handles all GitHub. ☁️ live steps (one-off backfill, Vertex grant, secret rotation) remain operator-gated with the exact command shown first.
 - **Dashboard "All pairs" shows cross-pair detail, not a pick-a-pair prompt (dashboard-ui Req 8 criterion 8, this turn).** The operator's "nothing from the third-party API" report was diagnosed as a UX dead-end, not a data defect: the FCS external-comparison data is present in the live `dashboard.json` and the deployed SPA is current, but the AI, Third-party, and Pattern/Outcomes tabs each render a "pick a pair" prompt when the Pair_Selector is on the default "All pairs" (original dashboard-ui Req 8.2). Decision: those three per-pair tabs will render a cross-pair view over all five pairs on "All pairs" (verbatim snapshot values + explicit per-pair no-data markers), matching how the Setups tab already behaves, so the default landing view never hides present data. Requirements amended + format-valid; implementation pending.
+- **Supported-major dependency ceilings enforced in CI; React 19 / recharts 3 / TS 7 deferred (operator-approved, this turn).** To stop recurring Dependabot ERESOLVE / unsupported-major CI failures, a durable supported-major ceiling is now enforced across BOTH package trees via `auditCeilings`/`SUPPORTED_MAJOR_CEILINGS` in `scripts/version-policy.mjs`, with matching `.github/dependabot.yml` ignore rules. React 18→19, recharts 2→3, and TypeScript 5→7 are held as explicit, CI-guarded DEFERRED migrations (recharts 3 breaks the Tooltip Formatter API; React 19 has recharts-2 peer constraints; TS 7 is blocked upstream by typescript-eslint until the TS 7.1 API) rather than being force-upgraded now. See §9 bucket (e).
 
 ## 7. Obstacles / open risks
 
@@ -776,6 +791,12 @@ liveness was proven under `simplify-to-cloud-minimal` task 8.
   of the new spec `daily-candle-freshness-and-cleanup`: the git-history backup
   removal is R8, the Dependabot triage/fix is **R9 — DONE (see §9 below)**, /web
   toolchain upgraded to vite 7 / vitest 3.2.4 to clear the Dependabot-PR CI failures.
+  The recurring Dependabot ERESOLVE / unsupported-major CI failures are now
+  STRUCTURALLY addressed by a CI-enforced supported-major-ceiling policy
+  (`auditCeilings`/`SUPPORTED_MAJOR_CEILINGS` across both package trees) plus
+  matching `.github/dependabot.yml` ignore rules, with React 19 / recharts 3 /
+  TypeScript 7 held as documented DEFERRED migrations (TS 7 blocked upstream
+  until typescript-eslint supports the TS 7.1 API). See §9 for detail.
 
 ## 8. Immediate next steps
 
@@ -968,6 +989,38 @@ was added that GROUPS the coupled `vite` / `vitest` / `@vitejs/*` / `@vitest/*`
 / `tinypool` / `esbuild` packages into a single atomic `vite-vitest-toolchain`
 PR per `/web` run, so the peer set moves together and the ungrouped-partial-bump
 ERESOLVE failure (one package bumped while its peers lagged) cannot recur.
+
+**(e) Durable supported-major-ceiling policy — CI-ENFORCED (this turn).** To
+stop the recurring Dependabot ERESOLVE / unsupported-major CI failures and keep
+all future dependency work on supported majors, a durable supported-major
+ceiling is now enforced in CI: `scripts/version-policy.mjs` audits BOTH package
+trees (root `package.json` and `web/package.json`) for exact pins AND enforces
+`SUPPORTED_MAJOR_CEILINGS` via the pure `auditCeilings` logic in the shared
+`src/version-policy/audit.js` (surfaced through `versionPolicy.ts`), exiting
+non-zero on any violation. Ceilings: `typescript<=6`, `@types/node<=22`,
+`react`/`react-dom`/`@types/react`/`@types/react-dom<=18`, `recharts<=2`
+(covered by `src/version-policy/ceilings.test.ts` — 7 unit + 2 fast-check
+property tests). `.github/dependabot.yml` was extended to match: a new `react`
+group under `/web` (react, react-dom, @types/react, @types/react-dom move
+atomically) plus `ignore` rules holding the blocked/deferred majors consistent
+with the ceilings constant (root + web `typescript >=7`; `@types/node >=23`;
+web `react`/`react-dom`/`@types/react`/`@types/react-dom >=19`; web
+`recharts >=3`). React 19, recharts 3, and TypeScript 7 are DEFERRED migrations
+held behind these ceilings rather than silent CI failures: recharts 3 has a
+breaking Tooltip Formatter API, React 19 is a major with recharts-2 peer
+constraints, and TS 7 is blocked upstream by typescript-eslint (peer `<6.1.0`
+until the TS 7.1 API) — TypeScript 7 can be revisited once typescript-eslint
+supports that API. Separately, a latent fast-check-4 test-arbitrary bug in
+`web/src/pure/selectDates.browse.property.test.ts` (its `fc.date()` arbitrary
+could yield an Invalid Date → `RangeError`) was fixed with a safe YYYY-MM-DD
+builder that works under fast-check 3 and 4; the production `selectDates.ts` was
+correct and untouched. STRATEGIC DECISION (operator-approved): enforce the
+supported-major ceilings in CI and defer the React 19 / recharts 3 / TS 7 majors
+as explicit, CI-guarded decisions. All changes are locally verified green (root
+`npm run check` 773 passed/6 skipped incl. the 10 new ceiling tests; `node
+scripts/version-policy.mjs` exit 0 over 22 specs across both trees; web build +
+146 tests green; dependabot.yml valid YAML) but are UNCOMMITTED on branch `dev`,
+so Dependabot's live behavior is not yet confirmed against GitHub.
 
 ## Notes on maintenance
 

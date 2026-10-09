@@ -49,7 +49,37 @@ export interface UpgradeCandidate {
   readonly available: string;
 }
 
+/** A map of package name -> maximum allowed major version (integer). */
+export type SupportedMajorCeilings = Readonly<Record<string, number>>;
+
+/** A specification that exceeds its supported-major ceiling. */
+export interface CeilingViolation {
+  readonly name: string;
+  readonly source: string;
+  readonly spec: string;
+  readonly major: number;
+  readonly ceiling: number;
+  readonly reason: string;
+}
+
+/** Result of auditing specifications against supported-major ceilings. */
+export interface CeilingAuditResult {
+  readonly ok: boolean;
+  readonly violations: readonly CeilingViolation[];
+}
+
+/**
+ * Canonical supported-major ceilings. Kept consistent with the Dependabot
+ * `ignore:` rules in `.github/dependabot.yml` (see that file and audit.js).
+ */
+export const SUPPORTED_MAJOR_CEILINGS: SupportedMajorCeilings;
+
 export function auditSpecs(specs: readonly VersionSpec[]): AuditResult;
+
+export function auditCeilings(
+  specs: readonly VersionSpec[],
+  ceilings: SupportedMajorCeilings,
+): CeilingAuditResult;
 
 export function collectSpecs(
   pkg: unknown,

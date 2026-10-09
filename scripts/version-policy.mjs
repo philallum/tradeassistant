@@ -22,12 +22,30 @@
 //
 // This keeps the automated failing check (18.8) focused on the dependency pins
 // it is defined to guard, while still surfacing the recorded runtime line.
+//
+// SCOPE: both package trees are audited. The root manifest (package.json,
+// source "dependencies"/"devDependencies") AND the standalone dashboard SPA
+// (web/package.json, source "web/dependencies"/"web/devDependencies") are
+// checked for exact pins, so a non-exact spec in EITHER tree fails CI.
+//
+// SUPPORTED-MAJOR CEILINGS: in addition to the exact-pin check, every spec in
+// both trees is audited against SUPPORTED_MAJOR_CEILINGS (defined in
+// src/version-policy/audit.js). A pin whose major exceeds its ceiling fails CI
+// loud. These ceilings are the durable record of deliberately-held majors
+// (TS7 blocked upstream; React 19 / recharts 3 deferred migrations; @types/node
+// tracking the Node 22 line) and MUST stay consistent with the Dependabot
+// `ignore:` rules in .github/dependabot.yml.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { auditSpecs, collectSpecs } from "../src/version-policy/audit.js";
+import {
+  auditCeilings,
+  auditSpecs,
+  collectSpecs,
+  SUPPORTED_MAJOR_CEILINGS,
+} from "../src/version-policy/audit.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
@@ -47,20 +65,43 @@ function readNvmrcLine() {
   }
 }
 
-const pkg = readJson("package.json");
 const nvmrcLine = readNvmrcLine();
 
-// Audit the pinned third-party dependency specifications only.
-const specs = collectSpecs(pkg, {
-  dependencies: true,
-  devDependencies: true,
-});
+/**
+ * Collect pinned third-party specs from a manifest, tagging each spec's source
+ * with a tree-qualified label so violations name the right package tree.
+ * @param {object} pkg parsed package.json
+ * @param {string} prefix e.g. "" for root, "web/" for the SPA
+ */
+function collectTree(pkg, prefix) {
+  return collectSpecs(pkg, { dependencies: true, devDependencies: true }).map(
+    (s) => ({ ...s, source: `${prefix}${s.source}` }),
+  );
+}
 
-const result = auditSpecs(specs);
+// Audit the pinned third-party dependency specifications across BOTH package
+// trees: the deterministic core (root) and the standalone dashboard SPA (web/).
+const rootPkg = readJson("package.json");
+const webPkg = readJson("web/package.json");
+
+const rootSpecs = collectTree(rootPkg, "");
+const webSpecs = collectTree(webPkg, "web/");
+const allSpecs = [...rootSpecs, ...webSpecs];
+
+const result = auditSpecs(allSpecs);
+const ceilingResult = auditCeilings(allSpecs, SUPPORTED_MAJOR_CEILINGS);
 
 console.log(
-  `[version-policy] audited ${result.checked.length} third-party dependency ` +
-    "specification(s) (dependencies, devDependencies).",
+  `[version-policy] audited ${allSpecs.length} third-party dependency ` +
+    `specification(s) across 2 package trees (${rootSpecs.length} root, ` +
+    `${webSpecs.length} web; dependencies + devDependencies).`,
+);
+console.log(
+  "[version-policy] enforcing supported-major ceilings: " +
+    Object.entries(SUPPORTED_MAJOR_CEILINGS)
+      .map(([name, max]) => `${name}<=${String(max)}`)
+      .join(", ") +
+    " (kept consistent with .github/dependabot.yml ignore rules).",
 );
 if (nvmrcLine !== null) {
   console.log(
@@ -69,21 +110,47 @@ if (nvmrcLine !== null) {
   );
 }
 
+let failed = false;
+
 if (result.ok) {
   console.log(
     "[version-policy] OK: every dependency specification is an exact, non-prerelease version.",
   );
-  process.exit(0);
+} else {
+  failed = true;
+  console.error(
+    `[version-policy] FAILED (exact-pin): ${result.violations.length} policy violation(s):`,
+  );
+  for (const v of result.violations) {
+    console.error(`  - ${v.source}: ${v.name} = "${v.spec}"  (${v.reason})`);
+  }
+  console.error(
+    "[version-policy] Every dependency/language/runtime pin must be an exact, " +
+      "non-prerelease version (no prerelease tags, no open-ended ranges).",
+  );
 }
 
-console.error(
-  `[version-policy] FAILED: ${result.violations.length} policy violation(s):`,
-);
-for (const v of result.violations) {
-  console.error(`  - ${v.source}: ${v.name} = "${v.spec}"  (${v.reason})`);
+if (ceilingResult.ok) {
+  console.log(
+    "[version-policy] OK: every dependency is within its supported-major ceiling.",
+  );
+} else {
+  failed = true;
+  console.error(
+    `[version-policy] FAILED (supported-major ceiling): ${ceilingResult.violations.length} violation(s):`,
+  );
+  for (const v of ceilingResult.violations) {
+    console.error(
+      `  - ${v.source}: ${v.name} = "${v.spec}" is major ${String(v.major)} but ` +
+        `the supported ceiling is ${String(v.ceiling)} (${v.reason}).`,
+    );
+  }
+  console.error(
+    "[version-policy] A held major was breached. Either revert the bump or, if the " +
+      "migration is deliberately happening, raise the ceiling in BOTH " +
+      "src/version-policy/audit.js (SUPPORTED_MAJOR_CEILINGS) and " +
+      ".github/dependabot.yml (ignore rules).",
+  );
 }
-console.error(
-  "[version-policy] Every dependency/language/runtime pin must be an exact, " +
-    "non-prerelease version (no prerelease tags, no open-ended ranges).",
-);
-process.exit(1);
+
+process.exit(failed ? 1 : 0);

@@ -13,12 +13,33 @@ const NUM_RUNS = 300; // >= 100 iterations required by the task.
 
 /**
  * Arbitrary over ISO calendar-date strings in the fixed `YYYY-MM-DD` form the module
- * assumes. Dates are drawn from a bounded span so collisions and ordering are frequently
- * exercised; the span is intentionally small-ish to make membership hits common.
+ * assumes. Dates are drawn from a bounded span (2020–2030) so collisions and ordering
+ * are frequently exercised; the span is intentionally small-ish to make membership hits
+ * common.
+ *
+ * The string is built directly from bounded year/month/day integers rather than via
+ * `fc.date().map(d => d.toISOString())`. Under fast-check 4 `fc.date()` can yield an
+ * `Invalid Date`, whose `.toISOString()` throws `RangeError: Invalid time value`; building
+ * the string ourselves avoids that entirely and works identically under fast-check 3 and 4.
+ * Day is clamped to the number of days in the chosen month so every generated value is a
+ * real calendar date.
  */
+const pad = (n: number, width: number): string => String(n).padStart(width, "0");
+
 const isoDateArb: fc.Arbitrary<string> = fc
-  .date({ min: new Date("2020-01-01"), max: new Date("2030-12-31") })
-  .map((d) => d.toISOString().slice(0, 10));
+  .record({
+    year: fc.integer({ min: 2020, max: 2030 }),
+    month: fc.integer({ min: 1, max: 12 }),
+    day: fc.integer({ min: 1, max: 31 }),
+  })
+  .map(({ year, month, day }) => {
+    // Clamp the day to the last valid day of the chosen month (handles 30-day
+    // months and February, including leap years), so the result is always a
+    // real YYYY-MM-DD calendar date.
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const safeDay = Math.min(day, daysInMonth);
+    return `${pad(year, 4)}-${pad(month, 2)}-${pad(safeDay, 2)}`;
+  });
 
 /**
  * A set of available Decision_Dates. We allow duplicates and arbitrary order (including
