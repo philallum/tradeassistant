@@ -117,7 +117,19 @@ async function buildDisplayDeps(
     try {
       const tokens = await resolveAccessTokenProvider();
       const provider = new GeminiLlmProvider(
-        { project: config.gcpProject, location: config.gcpRegion, model: config.geminiModel },
+        {
+          project: config.gcpProject,
+          location: config.gcpRegion,
+          model: config.geminiModel,
+          // All roles this run uses are SHORT display-only prose/labels, so the
+          // model's hidden "thinking" adds no value and — on a 2.5 thinking model
+          // — would eat the output budget and truncate the visible answer
+          // (observed: 491 thought tokens of 512, `finishReason: MAX_TOKENS`).
+          // Disable thinking and give the answer a comfortable budget so the
+          // daily note + rationales come back as complete sentences.
+          thinkingBudget: 0,
+          maxOutputTokens: 1024,
+        },
         tokens,
       );
       deps.llm = new LlmInterface({ provider, rejectionRecorder: new InMemoryRoleRejectionRecorder() });

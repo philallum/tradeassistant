@@ -45,19 +45,32 @@ export interface GeminiProviderConfig {
   readonly location: string;
   /** Publisher model id (e.g. `gemini-2.5-flash`). */
   readonly model: string;
-  /** Upper bound on generated tokens per call. Defaults to 512. */
+  /** Upper bound on generated tokens per call. Defaults to 1024. */
   readonly maxOutputTokens?: number;
+  /**
+   * The model's internal "thinking" token budget (Gemini 2.5 thinking models).
+   * `gemini-2.5-flash` spends output tokens on hidden reasoning BEFORE the
+   * visible answer, so with a small `maxOutputTokens` the thinking can exhaust
+   * the budget and truncate (or empty) the answer (`finishReason: MAX_TOKENS`).
+   * For the short DISPLAY-ONLY roles this adapter serves, reasoning adds no value,
+   * so the composition root sets this to `0` to disable thinking and spend the
+   * whole budget on the visible prose. Omitted → the field is NOT sent and the
+   * model uses its own default thinking behaviour (back-compat).
+   */
+  readonly thinkingBudget?: number;
   /** Per-call network timeout in ms. Defaults to 20_000. */
   readonly timeoutMs?: number;
 }
 
-const DEFAULT_MAX_OUTPUT_TOKENS = 512 as const;
+const DEFAULT_MAX_OUTPUT_TOKENS = 1024 as const;
 const DEFAULT_TIMEOUT_MS = 20_000 as const;
 
 /** Minimal shape of the Vertex AI `generateContent` response we read. */
 interface GenerateContentResponse {
   readonly candidates?: ReadonlyArray<{
     readonly content?: { readonly parts?: ReadonlyArray<{ readonly text?: string }> };
+    /** Why generation stopped. `MAX_TOKENS` means the answer was truncated. */
+    readonly finishReason?: string;
   }>;
 }
 
@@ -217,12 +230,20 @@ export class GeminiLlmProvider implements LlmProvider {
   async #generate(prompt: string): Promise<string> {
     const url = generateContentUrl(this.#config);
     const token = await this.#tokens.getAccessToken();
+    // Include `thinkingConfig` ONLY when a budget is configured, so a run that
+    // does not set one keeps the model's default behaviour (back-compat). For
+    // this project's short display roles the composition root sets it to 0, which
+    // disables hidden reasoning so the whole `maxOutputTokens` budget is spent on
+    // the visible answer (otherwise the thinking tokens can truncate it).
+    const thinkingBudget = this.#config.thinkingBudget;
+    const generationConfig: Record<string, unknown> = {
+      maxOutputTokens: this.#config.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+      temperature: 0.2,
+      ...(thinkingBudget !== undefined ? { thinkingConfig: { thinkingBudget } } : {}),
+    };
     const requestBody = {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: {
-        maxOutputTokens: this.#config.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
-        temperature: 0.2,
-      },
+      generationConfig,
     };
 
     const controller = new AbortController();
@@ -253,6 +274,22 @@ export class GeminiLlmProvider implements LlmProvider {
     }
 
     const body = (await response.json()) as GenerateContentResponse;
+    // Surface a truncated generation (`finishReason: MAX_TOKENS`) as a secret-free
+    // warning so a regression in the token/thinking budget is diagnosable rather
+    // than silently shipping a cut-off note. We still return whatever text came
+    // back: this adapter is display-only and the caller degrades gracefully.
+    const finishReason = body.candidates?.[0]?.finishReason;
+    if (finishReason === "MAX_TOKENS") {
+      console.warn(
+        JSON.stringify({
+          event: "gemini.generation_truncated",
+          finishReason,
+          model: this.#config.model,
+          maxOutputTokens: this.#config.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+          thinkingBudget: this.#config.thinkingBudget ?? null,
+        }),
+      );
+    }
     return extractText(body);
   }
 }
