@@ -774,7 +774,8 @@ liveness was proven under `simplify-to-cloud-minimal` task 8.
   Separately, the repo's Dependabot reports 20 vulnerabilities (4 critical, 2
   high, 12 moderate, 2 low) — worth a dedicated pass. Now tracked as requirements
   of the new spec `daily-candle-freshness-and-cleanup`: the git-history backup
-  removal is R8, the Dependabot triage/fix is **R9 — DONE (see §9 below)**.
+  removal is R8, the Dependabot triage/fix is **R9 — DONE (see §9 below)**, /web
+  toolchain upgraded to vite 7 / vitest 3.2.4 to clear the Dependabot-PR CI failures.
 
 ## 8. Immediate next steps
 
@@ -909,22 +910,28 @@ silently dropped.
   CVEs fixed within 5.4.x (e.g. GHSA-x574-m823-4x7w, -356w-63v5-8wf4,
   -859w-5945-r5v3, -xcj6-pq6g-qj4x, -4r4m-qw57-chr8, -vg6x-rcgg-rjx6). `make
   check` + the web build + the web test suite stay green on the bumped versions.
-- **(b) Requires a breaking (SemVer-major) change — RECORDED, NOT forced.**
-  After the compatible bump, 6 web-tree findings remain and `npm audit` reports
-  each as `isSemVerMajor: true` — the only non-force fix is `vite` **8.3.4** and
-  `vitest` **5.0.3**: `vite` (high, GHSA-fx2h-pf6j-xcff `server.fs.deny` Windows
-  alt-path, `<=6.4.2`), `esbuild` (moderate, dev-server request/response leak,
-  needs vite 6+ → esbuild 0.25+), `tinypool` (critical ×2, prototype-pollution →
-  RCE, only cleared in vitest 5.x), `@vitest/mocker` (moderate, path traversal),
-  `vite-node` (moderate), `vitest` (critical UI-server file read, fixed in 3.2.6+
-  → vitest 5.x). **Migration note:** vite 5→8 and vitest 2→5 are breaking (config
-  API, plugin peer-deps, test runner behaviour) and are deferred to a dedicated
-  tooling-upgrade pass rather than silently bumped here, because they would need a
-  full web build + 146-test revalidation and a `@vitejs/plugin-react` peer bump.
-  **Reachability:** all 6 are dev/CI-only (vite/vitest never ship to production —
-  the web app deploys as a static pre-built SPA to Firebase Hosting) and the
-  advisories require a running vite/vitest dev or API/UI server (not used in CI
-  build or prod), so runtime exposure is nil.
+  The `/web` toolchain was subsequently upgraded as one atomic set to clear the
+  Dependabot-PR CI ERESOLVE failures: `vite` 5.4.21 → **7.3.7**, `vitest`
+  2.1.9 → **3.2.4**, `@vitejs/plugin-react` 4.3.4 → **4.7.0** (exact pins, no
+  ranges), regenerating `web/package-lock.json`; this clears the `vite`
+  `server.fs.deny` CVEs (fixed ≤6.4.2) and the `esbuild` dev-server leak (vite 7
+  ships esbuild 0.27+). Verified locally on Node 22: web `npm ci` resolves with
+  no ERESOLVE, `npm run build` green, `npm test` 146/146 green.
+- **(b) Requires a breaking (SemVer-major) change — PARTIALLY TAKEN.**
+  The vite/vitest major has now been partially taken (to `vite` **7.3.7** /
+  `vitest` **3.2.4** / `@vitejs/plugin-react` **4.7.0**, see bucket (a)), which
+  cleared the `vite` `server.fs.deny` CVEs (`<=6.4.2`) and the `esbuild`
+  dev-server leak. The ONLY still-deferred items are the ones that need `vitest`
+  **5** (which forces `vite` **8** → `@vitejs/plugin-react` **6**, peer `vite ^8`
+  only — a larger jump): the two `tinypool` prototype-pollution criticals
+  (`<=2.1.1`), `@vitest/mocker` path traversal (`<4.1.11`), and the `vitest`
+  UI-server file read (fixed 3.2.6+ → vitest 5.x). **Migration note:** vitest 2→5
+  / vite 7→8 remain breaking (config API, plugin peer-deps, test runner
+  behaviour) and are deferred to a dedicated tooling-upgrade pass rather than
+  forced here. **Reachability:** all remaining items are dev/CI-only (vite/vitest
+  never ship to production — the web app deploys as a static pre-built SPA to
+  Firebase Hosting) and require a running vitest dev/API/UI server (not used in
+  CI build or prod), so runtime exposure is nil.
 - **(c) Not applicable (dev-only / unreachable at runtime) — RATIONALE RECORDED.**
   Root `fx-daily-pattern-assistant`: `source-map-js` 1.2.1 (high, event-loop DoS,
   `<1.2.2`, GHSA-68fv-2mgg-jv7q) — a dev-only transitive dep (via
@@ -940,19 +947,27 @@ silently dropped.
 
 | Pkg (tree) | Direct? | Severity | Advisory (short) | Bucket | Action / rationale |
 | --- | --- | --- | --- | --- | --- |
-| `vite` (web) | yes | high+mod×N | `server.fs.deny` bypasses, path traversal (several fixed ≤5.4.21) | (a) | Pinned 5.4.11→**5.4.21**; residual `<=6.4.2` CVEs → (b) |
-| `vitest` (web) | yes | critical | API-server RCE GHSA-9crc (fixed 2.1.9) | (a) | Pinned 2.1.8→**2.1.9** |
-| `vitest` (web) | yes | critical | UI-server file read GHSA-5xrq (`<3.2.6`) | (b) | Needs vitest **5.0.3** (major) — deferred, migration note |
-| `esbuild` (web) | no | moderate | dev-server request/response leak `<=0.24.2` | (b) | Needs vite **8.3.4** (major, esbuild 0.25+) — deferred |
-| `tinypool` (web) | no | critical×2 | prototype-pollution → RCE `<=2.1.1` | (b) | Needs vitest **5.0.3** (major) — deferred |
-| `@vitest/mocker` (web) | no | moderate | path traversal `<4.1.11` | (b) | Needs vitest **5.0.3** (major) — deferred |
-| `vite-node` (web) | no | moderate | via vulnerable vite | (b) | Needs vitest **5.0.3** (major) — deferred |
+| `vite` (web) | yes | high+mod×N | `server.fs.deny` bypasses, path traversal (fixed ≤6.4.2) | (a) | Pinned 5.4.11→5.4.21→**7.3.7**; `<=6.4.2` CVEs cleared by vite 7 |
+| `vitest` (web) | yes | critical | API-server RCE GHSA-9crc (fixed 2.1.9) | (a) | Pinned 2.1.8→2.1.9→**3.2.4** |
+| `vitest` (web) | yes | critical | UI-server file read GHSA-5xrq (`<3.2.6`) | (b) | Needs vitest **5** (→ vite 8 → plugin-react 6), deferred |
+| `esbuild` (web) | no | moderate | dev-server request/response leak `<=0.24.2` | (a) | Cleared by vite 7 (ships esbuild 0.27+) |
+| `tinypool` (web) | no | critical×2 | prototype-pollution → RCE `<=2.1.1` | (b) | Needs vitest **5** (→ vite 8 → plugin-react 6), deferred |
+| `@vitest/mocker` (web) | no | moderate | path traversal `<4.1.11` | (b) | Needs vitest **5** (→ vite 8 → plugin-react 6), deferred |
+| `vite-node` (web) | no | moderate | via vulnerable vite | (a) | Cleared by vite 7 upgrade |
 | `source-map-js` (root) | no | high | event-loop DoS `<1.2.2` | (c) | Dev-only transitive (postcss/magicast); unreachable in prod artifact |
 
 **Green verification after the applied bump:** root `npm run check` (lint +
 typecheck + 763 vitest tests) green; `web` `npm run build` (tsc + vite build)
 green; `web` `npm test` (146 tests) green. Lockfiles updated via `npm install`
-in `web/`.
+in `web/`. After the subsequent `/web` toolchain upgrade (vite 7.3.7 / vitest
+3.2.4 / @vitejs/plugin-react 4.7.0): web `npm ci` resolves clean with no
+ERESOLVE, `npm run build` green, and `npm test` 146/146 green on Node 22.
+
+**(d) Grouping to prevent recurrence — ADDED.** A new `.github/dependabot.yml`
+was added that GROUPS the coupled `vite` / `vitest` / `@vitejs/*` / `@vitest/*`
+/ `tinypool` / `esbuild` packages into a single atomic `vite-vitest-toolchain`
+PR per `/web` run, so the peer set moves together and the ungrouped-partial-bump
+ERESOLVE failure (one package bumped while its peers lagged) cannot recur.
 
 ## Notes on maintenance
 
