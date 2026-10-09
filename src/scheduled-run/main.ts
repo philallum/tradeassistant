@@ -55,7 +55,9 @@ import {
   writeDashboardSnapshot,
   type SnapshotSink,
 } from "./snapshot.js";
+import { loadSnapshotHistory } from "./snapshotHistory.js";
 import { makeGcsSnapshotSink } from "./gcsSnapshotSink.js";
+import { SupabaseRestClient } from "../storage/supabase/index.js";
 
 /**
  * Load the deterministic per-pair evaluations for the Decision_Date by running
@@ -336,12 +338,19 @@ async function main(): Promise<void> {
     // This runs AFTER the DB rows are persisted, and the write is best-effort:
     // `writeDashboardSnapshot` logs and swallows any failure so a snapshot error
     // can never corrupt the persisted rows nor fail the run (design Error
-    // Handling). History slices beyond today's view are not re-queried here; the
-    // snapshot carries the produced view + display-only, and a missing slice is
-    // an empty array the SPA renders as an explicit empty state (R5.5).
-    const snapshot = buildDashboardSnapshot(view, displayOnly, {
-      decisionDates: [view.decisionDate],
+    // Handling).
+    //
+    // History slices (prior firing setups, realized/analogue outcomes, a bounded
+    // recent window of candles, evaluation reports, and the Decision_Date list)
+    // are READ BACK from the just-persisted source-of-truth rows so the SPA's
+    // tabs render real data instead of an empty state. The read is read-only and
+    // fail-safe per slice: a slice that cannot load degrades to an empty array
+    // and never breaks the run (see `loadSnapshotHistory`). `buildDashboardSnapshot`
+    // merges today's produced view on TOP of the historical firing setups.
+    const history = await loadSnapshotHistory(new SupabaseRestClient(supabase), {
+      decisionDate: view.decisionDate,
     });
+    const snapshot = buildDashboardSnapshot(view, displayOnly, history);
     await writeDashboardSnapshot(snapshot, snapshotSink);
   };
 

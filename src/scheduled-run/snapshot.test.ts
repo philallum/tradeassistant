@@ -174,7 +174,66 @@ describe("buildDashboardSnapshot — serialises the view + display-only + histor
     expect(snapshot.aiRationale).toEqual([]);
     expect(snapshot.externalComparison).toEqual([]);
     expect(snapshot.evaluationReports).toEqual([]);
-    expect(snapshot.decisionDates).toEqual([]);
+    // decisionDates always carries at least today's Decision_Date so it is
+    // selectable in the browse control even with no history supplied.
+    expect(snapshot.decisionDates).toEqual(["2024-03-16"]);
+  });
+
+  it("unions today's Decision_Date into decisionDates and sorts ascending (no duplicate)", () => {
+    const snapshot = buildDashboardSnapshot(
+      viewFor("2024-03-15"),
+      undefined,
+      { decisionDates: ["2024-03-10", "2024-03-15"] },
+      FIXED_NOW,
+    );
+    // "2024-03-15" already present (not duplicated), order ascending.
+    expect(snapshot.decisionDates).toEqual(["2024-03-10", "2024-03-15"]);
+  });
+
+  it("merges today's firing view on top of historical firing setups, deduping on the PK", () => {
+    // History already contains today's EURUSD row (a re-run) plus a prior date.
+    const history = {
+      firingSetups: [
+        {
+          decision_date: "2024-03-14",
+          pair: "GBPUSD",
+          strategy_id: "system",
+          direction: "UP" as const,
+          horizon: 1 as const,
+          earned_confidence: 0.6,
+          stop_loss_pips: null,
+          take_profit_pips: null,
+          surfaced: true,
+          suppression_reason: null,
+        },
+        {
+          decision_date: "2024-03-15",
+          pair: "EURUSD",
+          strategy_id: "system",
+          direction: "DOWN" as const,
+          horizon: 2 as const,
+          earned_confidence: 0.1,
+          stop_loss_pips: null,
+          take_profit_pips: null,
+          surfaced: true,
+          suppression_reason: null,
+        },
+      ],
+    };
+    // Today's view carries EURUSD @ 2024-03-15 (same PK) — must win over history.
+    const snapshot = buildDashboardSnapshot(viewFor("2024-03-15"), undefined, history, FIXED_NOW);
+
+    // The prior-date GBPUSD row survives; the colliding EURUSD row is today's, not history's.
+    expect(snapshot.firingSetups).toHaveLength(2);
+    const gbp = snapshot.firingSetups.find((r) => r.pair === "GBPUSD");
+    const eur = snapshot.firingSetups.find((r) => r.pair === "EURUSD");
+    expect(gbp?.decision_date).toBe("2024-03-14");
+    expect(eur?.decision_date).toBe("2024-03-15");
+    // Today's EURUSD confidence (from viewFor), not the history's 0.1.
+    expect(eur?.earned_confidence).not.toBe(0.1);
+    // decisionDates comes from history.decisionDates (not supplied here) unioned
+    // with today — the firing-setups merge does not itself contribute dates.
+    expect(snapshot.decisionDates).toEqual(["2024-03-15"]);
   });
 
   it("round-trips through serializeSnapshot → JSON.parse unchanged", () => {

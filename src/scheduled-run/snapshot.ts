@@ -176,10 +176,36 @@ const SYSTEM_STRATEGY_ID = "system";
  */
 export interface SnapshotHistory {
   readonly decisionDates?: readonly string[];
+  /**
+   * Firing-setup rows from PRIOR runs (every Decision_Date already persisted),
+   * so the Setups / Pattern-Outcomes tabs can browse history rather than only
+   * today's view. Today's produced cards are merged ON TOP of these and win on
+   * a `(decision_date, pair, strategy_id)` collision, so re-running today's date
+   * never double-counts. Omitted → only today's view is surfaced.
+   */
+  readonly firingSetups?: readonly SnapshotFiringSetupRow[];
   readonly analogueOutcomes?: readonly SnapshotAnalogueOutcomeRow[];
   readonly realizedOutcomes?: readonly SnapshotRealizedOutcomeRow[];
   readonly candles?: readonly SnapshotCandleRow[];
   readonly evaluationReports?: readonly SnapshotEvaluationReportRow[];
+}
+
+/**
+ * Merge today's view-derived firing rows with any historical rows, de-duping on
+ * the `firing_setups` primary key `(decision_date, pair, strategy_id)`. Today's
+ * rows take precedence so a re-run of the current Decision_Date overwrites
+ * rather than duplicates its own prior rows. Order is history-first then today's
+ * NEW rows appended, which is stable for the SPA (it filters/sorts by date).
+ */
+function mergeFiringSetups(
+  today: readonly SnapshotFiringSetupRow[],
+  history: readonly SnapshotFiringSetupRow[],
+): readonly SnapshotFiringSetupRow[] {
+  const key = (r: SnapshotFiringSetupRow): string =>
+    `${r.decision_date}|${r.pair}|${r.strategy_id}`;
+  const todayKeys = new Set(today.map(key));
+  const kept = history.filter((r) => !todayKeys.has(key(r)));
+  return [...kept, ...today];
 }
 
 /** Map a produced firing card into a surfaced wire-format `firing_setups` row. */
@@ -249,7 +275,8 @@ export function buildDashboardSnapshot(
   now: Date = new Date(),
 ): DashboardSnapshot {
   const decisionDate = view.decisionDate;
-  const firingSetups = view.cards.map((card) => firingSetupRow(decisionDate, card));
+  const todayFiring = view.cards.map((card) => firingSetupRow(decisionDate, card));
+  const firingSetups = mergeFiringSetups(todayFiring, history.firingSetups ?? []);
   const aiRationale = (displayOnly?.rationales ?? []).map((w) =>
     aiRationaleRow(decisionDate, w),
   );
@@ -257,11 +284,19 @@ export function buildDashboardSnapshot(
     externalComparisonRow(decisionDate, w),
   );
 
+  // The browse selector lists every Decision_Date with persisted data. Union
+  // today's date with the supplied history and sort ascending (newest-last, as
+  // documented) so today is always selectable even if the history slice omitted
+  // it, and so duplicates collapse.
+  const decisionDates = Array.from(
+    new Set([...(history.decisionDates ?? []), decisionDate]),
+  ).sort();
+
   return {
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     decisionDate,
     generatedAt: now.toISOString(),
-    decisionDates: history.decisionDates ?? [],
+    decisionDates,
     firingSetups,
     analogueOutcomes: history.analogueOutcomes ?? [],
     realizedOutcomes: history.realizedOutcomes ?? [],

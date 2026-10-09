@@ -1,0 +1,12 @@
+[
+  {
+    "maxAgeSeconds": 300,
+    "method": ["GET"],
+    "origin": [
+      "https://app.teamhandso.me",
+      "https://trade-assistant-508806.web.app",
+      "https://trade-assistant-508806.firebaseapp.com"
+    ],
+    "responseHeader": ["Content-Type"]
+  }
+]
