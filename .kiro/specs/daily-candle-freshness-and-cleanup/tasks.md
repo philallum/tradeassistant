@@ -411,7 +411,7 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
 
 ### Phase 5 — Freshness verification (Component 8; R6)
 
-- [ ] 14. Implement the read-only freshness verification check
+- [x] 14. Implement the read-only freshness verification check
   - Add a read-only verification helper (Component 8) that, per pair, compares the
     latest stored candle date (via `candleStore.getCoverageSummary()` /
     `getCandles`) against `mostRecentCompletedTradingDay(decisionDate)` (modulo
@@ -421,13 +421,13 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
     does not touch the recorded Evaluation_Report path or the Measurement_Engine.
   - _Requirements: 6.1, 6.2, 6.3_
 
-  - [ ] 14.1 Write unit tests for the verification check (read-only)
+  - [x] 14.1 Write unit tests for the verification check (read-only)
     - With injected stores + a sample snapshot: a fresh pair verifies equal;
       a stale pair reports the residual gap; the check performs no write and
       leaves stored candles untouched.
     - _Requirements: 6.2, 6.3_
 
-- [ ] 15. ☁️ Operator-approved post-run freshness verification against hosted
+- [x] 15. ☁️ Operator-approved post-run freshness verification against hosted
   - **Live read-only check under the operational-safety protocol.** After a daily
     run, verify against hosted that per-pair latest stored date equals the most
     recent Completed_Trading_Day and that `dashboard.json`'s Decision_Date
@@ -436,7 +436,7 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
 
 ### Phase 6 — Follow-up cleanup (R7–R11)
 
-- [ ] 16. ☁️ Resolve the Vertex AI 403 (least-privilege predict permission)
+- [x] 16. ☁️ Resolve the Vertex AI 403 (least-privilege predict permission)
   - **Live operator-approved IAM change under the operational-safety protocol.**
     Confirm/grant the minimal `aiplatform.endpoints.predict` permission for
     `job-runtime@` on the configured Vertex publisher model (reconcile the
@@ -447,7 +447,7 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
     the AI/Deterministic boundary is untouched.
   - _Requirements: 7.1, 7.2, 7.3, 7.4_
 
-- [ ] 17. Remove the large DB backup from version control
+- [x] 17. Remove the large DB backup from version control
   - Add `ops/backups/` to `.gitignore` so no dump is committed in future; remove
     the tracked `ops/backups/hosted-5.3-*.sql` (~50 MB) from the working tree;
     confirm no `*.sql` production dump remains tracked. Removing the ~50 MB blob
@@ -455,7 +455,7 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
     as an operator-approved step, not run autonomously.
   - _Requirements: 8.1, 8.2, 8.3_
 
-- [ ] 18. Triage and apply the Dependabot findings
+- [x] 18. Triage and apply the Dependabot findings
   - Triage the reported findings (recorded as 20: 4 critical / 2 high / 12
     moderate / 2 low) into three buckets: (a) fixable by a compatible bump — apply
     with an **exact pinned version** (no ranges) keeping `make check` + the web
@@ -476,7 +476,7 @@ and carries a `**Validates: Requirements X.Y**` line matching the design.
     appears in the repo, logs, or this spec.
   - _Requirements: 10.1, 10.2, 10.3, 10.4_
 
-- [ ] 20. Reconcile the trailing cross-spec checkpoints
+- [x] 20. Reconcile the trailing cross-spec checkpoints
   - Reconcile to a single consistent state: `dashboard-data-activation` Task 16 vs
     `dashboard-ui` Task 17 (one marks the other's smoke done while the other is
     unticked); complete or explicitly defer `operational-wiring` Task 13 and tick

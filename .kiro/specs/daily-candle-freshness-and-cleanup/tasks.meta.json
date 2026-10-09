@@ -12,6 +12,63 @@
         "chatSessionId": "sess_1a984a49-f867-4f07-a6d8-ff91f67b7ded",
         "timestamp": 1791475478673
       }
+    ],
+    "14. Implement the read-only freshness verification check": [
+      {
+        "executionId": "291ce8eb-21c5-49a6-8dc5-26e511b3392f",
+        "chatSessionId": "sess_ae8f87d8-759d-48d5-9a7c-61d46c2126aa",
+        "timestamp": 1791479894379
+      },
+      {
+        "executionId": "291ce8eb-21c5-49a6-8dc5-26e511b3392f",
+        "chatSessionId": "sess_ae8f87d8-759d-48d5-9a7c-61d46c2126aa",
+        "timestamp": 1791480513109
+      }
+    ],
+    "14.1 Write unit tests for the verification check (read-only)": [
+      {
+        "executionId": "291ce8eb-21c5-49a6-8dc5-26e511b3392f",
+        "chatSessionId": "sess_ae8f87d8-759d-48d5-9a7c-61d46c2126aa",
+        "timestamp": 1791480517478
+      }
+    ],
+    "15. ☁️ Operator-approved post-run freshness verification against hosted": [
+      {
+        "executionId": "79f4fa84-c8b0-49cb-9c2c-f3c168930665",
+        "chatSessionId": "sess_b1430b4a-53d4-4dce-8762-1ef74399484d",
+        "timestamp": 1791480915679
+      }
+    ],
+    "16. ☁️ Resolve the Vertex AI 403 (least-privilege predict permission)": [
+      {
+        "executionId": "a635eae7-553f-48fe-a3ff-cee1565eed3d",
+        "chatSessionId": "sess_08578f97-e040-419b-afed-0c9ad6a0f177",
+        "timestamp": 1791482313066
+      }
+    ],
+    "18. Triage and apply the Dependabot findings": [
+      {
+        "executionId": "3017fdfa-061e-41e8-b70f-d1fb733dfa75",
+        "chatSessionId": "sess_4c7b7304-b036-46e2-adc2-36c56d6ee2df",
+        "timestamp": 1791529406874
+      },
+      {
+        "executionId": "3017fdfa-061e-41e8-b70f-d1fb733dfa75",
+        "chatSessionId": "sess_4c7b7304-b036-46e2-adc2-36c56d6ee2df",
+        "timestamp": 1791530274095
+      }
+    ],
+    "20. Reconcile the trailing cross-spec checkpoints": [
+      {
+        "executionId": "8217f3e7-73cc-43e8-9a93-344538f32a51",
+        "chatSessionId": "sess_5eddf6ec-fdcc-4dde-bf09-645d559e26ee",
+        "timestamp": 1791530341572
+      },
+      {
+        "executionId": "8217f3e7-73cc-43e8-9a93-344538f32a51",
+        "chatSessionId": "sess_5eddf6ec-fdcc-4dde-bf09-645d559e26ee",
+        "timestamp": 1791530737934
+      }
     ]
   }
 }

@@ -185,6 +185,15 @@ Test sub-tasks are marked optional with `*`. Core implementation and live-cloud 
   - _Requirements: 8.1, 8.2, 8.3, 8.4_
 
 - [x] 16. Final checkpoint — LIVE CLOUD: dashboard-ui Task 17 read-only smoke against real data (Req 10)
+  - **RECONCILIATION NOTE (cross-spec):** This task was completed against the then-live
+    Read_Proxy and recorded `dashboard-ui` Task 17's smoke as done. The Read_Proxy
+    (`services/read-proxy/`) and the `/api` rewrite were LATER removed in
+    `simplify-to-cloud-minimal` Phase 5, so `dashboard-ui` Task 17 is now explicitly
+    DEFERRED (superseded) rather than ticked — the two specs are reconciled: the smoke here
+    reflects a historical, now-superseded architecture; the current public read path is the
+    static `dashboard.json` snapshot proven live under `simplify-to-cloud-minimal` task 8.
+    This checkpoint stays `[x]` because it was genuinely executed at the time; it is NOT a
+    claim that the (now-removed) Read_Proxy smoke is runnable today.
   - **This is a LIVE operator-approved verification — NOT a property test.** Depends on tasks 10, 11, 14, 15. Ensure all tests pass, ask the user if questions arise.
   - Run `dashboard-ui` Task 17's read-only smoke verification against the real hosted data produced by the Gate_Run + daily re-run
   - Confirm the public dashboard URL serves the latest firing Decision_Date returned by `v_decision_dates` from real `firing_setups` data (Req 10.1); the Read_Proxy rejects a write (non-GET/HEAD) with HTTP 405 (Req 10.2); and the Read_Proxy rejects a query/resource outside the Allowlist with HTTP 400 or 404 (Req 10.3)
