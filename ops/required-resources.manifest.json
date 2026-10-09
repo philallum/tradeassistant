@@ -33,7 +33,7 @@
         "roles/secretmanager.secretAccessor",
         "roles/aiplatform.user"
       ],
-      "rolesNote": "roles/aiplatform.user is required for the Vertex AI Gemini call (PROJECT-STATE open item); confirm it is granted to this SA when reconciling.",
+      "rolesNote": "roles/aiplatform.user (which includes aiplatform.endpoints.predict) is required for the display-only Vertex AI Gemini rationale call and resolves the observed aiplatform.endpoints.predict 403. VERIFIED granted to this SA at the project level: project IAM policy lists roles/aiplatform.user on job-runtime@, and the IAM SetIamPolicy audit log records the binding ADDED on 2026-10-08. The gemini-2.5-flash publisher model is reachable in europe-west1 (read-only countTokens probe returned HTTP 200). Least-privilege: the project-level roles/aiplatform.user grant is the minimal predefined role carrying endpoints.predict for the publisher-model path (daily-candle-freshness-and-cleanup R7.1, R7.3).",
       "keep": true
     },
     {

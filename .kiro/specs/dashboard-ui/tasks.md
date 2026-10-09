@@ -492,7 +492,20 @@ are never optional.
   - Record the public Hosting URL with no secret value
   - _Requirements: 1.5, 21.1, 21.4_
 
-- [ ] 17. LIVE CLOUD: post-deploy read-only smoke verification (Req 21.6)
+- [~] 17. LIVE CLOUD: post-deploy read-only smoke verification (Req 21.6) — **DEFERRED (superseded)**
+  - **DEFERRED — superseded by `simplify-to-cloud-minimal`.** The Read_Proxy
+    (`services/read-proxy/`) and the Firebase `/api/**` rewrite that this smoke
+    verified were deliberately REMOVED in `simplify-to-cloud-minimal` Phase 5 (the SPA
+    now reads a static public `dashboard.json` snapshot same-origin, no proxy — see
+    `web/src/api/snapshot.ts` and `web/src/firebase.config.test.ts`). The write-rejection
+    (`405`) and disallowed-query (`400`/`404`) checks target an HTTP serving component
+    that no longer exists, so this smoke cannot be run as written and is NOT ticked as
+    complete. The equivalent end-to-end liveness of the simplified architecture — a live
+    daily Cloud Run Job publishing `dashboard.json` to the public bucket, anonymously
+    fetchable over HTTPS (HTTP 200) — was proven under `simplify-to-cloud-minimal` task 8
+    (run `scheduled-daily-run-2rrm6`, 2026-10-08). The earlier
+    `dashboard-data-activation` Task 16 ran this smoke against the then-live Read_Proxy;
+    that result is historical and superseded by the proxy removal.
   - **This is a LIVE operator-approved operation — NOT a property test.** Follow the Live
     Cloud Execution Protocol.
   - Reconcile project + account first; perform a read-only smoke check that the public URL
@@ -500,7 +513,13 @@ are never optional.
     a disallowed query (`400`/`404`); recording only non-secret references
   - _Requirements: 21.1, 21.6_
 
-- [ ] 18. Final checkpoint — live deployment complete
+- [~] 18. Final checkpoint — live deployment complete — **DEFERRED (superseded)**
+  - **DEFERRED — superseded by `simplify-to-cloud-minimal`.** This checkpoint gates on the
+    Task 17 Read_Proxy smoke, which is itself superseded (see Task 17). The live
+    deployment of the simplified read path (static `dashboard.json` snapshot on a public
+    GCS bucket, Firebase Hosting SPA) is live and its end-to-end cloud loop was proven
+    under `simplify-to-cloud-minimal` task 8. `make check` + the web build are green.
+    Nothing further is actionable here under the original Read_Proxy architecture.
   - Ensure all tests pass and the smoke verification succeeded; ask the user if questions arise.
 
 ## Notes

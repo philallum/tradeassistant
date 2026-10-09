@@ -299,7 +299,14 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks and live-
     - Verify completion via the per-pair coverage summary — all five pairs non-zero (Req 7.5); record only non-secret references, never the Supabase key (Req 7.6)
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
 
-- [ ] 12. Least-privilege hosted write credential + RLS (Req 8)
+- [x] 12. Least-privilege hosted write credential + RLS (Req 8)
+  - **RECONCILIATION NOTE (cross-spec):** All four subtasks 12.1–12.4 are `[x]`, so the
+    parent is now ticked (daily-candle-freshness-and-cleanup R11.2). Note that the
+    `pipeline_writer` role + RLS scheme created here was LATER superseded by
+    `simplify-to-cloud-minimal` Phase 4, which dropped the read-side roles and left
+    `fx_writer` the sole write role (see 12.4's note). The parent is ticked to reflect that
+    the subtasks were completed as written at the time, not that the `pipeline_writer`
+    posture is the current one.
   - [x] 12.1 Write the RLS + pipeline_writer migration
     - Add `supabase/migrations/20260916000002_rls_pipeline_writer_scoped_write.sql`: enable RLS on the five compute-written tables, create the least-privilege `pipeline_writer` role (SELECT/INSERT/UPDATE only, no DELETE), and RLS policies scoped to it; idempotent/re-runnable, applies identically local + hosted
     - _Requirements: 8.1, 8.2_
@@ -314,12 +321,30 @@ Test sub-tasks are marked optional with `*`. Core implementation tasks and live-
     - _Requirements: 8.5, 8.6_
 
   - [x] 12.4 LIVE CLOUD/DATA: create the role + credential, apply the migration, set the secret, verify scope
+    - **RECONCILIATION NOTE (cross-spec):** executed as written at the time (the
+      `pipeline_writer` role + Scoped_Write_Credential + RLS migration `20260916000002`
+      applied to hosted). This posture was LATER superseded by `simplify-to-cloud-minimal`
+      Phase 4 (migration `...006`), which dropped `pipeline_writer` and the other read-side
+      roles, leaving `fx_writer` the sole write role. Left `[x]` because it was genuinely
+      done; the current hosted write-credential posture is `fx_writer`, not
+      `pipeline_writer`.
     - **This is a LIVE operator-approved operation — NOT a property test.** Follow the Live Cloud Execution Protocol.
     - Reconcile target/project first; apply the migration to hosted (create `pipeline_writer` + RLS); mint the Scoped_Write_Credential (signed JWT, role claim = pipeline_writer) without echoing it or the JWT secret (Req 8.8); set the `supabase-key` Secret Manager secret to it and redeploy so the Job uses it (Req 8.3, 8.6); reserve the service-role key for operator use only (Req 8.4)
     - Verify scope: an INSERT/UPDATE on the five tables succeeds and a DELETE / out-of-scope write is denied (Req 8.7); record only non-secret references
     - _Requirements: 8.1, 8.3, 8.4, 8.6, 8.7, 8.8_
 
-- [ ] 13. Final checkpoint — cloud half
+- [~] 13. Final checkpoint — cloud half — **DEFERRED (superseded)**
+  - **DEFERRED — superseded by `simplify-to-cloud-minimal`.** The cloud half this checkpoint
+    gates on (SecretManager provisioning, DeployVerifier, Scheduler, the hosted
+    `pipeline_writer` write path) was substantially re-done by `simplify-to-cloud-minimal`:
+    `deploy.yml` was simplified, the read-side roles were dropped in favour of a single
+    `fx_writer` write role, and the end-to-end cloud loop was PROVEN under that spec's
+    task 8 — a live daily Cloud Run Job (`scheduled-daily-run-2rrm6`, exit 0, 2026-10-08)
+    wrote `firing_setups`, maintained `realized_outcomes`, and published a public
+    `dashboard.json` (anonymously fetchable, HTTP 200). `make check` is green. The original
+    cloud-half checkpoint is therefore not re-run here; its intent is satisfied by the
+    simplified, live-proven pipeline. Not ticked `[x]` because the specific cloud-half
+    artifacts it referenced (e.g. `pipeline_writer`) no longer reflect the live system.
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

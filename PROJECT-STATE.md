@@ -26,9 +26,9 @@
 > the durable "how and why" lives in the prose. Keep both honest.
 
 <!-- BEGIN STATE -->
-- **Phase:** v1 feature-complete; `simplify-to-cloud-minimal` COMPLETE. TWO specs now fully specced (requirements + design + tasks, all format-valid) and ready to implement: (1) `daily-candle-freshness-and-cleanup` — the top priority (the live loop runs on ~3-week-stale candles); design + tasks written this turn. (2) `dashboard-ui` Req 8 criterion 8 (the "All pairs" UX fix) — design + tasks written previously. Neither is implemented yet. The candle-freshness design fixes the stale-data defect with a Candle_Freshness_Stage (daily top-up + bounded auto gap-backfill through the existing `OhlcIngestion`, Look_Ahead_Safe, fail-safe) fed by a capability-aware provider fallback chain FCS → Twelve Data → Massive (FCS is latest-only, so a multi-day backfill routes to Twelve Data/Massive), plus a one-off operator backfill; it also bundles the leftover cleanup (R7–R11). Operator approved proceeding to design/tasks.
-- **Updated:** 2026-10-08
-- **Summary:** Spec design+tasks turn for `daily-candle-freshness-and-cleanup` (no code/cloud change). Wrote design.md and tasks.md; both pass the format validator — the spec is now requirements + design + tasks, ready to implement. Design (grounded in the real code): the OHLC_Feed_Provider port exposes two capabilities — fetchLatest (Daily_Top_Up) and fetchRange (Gap_Backfill) — because the KEY finding is that FCS `/forex/latest` is latest-only and cannot serve a date range on the free plan; so the Provider_Fallback_Chain FCS → Twelve Data → Massive routes a multi-day backfill to a range-capable provider (Twelve Data/Massive), first-usable-wins per pair, each adapter normalizing native JSON to the internal RawCandle over zero-SDK fetch and stamping `source`. The Candle_Freshness_Stage slots into `src/scheduled-run/main.ts` after the weekday gate and BEFORE runScheduledDaily, reusing the existing `OhlcIngestion` (validate / NY-close / look-ahead guard / idempotent (asset,date) upsert) and the existing encodePatternVector path so research integrity is untouched; Completed_Trading_Day via existing isTradingDay/addTradingDays; bounded backfill (default 90 trading days); fail-safe (provider failure advances the chain; all-fail ⇒ secret-free warning + proceed on stored history); a one-off operator backfill entry `src/ops/candle-backfill/main.ts`; no new persisted schema; 7 correctness properties; cleanup R7–R11 each scoped. Tasks: 22 tasks across 7 phases with a wave-based dependency graph (provider port+adapters+chain → Completed_Trading_Day+gap+freshness stage → daily-entry wiring → one-off backfill entry + ☁️ hosted run → read-only verification + ☁️ hosted verify → cleanup → living docs + checkpoint); live-cloud tasks (13/15/16/19) operator-gated; tests inject fetch (no live network). Implementation NOT started. dashboard-ui Req 8.8 (design + tasks already written) is also ready. STILL UNCOMMITTED from prior turns: RESEARCH-LOG.md evaluation entry, PROJECT-STATE.md updates, the task-8 checkbox, and the new/edited spec files (now including this spec's design.md + tasks.md). SECURITY (standing): `.env` holds live production secrets in plaintext — rotate + untrack (R10 of this spec); gitignored `ops/fx-writer-key/` holds the `fx_writer` private signing key. Stack unchanged.
+- **Phase:** v1 feature-complete; `simplify-to-cloud-minimal` COMPLETE. `daily-candle-freshness-and-cleanup` IN IMPLEMENTATION: Phases 1-3 (tasks 1-11, the Candle_Freshness_Stage wired into the daily run) DONE and merged (operator GitHub); Phase 4 tasks 12 + 13 DONE. The hosted candle GAP IS NOW CLOSED: the operator-approved ☁️ run of `dist/ops/candle-backfill/main.js` against hosted (`bffzhjnpzxxuqvmnmylk`, 2026-10-08) advanced all five pairs from 2026-09-15 to 2026-10-06 (Twelve Data served the range; FCS skipped; 15 accepted/0 rejected per pair), leaving a benign one-day residual to target 2026-10-07 (provider had not yet published that close) that the next Daily_Top_Up will take. Phase 5 tasks 14 + 15 DONE: the operator-approved ☁️ read-only run of `dist/ops/freshness-verify/main.js` against hosted (`bffzhjnpzxxuqvmnmylk`, Decision_Date 2026-10-08) confirmed `dashboard.json`'s Decision_Date (2026-10-08) reflects fresh history (`snapshotReflectsFreshHistory: true`, R6.1) and reported the known benign one-day residual on all five pairs (latest 2026-10-06 vs target 2026-10-07, R6.2 — a provider-availability FINDING the next Daily_Top_Up takes, not a defect). REMAINING: Phase 6 cleanup (R7-R11), Phase 7. Also fully specced + ready: `dashboard-ui` Req 8 criterion 8 (the "All pairs" fix). Delivery cadence (operator): incremental — implement a milestone, operator merges dev→main to deploy, verify, next; the agent builds/verifies locally and does not run GitHub.
+- **Updated:** 2026-10-09
+- **Summary:** Completed `daily-candle-freshness-and-cleanup` Phase 6 task 16 (☁️ Vertex AI 403, R7) — marked `[x]`. Read-only diagnostics had already established the fix was in place: `roles/aiplatform.user` (includes `aiplatform.endpoints.predict`) is bound to `job-runtime@` (IAM audit: ADDED 2026-10-08 17:58Z) and the logged 403 (2026-10-08 12:34Z) predated that grant; `gemini-2.5-flash` reachable in `europe-west1` (countTokens HTTP 200). `ops/required-resources.manifest.json` `rolesNote` records the verified least-privilege grant (R7.3). VERIFICATION (R7.1/R7.2): an operator-approved ☁️ manual Job run `gcloud run jobs execute scheduled-daily-run` (execution `scheduled-daily-run-962h6`, exit 0, under the operational-safety protocol) produced NO `aiplatform.endpoints.predict` 403 — the denial is resolved — and published `dashboard.json` with `decisionDate: 2026-10-09`. Zero pairs fired that day (`firingSetups: 0`, so `aiRationale: 0` correctly), so the per-firing-pair rationale (R7.2) was not exercised; operator accepted the 403 resolution as sufficient — the display-only rationale will self-confirm on the next run with a firing pair. The AI/Deterministic boundary is untouched (rationale stays display-only). REMAINING in `daily-candle-freshness-and-cleanup`: Phase 6 tasks 17-20 (backup untrack R8, Dependabot triage R9, ☁️ secret rotation R10, cross-spec checkpoint reconcile R11) + Phase 7 (living docs 21, final checkpoint 22). SECURITY (standing): `.env` holds live production secrets in plaintext — rotate + untrack (R10); gitignored `ops/fx-writer-key/` holds the `fx_writer` private signing key. Stack unchanged.
 <!-- END STATE -->
 
 ## 1. What this project is
@@ -102,6 +102,11 @@ authoritative export surface):
   decision date; enforces matured-only outcomes.
 - `ingestion/` — OHLC ingestion + session-boundary normalization, idempotent
   `(asset, date)` upsert.
+- `ingestion/ohlcFeed/` — the OHLC_Feed_Provider port + `ohlcFeedConfigFromEnv`
+  + FCS/Twelve Data/Massive adapters (zero-SDK `fetch`) + `buildProviderChain`
+  fallback resolver (FCS→Twelve Data→Massive, first-usable-wins per pair,
+  capability-aware: a date-range backfill skips latest-only FCS). Feeds the
+  Candle_Freshness_Stage; output goes through the existing `OhlcIngestion`.
 - `encoder/` — Shape-only, per-scale-normalized pattern-vector encoder
   (10/20/40-day windows).
 - `retrieval/` — pgvector analogue retrieval (weekly-trend pre-filter,
@@ -148,7 +153,25 @@ authoritative export surface):
 - `scheduled-run/` — GCP-scheduled unattended daily entry (`main.ts`), reuses
   the same daily-run path. `main.ts` now builds the optional Gemini + FCS
   collaborators from env, skips non-trading days (`isTradingDay`), and persists
-  the display-only values beside the firing view. `displayOnly.ts` composes the
+  the display-only values beside the firing view. It also now runs the
+  Candle_Freshness_Stage (`candleFreshness.ts` `runCandleFreshnessStage`, with
+  `completedTradingDay.ts` + `candleGap.ts`) BEFORE `runScheduledDaily`,
+  fail-safe, to top-up/gap-backfill candles via the provider chain through the
+  existing `OhlcIngestion`; `encodeStoredCandles.ts` is the shared
+  look-ahead-safe candle→vector encode helper now reused by both the stage and
+  `stagedRunner.backfill()`. `freshnessVerification.ts` (added by
+  `daily-candle-freshness-and-cleanup` task 14) is a strictly READ-ONLY
+  `verifyFreshness(deps)` check (R6): per pair it compares the latest stored
+  candle date from `candleStore.getCoverageSummary()` against
+  `mostRecentCompletedTradingDay(decisionDate)` and confirms the provided
+  `dashboard.json` snapshot's `decisionDate` reflects fresh history — fully
+  injectable, mutates nothing, writes nothing (touches no decision path or the
+  Measurement_Engine). `src/ops/freshness-verify/main.ts` (added by task 15) is
+  the read-only OPERATOR entry wrapping it: it builds the hosted stores (uses
+  ONLY the read-only candle store), fetches the published `dashboard.json` from
+  the public-read GCS object (`DASHBOARD_SNAPSHOT_BUCKET`), drives
+  `verifyFreshness` once, and emits secret-free logs; executing it against
+  hosted is the operator-gated ☁️ step (task 15, DONE). `displayOnly.ts` composes the
   rationale + comparison writes (fail-safe per pair); `accessToken.ts` resolves
   the GCP token (Cloud Run metadata server in prod, `gcloud` ADC locally).
   `snapshot.ts` (added `simplify-to-cloud-minimal` task 6) builds + serialises
@@ -174,7 +197,13 @@ authoritative export surface):
   `secret-manager/`, `deploy-verify/`, `scheduler/`, `gate-run/`, `seed-run/`,
   `evaluation-run/` (the one-shot first-OOS-evaluation entrypoint added by
   `simplify-to-cloud-minimal` task 2.2 - composes + records an `EvaluationReport`
-  over a fixed committed OOS split). `fx-writer-check/` (added by
+  over a fixed committed OOS split). `candle-backfill/` (added by
+  `daily-candle-freshness-and-cleanup` task 12 — the one-off operator entry
+  (`main.ts`) that closes the current candle gap for all five pairs by driving the
+  shared `runCandleFreshnessStage` once (bounded Gap_Backfill via the provider
+  chain through the existing `OhlcIngestion`); injectable + unit-tested with no
+  network; executing it against hosted is the operator-gated ☁️ step (task 13)).
+  `fx-writer-check/` (added by
   `simplify-to-cloud-minimal` task 5.2a.4 — a PURE verdict classifier +
   live runner that proves the `fx_writer` Scoped_Write_Credential can
   INSERT/UPDATE the retained tables via the real `SupabaseRestClient` while
@@ -202,15 +231,22 @@ snapshot), `supabase/migrations/` (schema),
 | Spec | Status | Open items |
 | --- | --- | --- |
 | `fx-daily-pattern-assistant` | **Complete** (all tasks `[x]`) | — |
-| `operational-wiring` | Near-complete | Task 13 (final checkpoint). Task 12's subtasks 12.1–12.4 are all `[x]` but the parent checkbox is unticked. |
-| `dashboard-ui` | Near-complete | Task 17 (post-deploy read-only smoke), Task 18 (final checkpoint). PLUS a new Requirement 8 criterion 8 (added this turn, format-valid): on 'All pairs', the AI / Third-party / Pattern-Outcomes tabs must render a cross-pair view over all five pairs instead of a 'pick a pair' prompt — reverses the original 8.2 dead-end that made the dashboard look empty of third-party/AI content on first load. Design addendum + task 19 (subtasks 19.1–19.7) for criterion 8 are now WRITTEN and format-valid (web/-only: compose existing pure shapers via a thin `shapeAllPairs` helper, one getSnapshot() read, per-pair no-data markers, labels preserved; design Property 16 added). Implementation of task 19 pending. (Tasks 17/18 trailing checkpoints still open.) |
+| `operational-wiring` | **Reconciled** (daily-candle R11.2) | Task 12's parent is now `[x]` (all four subtasks 12.1–12.4 were `[x]`). Task 13 (final checkpoint — cloud half) is explicitly **DEFERRED (superseded)**: the cloud half (SecretManager/DeployVerifier/Scheduler + the hosted `pipeline_writer` write path) was re-done by `simplify-to-cloud-minimal` — read-side roles dropped for a sole `fx_writer` write role, and the end-to-end cloud loop was proven live under that spec's task 8 (`scheduled-daily-run-2rrm6`, exit 0). Task 12.4's `pipeline_writer` posture is noted as superseded by `fx_writer` though left `[x]` (genuinely executed at the time). |
+| `dashboard-ui` | **Reconciled** (daily-candle R11.3) | Task 17 (post-deploy Read_Proxy smoke) and Task 18 (final checkpoint) are explicitly **DEFERRED (superseded)**: the Read_Proxy (`services/read-proxy/`) and the Firebase `/api` rewrite those tasks verified were REMOVED in `simplify-to-cloud-minimal` Phase 5 (the SPA now reads a static public `dashboard.json` snapshot same-origin, no proxy). The write-rejection (`405`) / disallowed-query (`400`/`404`) smoke targets an HTTP component that no longer exists and is NOT falsely ticked; the equivalent live liveness (public `dashboard.json` anonymously fetchable, HTTP 200) was proven under `simplify-to-cloud-minimal` task 8. PLUS a new Requirement 8 criterion 8 (added this turn, format-valid): on 'All pairs', the AI / Third-party / Pattern-Outcomes tabs must render a cross-pair view over all five pairs instead of a 'pick a pair' prompt — reverses the original 8.2 dead-end that made the dashboard look empty of third-party/AI content on first load. Design addendum + task 19 (subtasks 19.1–19.7) for criterion 8 are now WRITTEN and format-valid (web/-only: compose existing pure shapers via a thin `shapeAllPairs` helper, one getSnapshot() read, per-pair no-data markers, labels preserved; design Property 16 added). Implementation of task 19 pending. (Tasks 17/18 trailing checkpoints still open.) |
 | `dashboard-data-activation` | **Complete** (all tasks `[x]`) | — |
 | `simplify-to-cloud-minimal` | **Complete** (all Phases 1-7 done; tasks 8, 8.1, 8.2 `[x]`). The first leak-free OOS evaluation was RECORDED (reportId `7ae77f6a-…`, +1.24pp vs baseline, below 3pp, no verdict), the Public_Read_Path snapshot uploader was IMPLEMENTED (GCS `SnapshotSink`) with its live bucket/IAM/CORS + repo vars PROVISIONED (operator-approved), and PR #25 was merged + deployed. The parent task 8 end-to-end cloud-loop proof is DONE: a live daily Cloud Run Job run (`scheduled-daily-run-2rrm6`, exit 0) wrote a `firing_setups` row for 2026-10-08 (EURUSD DOWN, conf ≈0.571, surfaced), maintained `realized_outcomes`, and published `dashboard.json` to the public bucket, verified anonymously fetchable (HTTP 200). | De-scope spec: kill-gate reframed to a human-read evaluation report (task 1), the `evaluation_reports` persistence + report write path + first-evaluation entrypoint landed (task 2.x), Phase 2/3 removed the auto-block + suppressors + research/software complexity, Phase 5 task 6 (6.1-6.5) landed the Public_Read_Path (fail-safe `dashboard.json` snapshot writer wired into the daily run, SPA repointed to a single `loadSnapshot()`, `services/read-proxy/` + read-side `src/ops/write-credential/` deleted, proxy/allowlist tests replaced with snapshot-path tests, the last `signal_rationale`/`external_reference_comparison` writer removed and its write-shape types relocated to `displayOnlyTypes.ts`), and task 5.2a cut over the `fx_writer` Write_Credential. Phase 4 is LIVE-APPLIED (task 5.3, operator-approved): migration `...006` was applied to hosted (project `bffzhjnpzxxuqvmnmylk`) after a fresh backup, reducing the schema to the 6-table Required_Object_Set; the three read-side roles (pipeline_writer, dashboard_reader, diagnostic_reader) were dropped, leaving `fx_writer` the sole write role; data preserved; idempotency confirmed; `make check` green. Phase 6 COMPLETE: task 7 simplified `deploy.yml`, task 7.1 authored the GCP manifest + read-only enumeration, and task 7.2 EXECUTED the ☁️ operator-approved GCP reconcile deletions live against project `trade-assistant-508806`. Phase 7: task 8.1 DONE (research-integrity layer confirmed intact — look-ahead guard, weekly-trend baseline, measurement math, shrinkage, realized-outcome journal, AI-never-scores guard all behaviour-unchanged — AND it surfaced + FIXED a look-ahead LEAK in `src/staged-runner/stagedRunner.ts` `buildFoldInputs` plus a follow-on performance fix, both merged to `main` via PRs #23/#24 and redeployed); task 8.2 DONE (this living-docs update). FIRST OOS EVALUATION NOW RECORDED: hosted `evaluation_reports` holds exactly one `shape-only` row (id `7ae77f6a-8d98-4d7c-a0e2-a2e5acf258b5`) and RESEARCH-LOG.md carries the matching `[EVALUATION] shape-only` entry — model accuracy 0.4996 vs baseline 0.4871, delta +1.24pp, 95% Wald CI [+0.66pp, +1.82pp], n=28470, deltaExceeds3pp=false, strength weak=16071/moderate=12351/strong=48. The shape-only pattern beats the weekly-trend baseline by a small, statistically-positive margin (CI excludes zero) but below the 3pp annotation threshold; recorded as a measured FINDING, no verdict. This is the first time the project's central premise is measured in the living log. Scope C, delete-not-quarantine. The Public_Read_Path snapshot uploader was then IMPLEMENTED (the GCS `SnapshotSink` in `src/scheduled-run/gcsSnapshotSink.ts`, wired via `resolveSnapshotSink()` on `DASHBOARD_SNAPSHOT_BUCKET`) and the live infra PROVISIONED (public-read bucket, runtime-SA object write, public read, CORS, repo vars) — all operator-approved. PR #25 was then merged + deployed, and the parent task 8 end-to-end cloud-loop proof was COMPLETED: a live daily Cloud Run Job run (`scheduled-daily-run-2rrm6`, exit 0) wrote a `firing_setups` row for 2026-10-08 (EURUSD DOWN, conf ≈0.571, surfaced), maintained `realized_outcomes`, and published `dashboard.json` to the public bucket — anonymously fetchable over HTTPS (HTTP 200). The only residue is follow-ups (the Vertex 403 for the display-only AI rationale; housekeeping), not spec work. |
-| `daily-candle-freshness-and-cleanup` | **Design + tasks phase** — requirements.md + design.md + tasks.md all written and format-valid; implementation not started. | New combined spec. Fixes a confirmed candle-data freshness DEFECT (hosted `candles` only to 2026-09-15; the daily Job never ingests fresh candles) via a Candle_Freshness_Stage that daily-tops-up + auto gap-backfills BEFORE the pipeline reads history, through the existing `OhlcIngestion` (Look_Ahead_Safe, idempotent, fail-safe), fed by a provider FALLBACK CHAIN FCS → Twelve Data → Massive (keys already in `.env`; first usable candles win, cascade on failure, normalize each response to one `RawCandle`), plus a one-off backfill for the current hole. Also bundles the leftover cleanup: Vertex AI 403 (R7), ~50MB git-history backup removal (R8), Dependabot triage/fix (R9), `.env` secret rotation+untrack (R10), trailing cross-spec checkpoint reconcile (R11), living docs/verification (R12). The design grounds the OHLC_Feed_Provider two-capability port (fetchLatest/fetchRange) + the FCS→Twelve Data→Massive fallback chain (FCS latest-only, so a multi-day range routes to Twelve Data/Massive), the Candle_Freshness_Stage reusing `OhlcIngestion` before the pipeline, a bounded 90-day backfill, a one-off operator backfill entry (`src/ops/candle-backfill/main.ts`), and cleanup R7–R11; tasks are 22 across 7 phases with the live-cloud items (one-off backfill, Vertex grant, secret rotation, hosted verify) operator-gated. Next: implement (start Phase 1). |
+| `daily-candle-freshness-and-cleanup` | **In implementation** — Phases 1-3 (tasks 1-11) DONE + merged (Candle_Freshness_Stage wired into the daily run, FCS→Twelve Data→Massive fallback chain, reusing `OhlcIngestion`); Phase 4 COMPLETE: task 12 (one-off backfill operator entry `src/ops/candle-backfill/main.ts`) + task 13 (☁️ operator-approved hosted run, 2026-10-08) DONE. The ☁️ run closed the ~3-week hole: all five pairs advanced 2026-09-15 → 2026-10-06 (Twelve Data served the range; 15 accepted/0 rejected per pair; verified live), with a benign one-day residual to 2026-10-07 the next Daily_Top_Up will take (R3.3). `make check` + web build green. Phase 5 task 14 (+ 14.1) DONE: Phase 5 COMPLETE (tasks 14 + 15). Task 14 added the READ-ONLY `verifyFreshness` helper + unit tests (`src/scheduled-run/freshnessVerification.ts`); task 15 added the read-only operator entry `src/ops/freshness-verify/main.ts` (+ tests, `make check` green 763 passed/6 skipped) and EXECUTED the ☁️ operator-approved LIVE read-only verify against hosted (`bffzhjnpzxxuqvmnmylk`, Decision_Date 2026-10-08): `dashboard.json` Decision_Date 2026-10-08 ⇒ snapshot reflects fresh history (R6.1 PASS); all five pairs latest 2026-10-06 vs target 2026-10-07 ⇒ the known benign one-day provider-availability residual (R6.2 FINDING, not a defect; next Daily_Top_Up closes it); no write performed. Remaining: Phase 6 cleanup R7-R11, Phase 7. Phase 6 task 16 (☁️ Vertex 403, R7) DONE `[x]`: diagnostics confirmed `roles/aiplatform.user` (includes `aiplatform.endpoints.predict`) was ALREADY bound to `job-runtime@` (IAM audit: ADDED 2026-10-08 17:58Z) and the logged 403 (2026-10-08 12:34Z) PREDATED that grant; `gemini-2.5-flash` reachable in `europe-west1` (countTokens HTTP 200). Manifest `rolesNote` records the verified least-privilege grant (R7.3). An operator-approved ☁️ manual Job run (`scheduled-daily-run-962h6`, exit 0) produced NO predict-403 and published a fresh `dashboard.json` (decisionDate 2026-10-09); zero pairs fired that day so the per-firing-pair rationale (R7.2) will self-confirm on the next firing day (operator accepted the 403 resolution as sufficient). Remaining in Phase 6: tasks 17-20 (R8-R11) + Phase 7. | New combined spec. Fixes a confirmed candle-data freshness DEFECT (hosted `candles` only to 2026-09-15; the daily Job never ingests fresh candles) via a Candle_Freshness_Stage that daily-tops-up + auto gap-backfills BEFORE the pipeline reads history, through the existing `OhlcIngestion` (Look_Ahead_Safe, idempotent, fail-safe), fed by a provider FALLBACK CHAIN FCS → Twelve Data → Massive (keys already in `.env`; first usable candles win, cascade on failure, normalize each response to one `RawCandle`), plus a one-off backfill for the current hole. Also bundles the leftover cleanup: Vertex AI 403 (R7), ~50MB git-history backup removal (R8), Dependabot triage/fix (R9), `.env` secret rotation+untrack (R10), trailing cross-spec checkpoint reconcile (R11), living docs/verification (R12). The design grounds the OHLC_Feed_Provider two-capability port (fetchLatest/fetchRange) + the FCS→Twelve Data→Massive fallback chain (FCS latest-only, so a multi-day range routes to Twelve Data/Massive), the Candle_Freshness_Stage reusing `OhlcIngestion` before the pipeline, a bounded 90-day backfill, a one-off operator backfill entry (`src/ops/candle-backfill/main.ts`), and cleanup R7–R11; tasks are 22 across 7 phases with the live-cloud items (one-off backfill, Vertex grant, secret rotation, hosted verify) operator-gated. Next: implement (start Phase 1). |
 
-Cross-spec note: `dashboard-data-activation` Task 16 marks the dashboard-ui
-Task 17 smoke as done, while `dashboard-ui` Task 17 itself is still `[ ]`. These
-two documents are out of sync and should be reconciled.
+Cross-spec note (RECONCILED — daily-candle R11.1): `dashboard-data-activation`
+Task 16 ran `dashboard-ui` Task 17's read-only smoke against the then-live
+Read_Proxy and recorded it done. The Read_Proxy and the `/api` rewrite were
+LATER removed by `simplify-to-cloud-minimal` Phase 5 (the SPA now reads a static
+public `dashboard.json` snapshot). The two documents are now consistent:
+`dashboard-data-activation` Task 16 stays `[x]` (genuinely executed at the time)
+with a reconciliation note recording the supersession, and `dashboard-ui` Task 17
+is explicitly DEFERRED (superseded) rather than ticked — the smoke it describes
+targets an architecture that no longer exists, and the current public read path's
+liveness was proven under `simplify-to-cloud-minimal` task 8.
 
 ## 5. Build / test / CI
 
@@ -546,11 +582,12 @@ two documents are out of sync and should be reconciled.
   infra (bucket, runtime-SA object write, public read, CORS, repo vars) provisioned
   operator-approved.
 - **Candle freshness via a provider fallback chain (new spec `daily-candle-freshness-and-cleanup`, requirements phase).** The live loop was found to run on stale candles (hosted history ended 2026-09-15 with no daily ingestion). The chosen fix adds a Candle_Freshness_Stage to the daily run that tops-up the prior day's candle and auto-backfills any gap BEFORE the deterministic pipeline reads history, reusing the existing `OhlcIngestion` validation + idempotent `(asset,date)` upsert (Look_Ahead_Safe, no re-implementation). Data comes from an ordered Provider_Fallback_Chain — FCS (primary, the connection already used for the display-only cross-reference) → Twelve Data → Massive — each resolved from its own `.env` API key by name (`EXTERNAL_SIGNAL_API_KEY` / `TWELVE_DATA_API_KEY` / `MASSIVE_API_KEY`), tried in order with first-usable-wins and skip-and-proceed-on-total-failure, each native response normalized to the single internal `RawCandle` shape over zero-SDK `fetch`. This keeps the daily loop producing current-day signals and self-heals a missed run, without a new credential or provider dependency. Requirements only so far; design/tasks/implementation pending.
+- **Incremental CI/CD delivery cadence (operator).** Work ships milestone-by-milestone: implement a coherent task set locally (keeping `make check` + web build green), the operator merges `dev`→`main` to trigger the Deploy workflow, verify, then the next milestone. The agent builds + verifies locally and does NOT run GitHub/PR/merge/deploy actions — the operator handles all GitHub. ☁️ live steps (one-off backfill, Vertex grant, secret rotation) remain operator-gated with the exact command shown first.
 - **Dashboard "All pairs" shows cross-pair detail, not a pick-a-pair prompt (dashboard-ui Req 8 criterion 8, this turn).** The operator's "nothing from the third-party API" report was diagnosed as a UX dead-end, not a data defect: the FCS external-comparison data is present in the live `dashboard.json` and the deployed SPA is current, but the AI, Third-party, and Pattern/Outcomes tabs each render a "pick a pair" prompt when the Pair_Selector is on the default "All pairs" (original dashboard-ui Req 8.2). Decision: those three per-pair tabs will render a cross-pair view over all five pairs on "All pairs" (verbatim snapshot values + explicit per-pair no-data markers), matching how the Setups tab already behaves, so the default landing view never hides present data. Requirements amended + format-valid; implementation pending.
 
 ## 7. Obstacles / open risks
 
-- **Dashboard per-pair tabs hide data on the default "All pairs" view (diagnosed; fix specced, not yet built).** AI, Third-party, and Pattern/Outcomes show a pick-a-pair prompt on "All pairs", so on first load the dashboard appears to carry no third-party/AI content even though the published `dashboard.json` has it (verified: `externalComparison` one row per pair; deployed SPA bundle current; date matches). Not a pipeline bug — selecting a specific pair reveals the data. Fix is dashboard-ui Req 8 criterion 8 (render those tabs cross-pair over all five pairs on "All pairs"); design/tasks/implementation pending. (Separately, the AI tab is also empty due to the Vertex 403 — tracked as `daily-candle-freshness-and-cleanup` R7.)
+- **Dashboard per-pair tabs hide data on the default "All pairs" view (diagnosed; fix specced, not yet built).** AI, Third-party, and Pattern/Outcomes show a pick-a-pair prompt on "All pairs", so on first load the dashboard appears to carry no third-party/AI content even though the published `dashboard.json` has it (verified: `externalComparison` one row per pair; deployed SPA bundle current; date matches). Not a pipeline bug — selecting a specific pair reveals the data. Fix is dashboard-ui Req 8 criterion 8 (render those tabs cross-pair over all five pairs on "All pairs"); design/tasks/implementation pending. (The Vertex 403 that also emptied the AI tab is now RESOLVED — `daily-candle-freshness-and-cleanup` task 16; the AI tab will populate on the next firing-pair run.)
 
 - **Candle-data freshness defect (CONFIRMED; top priority, now owned by a spec).** Hosted `candles` hold daily history for all 5 pairs only through 2026-09-15 (per-pair ≈4183-4184 rows; verified read-only), while the current Decision_Date is ~16 trading days later and the gap grows by one trading day per run. Root cause: nothing ingests fresh candles (CSV loader backfill-only; `OHLC_PROVIDER`/`OHLC_BASE_URL` empty). Impact: encoding, retrieval, the firing view, the realized-outcome journal, and any future evaluation all read stale history — the live daily loop executes but is not producing current-day signals. Owned by the new spec `daily-candle-freshness-and-cleanup` (Candle_Freshness_Stage + FCS→Twelve Data→Massive fallback chain + one-off backfill). Requirements phase only; not yet implemented.
 
@@ -659,17 +696,7 @@ two documents are out of sync and should be reconciled.
   Third-party tabs stay in their empty/unavailable states. Note the AI tab is
   per-firing-card, so on a silent (no-firing) day showing "no rationale" is
   correct, not a bug.
-- **Display-only Gemini rationale 403 on Vertex AI (new this turn).** The daily
-  Cloud Run Job's Gemini call returns HTTP 403 `aiplatform.endpoints.predict
-  denied` for the runtime SA `job-runtime@` on model `gemini-2.5-flash`. It is
-  FAIL-SAFE (the run logged a secret-free display_warning, degraded to "no
-  rationale", and completed exit 0), so the end-to-end loop is UNAFFECTED — but
-  the AI tab stays empty until the runtime SA is granted the Vertex AI predict
-  permission on publisher models. The GCP manifest lists `roles/aiplatform.user`;
-  the 403 suggests the needed predict permission on publisher models is missing or
-  mis-scoped, so verify/augment the SA's Vertex grant. Display-only — this path
-  never touches scoring. Now tracked as requirement R7 of the new spec
-  `daily-candle-freshness-and-cleanup`.
+- **Display-only Gemini rationale 403 on Vertex AI — RESOLVED (`daily-candle-freshness-and-cleanup` task 16, R7).** The earlier HTTP 403 `aiplatform.endpoints.predict denied` for `job-runtime@` on `gemini-2.5-flash` is fixed: `roles/aiplatform.user` (which includes `aiplatform.endpoints.predict`) is bound to the SA (IAM audit: ADDED 2026-10-08 17:58Z) and the logged 403 (2026-10-08 12:34Z) predated that grant. An operator-approved ☁️ Job run (`scheduled-daily-run-962h6`, exit 0) produced NO predict-403; the model is reachable in `europe-west1` (countTokens HTTP 200). Zero pairs fired that run so the per-firing-pair rationale (R7.2) will self-confirm on the next firing day. The path stays display-only (never touches scoring). Manifest `rolesNote` records the verified least-privilege grant.
 - **Read-proxy CODE removed; the live GCP resource still exists.** The
   `services/read-proxy/` code, its `/api` rewrite, and the SPA's ten-endpoint
   allowlist were DELETED in `simplify-to-cloud-minimal` Phase 5 task 6; the SPA
@@ -747,27 +774,22 @@ two documents are out of sync and should be reconciled.
   Separately, the repo's Dependabot reports 20 vulnerabilities (4 critical, 2
   high, 12 moderate, 2 low) — worth a dedicated pass. Now tracked as requirements
   of the new spec `daily-candle-freshness-and-cleanup`: the git-history backup
-  removal is R8, the Dependabot triage/fix is R9.
+  removal is R8, the Dependabot triage/fix is **R9 — DONE (see §9 below)**.
 
 ## 8. Immediate next steps
 
-1. TOP PRIORITY — IMPLEMENT `daily-candle-freshness-and-cleanup`. Its
-   requirements + design + tasks are DONE and format-valid, so the next action
-   is to start Phase 1: the OHLC_Feed_Provider port (two capabilities —
-   fetchLatest/fetchRange) + the FCS/Twelve Data/Massive adapters (zero-SDK
-   fetch, normalize to `RawCandle`, stamp `source`) + the capability-aware
-   fallback chain (FCS→Twelve Data→Massive, FCS latest-only so a multi-day range
-   routes to Twelve Data/Massive), test-driven with injected fetch (no live
-   network). Then proceed through the later phases (Candle_Freshness_Stage into
-   `scheduled-run/main.ts` before the pipeline, daily wiring, the one-off
-   backfill entry, verification, cleanup R7–R11, living docs). Keep `make check`
-   + the web build green; the ☁️ live-cloud items (the one-off hosted backfill,
-   the Vertex predict grant, `.env` secret rotation, hosted verify) stay
-   operator-gated. Highest priority because the live loop is on stale data
-   (hosted candles end 2026-09-15, no daily ingestion). The previously standalone
-   follow-ups (Vertex 403, ~50MB git backup, Dependabot, `.env` rotation,
-   cross-spec checkpoints) are tracked as requirements R7-R11 of that spec, so
-   they are actioned under its tasks rather than as separate steps.
+1. TOP PRIORITY — CONTINUE `daily-candle-freshness-and-cleanup` Phase 6 cleanup
+   (R7-R11), then Phase 7. Phases 1-5 are DONE: the Candle_Freshness_Stage
+   (tasks 1-11) is merged to `main`; the ☁️ task 13 hosted backfill closed the
+   candle gap (all five pairs to 2026-10-06, benign one-day residual); and the
+   ☁️ task 15 read-only hosted freshness verify PASSED (snapshot reflects fresh
+   history; the only finding is that known one-day provider-availability residual,
+   which the next Daily_Top_Up takes). NEXT action is the Phase 6 follow-ups,
+   tracked as requirements R7-R11 of this spec: the Vertex 403 predict grant
+   (☁️, task 16), `.env` secret rotation + untrack (R10), the ~50MB git backup
+   housekeeping, and Dependabot triage. Keep `make check` + the web build green;
+   the ☁️ live-cloud items (Vertex predict grant, `.env` secret rotation) stay
+   operator-gated under the operational-safety protocol.
 2. HIGH PRIORITY — `dashboard-ui` Req 8 criterion 8 DESIGN + TASKS are DONE
    (design addendum + task 19, subtasks 19.1–19.7, both format-valid). NEXT
    ACTION: EXECUTE task 19 — implement the thin pure `shapeAllPairs` helper +
@@ -786,15 +808,14 @@ two documents are out of sync and should be reconciled.
    published `dashboard.json` to the public bucket (anonymously fetchable, HTTP
    200). Parent task 8 is marked `[x]` and `simplify-to-cloud-minimal` is
    COMPLETE.
-4. (Now R7 of `daily-candle-freshness-and-cleanup`.) Fix the runtime SA
-   (`job-runtime@`) Vertex AI 403 (`aiplatform.endpoints.predict denied` on
-   `gemini-2.5-flash`) so the display-only AI rationale populates — grant/verify
-   the Vertex AI predict permission on publisher models for the runtime SA (the
-   manifest lists `roles/aiplatform.user`; augment if the predict permission is
-   missing or mis-scoped). The `GEMINI_MODEL` repo variable should be
-   `gemini-2.5-flash` (the previously configured `gemini-3.5-flash` 404s). The
-   display path is fail-safe, so this does not block the loop; it only unblocks
-   the AI tab.
+4. DONE (`daily-candle-freshness-and-cleanup` task 16, R7). The runtime SA
+   (`job-runtime@`) Vertex AI 403 is resolved: `roles/aiplatform.user` (includes
+   `aiplatform.endpoints.predict`) is bound to the SA and an operator-approved ☁️
+   Job run (`scheduled-daily-run-962h6`, exit 0) produced no predict-403; model
+   reachable in `europe-west1`. Zero pairs fired that run, so the per-firing-pair
+   rationale (R7.2) self-confirms on the next firing day. `GEMINI_MODEL` repo
+   variable is `gemini-2.5-flash` (the previously configured `gemini-3.5-flash`
+   404s). Display-only path; never blocked the loop.
 5. Commit the uncommitted living-doc/task edits still outstanding from prior
    turns, now including the new spec files: the RESEARCH-LOG.md evaluation entry,
    this PROJECT-STATE.md update, the task-8 checkbox in `tasks.md`, the new
@@ -813,10 +834,17 @@ two documents are out of sync and should be reconciled.
    audit §13. Result: +1.24pp over baseline, CI [+0.66pp, +1.82pp], below the 3pp
    annotation threshold. The DB-vs-log discrepancy is resolved (the report lives in
    both the hosted table and the log).
-8. Close `operational-wiring` Task 13 (final checkpoint) and tick Task 12's
-   parent checkbox.
-9. Run `dashboard-ui` Task 17 (post-deploy read-only smoke against real firing
-   data) and close Task 18; reconcile with `dashboard-data-activation` Task 16.
+8. DONE (daily-candle R11.2) — `operational-wiring` Task 12's parent is now `[x]`
+   (all four subtasks `[x]`); Task 13 (final checkpoint — cloud half) is explicitly
+   DEFERRED (superseded) because the cloud half was re-done by
+   `simplify-to-cloud-minimal` and its end-to-end loop proven live under that spec's
+   task 8.
+9. DONE (daily-candle R11.1/R11.3) — `dashboard-ui` Tasks 17 (post-deploy Read_Proxy
+   smoke) and 18 (final checkpoint) are explicitly DEFERRED (superseded): the
+   Read_Proxy + `/api` rewrite they verified were removed in
+   `simplify-to-cloud-minimal` Phase 5 (SPA now reads a static `dashboard.json`
+   snapshot). Reconciled with `dashboard-data-activation` Task 16 (left `[x]` with a
+   supersession note) so the specs tell a single consistent story.
 10. Push the reconciling merge on `dev` to the remote (directly or via PR), and
    rename the remote `main` → `origin` to remove the branch/remote name clash.
 11. Decide on the simplicity/complexity audit
@@ -859,6 +887,72 @@ two documents are out of sync and should be reconciled.
    longer blocked on code or on a local Supabase but specifically on the PR #24
    redeploy + the one-off evaluation Cloud Run Job re-run — now DONE and recorded
    (see step 7).
+
+## 9. Dependency vulnerability triage (R9 — `daily-candle-freshness-and-cleanup` task 18)
+
+Triaged against the live `npm audit` output in each `package.json` (root
+`fx-daily-pattern-assistant` and the web SPA `web/dashboard-ui-web`) — this is
+local dependency work, no live-cloud/network/auth-gated action. The 20 recorded
+Dependabot findings (4 critical / 2 high / 12 moderate / 2 low) are the sum of
+the individual GitHub advisories across both package trees; `npm audit` collapses
+them onto the vulnerable packages below. Every finding is bucketed so nothing is
+silently dropped.
+
+**Buckets**
+
+- **(a) Fixed by a compatible pinned bump — APPLIED.** `web/package.json`:
+  `vite` 5.4.11 → **5.4.21** and `vitest` 2.1.8 → **2.1.9** (exact pins, no
+  ranges — honoring the no-ranges policy; both patch-level within the installed
+  5.x / 2.x majors). These absorbed the advisories that are fixed WITHIN the
+  5.4.x / 2.1.x lines: the Vitest API-server RCE (GHSA-9crc-q9x8-hgqq, critical,
+  fixed in 2.1.9) and the several `vite` `server.fs.deny` bypass / path-traversal
+  CVEs fixed within 5.4.x (e.g. GHSA-x574-m823-4x7w, -356w-63v5-8wf4,
+  -859w-5945-r5v3, -xcj6-pq6g-qj4x, -4r4m-qw57-chr8, -vg6x-rcgg-rjx6). `make
+  check` + the web build + the web test suite stay green on the bumped versions.
+- **(b) Requires a breaking (SemVer-major) change — RECORDED, NOT forced.**
+  After the compatible bump, 6 web-tree findings remain and `npm audit` reports
+  each as `isSemVerMajor: true` — the only non-force fix is `vite` **8.3.4** and
+  `vitest` **5.0.3**: `vite` (high, GHSA-fx2h-pf6j-xcff `server.fs.deny` Windows
+  alt-path, `<=6.4.2`), `esbuild` (moderate, dev-server request/response leak,
+  needs vite 6+ → esbuild 0.25+), `tinypool` (critical ×2, prototype-pollution →
+  RCE, only cleared in vitest 5.x), `@vitest/mocker` (moderate, path traversal),
+  `vite-node` (moderate), `vitest` (critical UI-server file read, fixed in 3.2.6+
+  → vitest 5.x). **Migration note:** vite 5→8 and vitest 2→5 are breaking (config
+  API, plugin peer-deps, test runner behaviour) and are deferred to a dedicated
+  tooling-upgrade pass rather than silently bumped here, because they would need a
+  full web build + 146-test revalidation and a `@vitejs/plugin-react` peer bump.
+  **Reachability:** all 6 are dev/CI-only (vite/vitest never ship to production —
+  the web app deploys as a static pre-built SPA to Firebase Hosting) and the
+  advisories require a running vite/vitest dev or API/UI server (not used in CI
+  build or prod), so runtime exposure is nil.
+- **(c) Not applicable (dev-only / unreachable at runtime) — RATIONALE RECORDED.**
+  Root `fx-daily-pattern-assistant`: `source-map-js` 1.2.1 (high, event-loop DoS,
+  `<1.2.2`, GHSA-68fv-2mgg-jv7q) — a dev-only transitive dep (via
+  `vitest`→`vite`→`postcss` and `@vitest/coverage-v8`→`magicast`); not directly
+  pinned by this repo, only reachable in test-tooling source-map parsing, never in
+  the compiled production artifact. The root project already runs the current
+  `vitest` 5.0.1 / `vite` 8.3.0; the residual sits in a transitive `postcss` /
+  `magicast` and clears when those upstreams ship source-map-js ≥1.2.2. Not force-
+  pinned via an override to avoid introducing a non-standard transitive pin for a
+  dev-only, unreachable DoS.
+
+**Triage table (every finding bucketed)**
+
+| Pkg (tree) | Direct? | Severity | Advisory (short) | Bucket | Action / rationale |
+| --- | --- | --- | --- | --- | --- |
+| `vite` (web) | yes | high+mod×N | `server.fs.deny` bypasses, path traversal (several fixed ≤5.4.21) | (a) | Pinned 5.4.11→**5.4.21**; residual `<=6.4.2` CVEs → (b) |
+| `vitest` (web) | yes | critical | API-server RCE GHSA-9crc (fixed 2.1.9) | (a) | Pinned 2.1.8→**2.1.9** |
+| `vitest` (web) | yes | critical | UI-server file read GHSA-5xrq (`<3.2.6`) | (b) | Needs vitest **5.0.3** (major) — deferred, migration note |
+| `esbuild` (web) | no | moderate | dev-server request/response leak `<=0.24.2` | (b) | Needs vite **8.3.4** (major, esbuild 0.25+) — deferred |
+| `tinypool` (web) | no | critical×2 | prototype-pollution → RCE `<=2.1.1` | (b) | Needs vitest **5.0.3** (major) — deferred |
+| `@vitest/mocker` (web) | no | moderate | path traversal `<4.1.11` | (b) | Needs vitest **5.0.3** (major) — deferred |
+| `vite-node` (web) | no | moderate | via vulnerable vite | (b) | Needs vitest **5.0.3** (major) — deferred |
+| `source-map-js` (root) | no | high | event-loop DoS `<1.2.2` | (c) | Dev-only transitive (postcss/magicast); unreachable in prod artifact |
+
+**Green verification after the applied bump:** root `npm run check` (lint +
+typecheck + 763 vitest tests) green; `web` `npm run build` (tsc + vite build)
+green; `web` `npm test` (146 tests) green. Lockfiles updated via `npm install`
+in `web/`.
 
 ## Notes on maintenance
 
