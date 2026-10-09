@@ -71,12 +71,67 @@ const secretValueArb: fc.Arbitrary<string> = fc
   .filter((v) => v.trim().length > 0);
 
 /**
+ * The fixed, NON-secret structural text that legitimately appears on the output
+ * surfaces regardless of redaction: the `gcloud` subcommand tokens and the
+ * stdin-transport flag the argv is built from, and the placeholder scaffolding.
+ * A generated secret VALUE must not coincide with any of these (see the
+ * `noStructuralCollision` filter below).
+ */
+const STRUCTURAL_TOKENS: readonly string[] = [
+  "secrets",
+  "versions",
+  "add",
+  "--data-file=-",
+  "running: gcloud",
+  "provisioned",
+  "status=OK",
+  "deploy-verify",
+  "ok=true",
+  "execution=exec-123",
+  "secretsUsed=",
+  "from .env:", // the placeholder scaffolding `<from .env: NAME>`
+  "secret:", // the affectedResource prefix
+];
+
+/**
+ * True when `value` is confusable with the test's PRESERVED, non-secret text —
+ * i.e. it is a substring of (or contains) a secret NAME or any structural token.
+ *
+ * Why this matters: the surfaces INTENTIONALLY keep secret NAMES and the fixed
+ * gcloud/record scaffolding visible (the test even asserts the name survives).
+ * `redactSecrets` only scrubs whole literal VALUE occurrences; it cannot — and
+ * must not — erase a value-shaped substring that is actually part of a
+ * legitimately displayed name/token. So if a generated VALUE happened to be a
+ * substring of a surviving NAME (e.g. value "TIN" inside a name) or of a
+ * structural token, the "value never appears" substring assertion would fire on
+ * that benign structural text, NOT on a real leak. We exclude those confusable
+ * values so the property tests the redaction guarantee, not a substring
+ * coincidence. (Redaction's real-world inputs — high-entropy keys — are not
+ * substrings of env-var names or `gcloud` subcommands.)
+ */
+function confusableWithStructural(value: string, names: readonly string[]): boolean {
+  for (const name of names) {
+    if (name.includes(value) || value.includes(name)) return true;
+  }
+  for (const token of STRUCTURAL_TOKENS) {
+    if (token.includes(value) || value.includes(token)) return true;
+  }
+  return false;
+}
+
+/**
  * A set of distinct (NAME, VALUE) secrets. Both names AND values are forced
  * unique: distinct Secret_Keys hold distinct values in reality, and uniqueness
  * keeps the per-name placeholder assertion well-defined. (When two names shared
  * one value, the helper would still scrub the raw value — the confidentiality
  * guarantee — but could only emit one of the two name placeholders for that
  * literal occurrence, which is not a leak.)
+ *
+ * Values are additionally required NOT to be confusable with the preserved
+ * non-secret text (secret names + structural tokens): see
+ * {@link confusableWithStructural}. That excludes benign substring coincidences
+ * (e.g. a value that is a fragment of a surviving NAME) which would make the
+ * "value never appears" assertion fail on structural text rather than on a leak.
  */
 const secretSetArb: fc.Arbitrary<ReadonlyArray<{ name: string; value: string }>> =
   fc
@@ -88,7 +143,11 @@ const secretSetArb: fc.Arbitrary<ReadonlyArray<{ name: string; value: string }>>
         selector: (s) => s.name,
       },
     )
-    .filter((set) => new Set(set.map((s) => s.value)).size === set.length);
+    .filter((set) => new Set(set.map((s) => s.value)).size === set.length)
+    .filter((set) => {
+      const names = set.map((s) => s.name);
+      return set.every((s) => !confusableWithStructural(s.value, names));
+    });
 
 /** Build the NAME -> VALUE mapping the redaction helper consumes. */
 function toSecretValues(
@@ -200,6 +259,12 @@ describe("Property 23: no Secret_Key value ever appears on any output surface (s
         secretNameArb,
         secretValueArb,
         async (name, value) => {
+          // Exclude a value confusable with the preserved NAME / structural
+          // tokens: argv legitimately contains the name + gcloud subcommands, so
+          // a value that is a substring of those would fail the "value not in
+          // argv" assertion on benign structural text, not on a real leak (same
+          // rationale as `confusableWithStructural` for the first property).
+          fc.pre(!confusableWithStructural(value, [name]));
           const runner = new DefaultGcloudRunner("node");
 
           // argv references the secret by NAME only (+ the stdin transport flag);
