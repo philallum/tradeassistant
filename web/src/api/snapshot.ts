@@ -24,9 +24,11 @@
 import type {
   AnalogueOutcomeRow,
   CandleRow,
+  DailyCommentary,
   EvaluationReportRow,
   ExternalReferenceComparisonRow,
   FiringSetupRow,
+  PairEvaluationRow,
   RealizedOutcomeRow,
   SignalRationaleRow,
 } from "./types";
@@ -56,8 +58,14 @@ export function resolveSnapshotPath(): string {
     : "/dashboard.json";
 }
 
-/** The schema version the SPA understands. A mismatch is tolerated (best-effort render). */
-export const SNAPSHOT_SCHEMA_VERSION = 1;
+/**
+ * The schema version the SPA understands. A mismatch is tolerated (best-effort render).
+ * v2 added the `pairEvaluations` slice (the per-pair run-completion readout); v3 added the
+ * pair-independent `dailyCommentary` object (the daily AI note). An older snapshot simply
+ * lacks a newer slice and `parseSnapshot` defaults it (`[]` for arrays, an explicit
+ * not-generated record for `dailyCommentary`).
+ */
+export const SNAPSHOT_SCHEMA_VERSION = 3;
 
 /**
  * The complete `dashboard.json` envelope. Mirrors the writer's wire shape in
@@ -71,13 +79,24 @@ export interface DashboardSnapshot {
   readonly generatedAt: string;
   readonly decisionDates: readonly string[];
   readonly firingSetups: readonly FiringSetupRow[];
+  /** Every pair evaluated this run (fired or not) — the run-completion readout (schema v2). */
+  readonly pairEvaluations: readonly PairEvaluationRow[];
   readonly analogueOutcomes: readonly AnalogueOutcomeRow[];
   readonly realizedOutcomes: readonly RealizedOutcomeRow[];
   readonly candles: readonly CandleRow[];
   readonly aiRationale: readonly SignalRationaleRow[];
+  /** The pair-independent whole-day AI commentary (schema v3). Always present. */
+  readonly dailyCommentary: DailyCommentary;
   readonly externalComparison: readonly ExternalReferenceComparisonRow[];
   readonly evaluationReports: readonly EvaluationReportRow[];
 }
+
+/** The default (not-generated) daily-commentary record for an absent/empty slice. */
+const EMPTY_DAILY_COMMENTARY: DailyCommentary = {
+  decision_date: "",
+  note_text: "",
+  generated: false,
+};
 
 /**
  * Non-secret, client-safe error raised when the snapshot cannot be loaded. Its `message` is
@@ -132,13 +151,28 @@ export const EMPTY_SNAPSHOT: DashboardSnapshot = {
   generatedAt: "",
   decisionDates: [],
   firingSetups: [],
+  pairEvaluations: [],
   analogueOutcomes: [],
   realizedOutcomes: [],
   candles: [],
   aiRationale: [],
+  dailyCommentary: EMPTY_DAILY_COMMENTARY,
   externalComparison: [],
   evaluationReports: [],
 };
+
+/** Narrow an untrusted `dailyCommentary` object, defaulting a missing/malformed one. */
+function parseDailyCommentary(value: unknown): DailyCommentary {
+  if (typeof value !== "object" || value === null) {
+    return EMPTY_DAILY_COMMENTARY;
+  }
+  const c = value as Partial<Record<keyof DailyCommentary, unknown>>;
+  return {
+    decision_date: typeof c.decision_date === "string" ? c.decision_date : "",
+    note_text: typeof c.note_text === "string" ? c.note_text : "",
+    generated: c.generated === true,
+  };
+}
 
 /** Narrow an untrusted parsed body into a {@link DashboardSnapshot}, filling absent slices. */
 function parseSnapshot(body: unknown): DashboardSnapshot {
@@ -153,10 +187,12 @@ function parseSnapshot(body: unknown): DashboardSnapshot {
     generatedAt: typeof b.generatedAt === "string" ? b.generatedAt : "",
     decisionDates: arr<string>(b.decisionDates),
     firingSetups: arr<FiringSetupRow>(b.firingSetups),
+    pairEvaluations: arr<PairEvaluationRow>(b.pairEvaluations),
     analogueOutcomes: arr<AnalogueOutcomeRow>(b.analogueOutcomes),
     realizedOutcomes: arr<RealizedOutcomeRow>(b.realizedOutcomes),
     candles: arr<CandleRow>(b.candles),
     aiRationale: arr<SignalRationaleRow>(b.aiRationale),
+    dailyCommentary: parseDailyCommentary(b.dailyCommentary),
     externalComparison: arr<ExternalReferenceComparisonRow>(b.externalComparison),
     evaluationReports: arr<EvaluationReportRow>(b.evaluationReports),
   };

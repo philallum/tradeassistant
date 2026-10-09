@@ -56,6 +56,24 @@ export interface FiringSetupRow {
   readonly suppression_reason: "below_floor" | "not_fired" | null;
 }
 
+/**
+ * A per-pair deterministic evaluation row — the run-completion readout (schema v2). Unlike
+ * {@link FiringSetupRow}, which exists only for pairs that fired, this carries EVERY pair
+ * evaluated on the Decision_Date (fired or not) with its deterministic direction, earned
+ * confidence, horizon, displayed choppiness, and the derived `fired` flag. It lets the
+ * Setups tab's silent (no-fire) state show a credible "the run evaluated all five pairs"
+ * summary instead of a bare "no data" notice. Display-only; never re-enters scoring.
+ */
+export interface PairEvaluationRow {
+  readonly decision_date: string;
+  readonly pair: string;
+  readonly direction: Direction;
+  readonly horizon: Horizon;
+  readonly earned_confidence: number;
+  readonly fired: boolean;
+  readonly choppiness: number;
+}
+
 /** A matured analogue-outcome row — excursion profile. */
 export interface AnalogueOutcomeRow {
   readonly asset: string;
@@ -149,6 +167,20 @@ export interface ExternalReferenceComparisonRow {
   readonly reference_score: number | null;
   readonly provider: string | null;
   readonly comparison: "agree" | "diverge" | "neutral" | "unavailable";
+}
+
+/**
+ * The pair-INDEPENDENT whole-day AI commentary (schema v3). A short display-only
+ * note produced every trading day — fired or not — summarising the day's scan,
+ * doubling as an LLM-path liveness signal. `generated` is `true` only when the
+ * model actually produced a note this run; when `false`, `note_text` is empty
+ * and the UI shows an explicit "commentary unavailable" state. Unlike every
+ * other slice this is a single object, not an array. Display-only; never scoring.
+ */
+export interface DailyCommentary {
+  readonly decision_date: string;
+  readonly note_text: string;
+  readonly generated: boolean;
 }
 
 /** A bare decision-date row (drives the Historical_Browse selector). */
