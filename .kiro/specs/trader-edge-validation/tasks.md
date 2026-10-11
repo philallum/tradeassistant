@@ -257,7 +257,7 @@ the adapter reads fail-safe so a torn deploy never breaks the Job. The ledger is
 offline/ops read path — the daily run does not build it, so live behaviour is
 unchanged.
 
-- [ ] 4. Trade_Ledger builder, port, and in-memory reference (R3)
+- [x] 4. Trade_Ledger builder, port, and in-memory reference (R3)
   - Create `src/trade-ledger/types.ts` (`TradeLedgerRow`, `TradeLedgerStore` port)
     and `InMemoryTradeLedgerStore` (idempotent upsert on `(strategyId, pair,
     decisionDate)`, `getByWindow`), mirroring `FiringSetupStore` /
@@ -270,13 +270,13 @@ unchanged.
     (R3.3).
   - _Requirements: 3.1, 3.2, 3.3, 3.5_
 
-  - [ ] 4.1 Property tests for the ledger builder
+  - [x] 4.1 Property tests for the ledger builder
     - One row per eligible forecast; suppressed present with `fired: false`;
       `ambiguous`/`expired` kept as own categories; identical inputs ⇒ identical
       ledger (R3.3).
     - _Requirements: 3.1, 3.2, 3.3, 3.5_
 
-- [ ] 5. 🗄️ Supabase `trade_ledger` adapter + additive migration
+- [x] 5. 🗄️ Supabase `trade_ledger` adapter + additive migration
   - Add `supabase/migrations/…_trade_ledger.sql` creating `trade_ledger` keyed
     `(strategy_id, pair, decision_date)` (additive; drops nothing; touches no
     existing table). Implement `SupabaseTradeLedgerStore` in `src/storage` via the
@@ -287,7 +287,7 @@ unchanged.
     and the adapter degrades gracefully.
   - _Requirements: 3.1, 3.4_
 
-- [ ] 6. Profitability metrics (R4)
+- [x] 6. Profitability metrics (R4)
   - Create `src/performance/metrics.ts`: `summarize(rows)` → `PerformanceSummary`
     (net expectancy in pips AND R, gross retained, win rate, avg win, avg loss,
     profit factor, max drawdown, longest losing streak, trade count, time in
@@ -297,13 +297,13 @@ unchanged.
     (R4.5); all metrics derive SOLELY from ledger rows (R3.4).
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6_
 
-  - [ ] 6.1 Property tests for metrics
+  - [x] 6.1 Property tests for metrics
     - A metric recomputed from rows equals the summary (R3.4); per-slice sums
       reconcile to the whole (R4.3); `ambiguous`/`expired` never counted as
       win/loss (R4.4).
     - _Requirements: 4.3, 4.4_
 
-- [ ] 7. AI-never-scores guardrail on the new report paths (R12.1)
+- [x] 7. AI-never-scores guardrail on the new report paths (R12.1)
   - Add a property suite (retargeting the `evaluationReportAiFree` style) proving
     an LLM-tagged value handed to any new ledger / metric path is BLOCKED +
     RECORDED by `ScoringInputGuard`, and that generating rationale leaves every new
