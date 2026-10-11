@@ -8,6 +8,7 @@
 import { isMatured } from "../guard/lookAheadGuard.js";
 import type { Candle, TradingDate } from "../guard/types.js";
 import type { Pair } from "../ingestion/types.js";
+import { toPips } from "../trade-sim/pip.js";
 import type { AnalogueRecord, AnalogueStore, DirectionClass, ForwardOutcome } from "./types.js";
 
 /**
@@ -27,15 +28,10 @@ function classifyDirection(netMovePips: number, atr14: number): DirectionClass {
   return netMovePips >= 0 ? "UP" : "DOWN";
 }
 
-/**
- * Convert a price difference to approximate pips.
- * For JPY pairs, pip = 0.01; for all others, pip = 0.0001.
- */
-function toPips(priceDiff: number, pair: Pair): number {
-  const isJpy = pair.includes("JPY");
-  const pipSize = isJpy ? 0.01 : 0.0001;
-  return Math.round((Math.abs(priceDiff) / pipSize) * 10) / 10;
-}
+// `toPips` (JPY pip 0.01 / others 0.0001, abs magnitude rounded to one decimal)
+// is now the shared helper in `../trade-sim/pip.js`, imported above. Its behavior
+// is byte-identical to the previous private copy (trader-edge-validation R1.1),
+// so the stored MFE/MAE that feed live scoring are unchanged.
 
 /**
  * Compute MFE (maximum favorable excursion) and MAE (maximum adverse excursion)
