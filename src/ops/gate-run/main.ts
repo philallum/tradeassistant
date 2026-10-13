@@ -63,6 +63,7 @@ import {
   buildSupabaseStores,
   buildSupabaseGateStores,
 } from "../../storage/supabase/index.js";
+import { assertHostedHeavyOpAllowed } from "../../storage/supabaseConfig.js";
 
 /**
  * The default kill-gate config id recorded on the verdicts produced by the
@@ -208,6 +209,16 @@ export async function runGateRun(deps: GateRunDeps = {}): Promise<StageResult> {
   // gate store (tests), no client is built and no network is touched.
   const needsHostedStores =
     deps.stores === undefined || deps.gateVerdictStore === undefined;
+
+  // Deploy-safety: the Backtest_Stage reads the full pattern_vectors /
+  // analogue_outcomes history and must NOT accidentally sweep the hosted
+  // free-plan project (egress/log quota). Hard-refuse hosted unless the operator
+  // explicitly opted in. Only relevant when real hosted stores would be built —
+  // when the caller injects all stores (tests), no hosted read happens.
+  if (needsHostedStores) {
+    assertHostedHeavyOpAllowed(config.supabase, "gate-run backtest");
+  }
+
   const sharedClient = needsHostedStores
     ? makeSharedClient(config, deps.fetchImpl)
     : undefined;

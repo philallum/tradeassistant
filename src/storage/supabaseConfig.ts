@@ -176,3 +176,56 @@ export function tryLoadSupabaseConfig(
     return { ok: false, error: message };
   }
 }
+
+/**
+ * The environment variable an operator sets to EXPLICITLY allow a heavy,
+ * full-history operation (seed / gate / evaluation backtest) to run against the
+ * HOSTED Supabase target. Absent/empty/`0`/`false` ⇒ hosted is refused for those
+ * ops (the safe default). Set to `1` / `true` to override for a deliberate,
+ * supervised hosted run.
+ */
+export const ALLOW_HOSTED_HEAVY_OP_ENV = "ALLOW_HOSTED_BACKTEST" as const;
+
+/** True iff {@link ALLOW_HOSTED_HEAVY_OP_ENV} is set to an affirmative value. */
+export function hostedHeavyOpAllowed(env: EnvSource = process.env): boolean {
+  const raw = env[ALLOW_HOSTED_HEAVY_OP_ENV];
+  if (raw === undefined) return false;
+  const normalized = raw.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+/**
+ * Guard a HEAVY, full-history operation (the seed / gate / evaluation backtest
+ * sweeps) against accidentally running on the HOSTED Supabase project.
+ *
+ * These ops read the entire `pattern_vectors` / `analogue_outcomes` history
+ * (per pair × per walk-forward fold × per matured date), which transfers GBs
+ * over PostgREST — enough to blow out the hosted free-plan egress / log quotas.
+ * They are meant to run against a LOCAL Supabase (`SUPABASE_TARGET=local`,
+ * `supabase start`); hosted carries only the bounded once-daily Job.
+ *
+ * When the resolved target is `hosted` this THROWS unless the operator has
+ * explicitly opted in via {@link ALLOW_HOSTED_HEAVY_OP_ENV} — a hard refusal, not
+ * a warning, so an unattended run cannot silently sweep hosted. The error names
+ * the operation and the override so the fix is obvious. The local target always
+ * passes. No secret value is read or logged (only the non-secret target label).
+ *
+ * @param config    The resolved connection whose `target` is checked.
+ * @param operation A short label for the operation (used in the error message).
+ * @param env       Environment source for the override flag (injectable for tests).
+ */
+export function assertHostedHeavyOpAllowed(
+  config: SupabaseConfig,
+  operation: string,
+  env: EnvSource = process.env,
+): void {
+  if (config.target !== "hosted") return;
+  if (hostedHeavyOpAllowed(env)) return;
+  throw new SupabaseConfigError(
+    `Refusing to run heavy operation "${operation}" against the HOSTED Supabase target: ` +
+      `it reads the full pattern_vectors / analogue_outcomes history and can exhaust the ` +
+      `hosted free-plan egress/log quota. Run it against a local Supabase ` +
+      `(SUPABASE_TARGET=local, 'supabase start'), or set ${ALLOW_HOSTED_HEAVY_OP_ENV}=1 to ` +
+      `override for a deliberate, supervised hosted run.`,
+  );
+}

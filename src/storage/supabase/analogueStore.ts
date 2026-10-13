@@ -24,6 +24,14 @@ import { eq } from "./client.js";
 
 const ANALOGUE_OUTCOMES = "analogue_outcomes";
 
+/**
+ * Explicit column projection (egress reduction). Lists exactly the columns
+ * {@link fromRow} consumes so PostgREST never widens these hot-path reads to a
+ * `SELECT *` (and a future column cannot silently inflate the bytes on the wire).
+ */
+const ANALOGUE_COLUMNS =
+  "select=asset,decision_date,horizon,direction,mfe_pips,mae_pips,atr14,matured";
+
 /** The row shape stored in / read from `analogue_outcomes`. */
 interface AnalogueRow {
   readonly asset: string;
@@ -85,7 +93,7 @@ export class SupabaseAnalogueStore implements AnalogueStore {
     // to match the in-memory reference.
     const rows = await this.#client.select<AnalogueRow>(
       ANALOGUE_OUTCOMES,
-      `asset=${eq(asset)}&matured=is.true&decision_date=lt.${encodeURIComponent(beforeDate)}&order=decision_date.asc,horizon.asc`,
+      `${ANALOGUE_COLUMNS}&asset=${eq(asset)}&matured=is.true&decision_date=lt.${encodeURIComponent(beforeDate)}&order=decision_date.asc,horizon.asc`,
     );
     return rows.map(fromRow);
   }
@@ -96,7 +104,7 @@ export class SupabaseAnalogueStore implements AnalogueStore {
   ): Promise<readonly AnalogueRecord[]> {
     const rows = await this.#client.select<AnalogueRow>(
       ANALOGUE_OUTCOMES,
-      `asset=${eq(asset)}&decision_date=${eq(decisionDate)}&order=horizon.asc`,
+      `${ANALOGUE_COLUMNS}&asset=${eq(asset)}&decision_date=${eq(decisionDate)}&order=horizon.asc`,
     );
     return rows.map(fromRow);
   }
