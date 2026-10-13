@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
+  ALLOW_HOSTED_HEAVY_OP_ENV,
   SUPABASE_ENV,
   SupabaseConfigError,
+  assertHostedHeavyOpAllowed,
+  hostedHeavyOpAllowed,
   loadSupabaseConfig,
   tryLoadSupabaseConfig,
   type EnvSource,
+  type SupabaseConfig,
 } from "./supabaseConfig.js";
 
 /** Build an env record for a fully-configured local + hosted environment. */
@@ -193,5 +197,63 @@ describe("loadSupabaseConfig — property: reads values verbatim (Req 6.3)", () 
       ),
       { numRuns: 100 },
     );
+  });
+});
+
+describe("assertHostedHeavyOpAllowed — hosted egress guard", () => {
+  const localConfig: SupabaseConfig = {
+    target: "local",
+    url: "http://127.0.0.1:54321",
+    key: "local-service-key",
+  };
+  const hostedConfig: SupabaseConfig = {
+    target: "hosted",
+    url: "https://proj.supabase.co",
+    key: "hosted-service-key",
+  };
+
+  it("always allows the local target (no override needed)", () => {
+    expect(() => assertHostedHeavyOpAllowed(localConfig, "gate-run backtest", {})).not.toThrow();
+  });
+
+  it("REFUSES the hosted target by default, naming the op and the override", () => {
+    try {
+      assertHostedHeavyOpAllowed(hostedConfig, "gate-run backtest", {});
+      throw new Error("expected a refusal");
+    } catch (err) {
+      expect(err).toBeInstanceOf(SupabaseConfigError);
+      const message = (err as Error).message;
+      expect(message).toContain("gate-run backtest");
+      expect(message).toContain("HOSTED");
+      expect(message).toContain(ALLOW_HOSTED_HEAVY_OP_ENV);
+      // The error must never leak the secret key.
+      expect(message).not.toContain(hostedConfig.key);
+    }
+  });
+
+  it("allows the hosted target when the override is set to an affirmative value", () => {
+    for (const value of ["1", "true", "TRUE", "yes", " true "]) {
+      expect(() =>
+        assertHostedHeavyOpAllowed(hostedConfig, "evaluation-run backtest", {
+          [ALLOW_HOSTED_HEAVY_OP_ENV]: value,
+        }),
+      ).not.toThrow();
+    }
+  });
+
+  it("still refuses hosted when the override is falsy/garbage", () => {
+    for (const value of ["0", "false", "no", "", "maybe"]) {
+      expect(() =>
+        assertHostedHeavyOpAllowed(hostedConfig, "evaluation-run backtest", {
+          [ALLOW_HOSTED_HEAVY_OP_ENV]: value,
+        }),
+      ).toThrow(SupabaseConfigError);
+    }
+  });
+
+  it("hostedHeavyOpAllowed reflects the override flag", () => {
+    expect(hostedHeavyOpAllowed({})).toBe(false);
+    expect(hostedHeavyOpAllowed({ [ALLOW_HOSTED_HEAVY_OP_ENV]: "1" })).toBe(true);
+    expect(hostedHeavyOpAllowed({ [ALLOW_HOSTED_HEAVY_OP_ENV]: "0" })).toBe(false);
   });
 });

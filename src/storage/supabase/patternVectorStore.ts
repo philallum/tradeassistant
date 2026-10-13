@@ -58,6 +58,24 @@ function parseEmbedding(value: string | number[]): number[] {
   return trimmed.split(",").map((n) => Number(n));
 }
 
+/**
+ * Explicit column projections (egress reduction). PostgREST `SELECT *` ships the
+ * 70-dim `embedding` string AND the `scale_dims` jsonb on every row; projecting
+ * to only the columns a caller consumes cuts the bytes crossing the wire (and
+ * prevents a future column from silently inflating these hot-path reads).
+ *
+ * - {@link FULL_VECTOR_COLUMNS}: every column — used where the caller needs the
+ *   reconstructed `scaleDims` (`getVector`, `getVectorsByAsset`; the backtest
+ *   mirror rebuilds the query vector from `scale_dims`).
+ * - {@link ANN_VECTOR_COLUMNS}: omits `scale_dims` — used by `queryNearest`,
+ *   whose consumer (`src/retrieval/retrieve.ts`) reads only `embedding`,
+ *   `decisionDate`, and `weeklyTrendSign`, never `scaleDims`. Dropping the jsonb
+ *   is the primary per-row egress saving on the largest (full-slice) read.
+ */
+const FULL_VECTOR_COLUMNS = "asset,decision_date,embedding,weekly_trend_sign,scale_dims";
+const ANN_VECTOR_COLUMNS = "asset,decision_date,embedding,weekly_trend_sign";
+
+/** Map a FULLY-projected row (incl. `scale_dims`) to a {@link StoredPatternVector}. */
 function fromRow(row: PatternVectorRow): StoredPatternVector {
   return {
     asset: row.asset as Pair,
@@ -69,6 +87,23 @@ function fromRow(row: PatternVectorRow): StoredPatternVector {
       scale20: [...row.scale_dims.scale20],
       scale40: [...row.scale_dims.scale40],
     },
+  };
+}
+
+/**
+ * Map an ANN-projected row (NO `scale_dims`) to a {@link StoredPatternVector}.
+ * `scaleDims` is returned EMPTY by design: `queryNearest` does not fetch the
+ * jsonb (egress), and its sole consumer never reads `scaleDims` off the result —
+ * it ranks by `embedding` cosine distance and keeps `decisionDate`. A caller
+ * that needs the real `scaleDims` must use `getVector` / `getVectorsByAsset`.
+ */
+function fromAnnRow(row: Omit<PatternVectorRow, "scale_dims">): StoredPatternVector {
+  return {
+    asset: row.asset as Pair,
+    decisionDate: row.decision_date,
+    embedding: parseEmbedding(row.embedding),
+    weeklyTrendSign: row.weekly_trend_sign as WeeklyTrendSign,
+    scaleDims: { scale10: [], scale20: [], scale40: [] },
   };
 }
 
@@ -110,7 +145,7 @@ export class SupabasePatternVectorStore implements PatternVectorStore {
   ): Promise<StoredPatternVector | null> {
     const rows = await this.#client.select<PatternVectorRow>(
       PATTERN_VECTORS,
-      `asset=${eq(asset)}&decision_date=${eq(decisionDate)}&limit=1`,
+      `select=${FULL_VECTOR_COLUMNS}&asset=${eq(asset)}&decision_date=${eq(decisionDate)}&limit=1`,
     );
     const row = rows[0];
     return row === undefined ? null : fromRow(row);
@@ -119,7 +154,7 @@ export class SupabasePatternVectorStore implements PatternVectorStore {
   async getVectorsByAsset(asset: Pair): Promise<readonly StoredPatternVector[]> {
     const rows = await this.#client.select<PatternVectorRow>(
       PATTERN_VECTORS,
-      `asset=${eq(asset)}&order=decision_date.asc`,
+      `select=${FULL_VECTOR_COLUMNS}&asset=${eq(asset)}&order=decision_date.asc`,
     );
     return rows.map(fromRow);
   }
@@ -137,11 +172,13 @@ export class SupabasePatternVectorStore implements PatternVectorStore {
   > {
     // Metadata pre-filter on the indexed (weekly_trend_sign, asset) columns
     // (Requirements 8.3, 9.2) — the ANN candidate set.
-    const filters = [`weekly_trend_sign=${eq(weeklyTrendSign)}`];
+    const filters = [`select=${ANN_VECTOR_COLUMNS}`, `weekly_trend_sign=${eq(weeklyTrendSign)}`];
     if (options?.asset !== undefined) {
       filters.push(`asset=${eq(options.asset)}`);
     }
-    const rows = await this.#client.select<PatternVectorRow>(
+    // ANN projection: `scale_dims` is deliberately NOT fetched (egress) — the
+    // ranked candidates feed cosine-distance ranking only.
+    const rows = await this.#client.select<Omit<PatternVectorRow, "scale_dims">>(
       PATTERN_VECTORS,
       filters.join("&"),
     );
@@ -149,7 +186,7 @@ export class SupabasePatternVectorStore implements PatternVectorStore {
     const candidates: { vector: StoredPatternVector; cosineDistance: number }[] =
       [];
     for (const row of rows) {
-      const vector = fromRow(row);
+      const vector = fromAnnRow(row);
       if (
         options?.excludeDecisionDate !== undefined &&
         vector.decisionDate === options.excludeDecisionDate

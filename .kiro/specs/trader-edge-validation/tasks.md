@@ -319,7 +319,7 @@ information-test suite. All offline/ops read paths; the daily run is untouched.
 Freeze-before-measure is honored: the baseline capture (task 8) precedes the
 walk-forward (task 12).
 
-- [ ] 8. Capture the current Parameter_Set as a Frozen_Baseline (R11)
+- [x] 8. Capture the current Parameter_Set as a Frozen_Baseline (R11)
   - Create `src/walk-forward/parameterSet.ts` (`ParameterSet`, `FrozenBaseline`)
     and `captureFrozenBaseline()` reading the CURRENT live constants verbatim
     (`DEFAULT_PIPELINE_CONFIG` scales/epsilon/windowSize,
@@ -329,18 +329,18 @@ walk-forward (task 12).
     `FrozenBaseline`. Capture is READ-ONLY wrt the live decision path (R11.3).
   - _Requirements: 11.1, 11.2, 11.3, 7.3_
 
-  - [ ] 8.1 Unit test — capture is faithful and read-only
+  - [x] 8.1 Unit test — capture is faithful and read-only
     - The captured `ParameterSet` equals the live defaults field-for-field;
       capturing changes no live constant.
     - _Requirements: 11.1, 11.3_
 
-- [ ] 9. 🗄️ Supabase `frozen_baselines` adapter + additive migration
+- [x] 9. 🗄️ Supabase `frozen_baselines` adapter + additive migration
   - Add `supabase/migrations/…_frozen_baselines.sql` creating `frozen_baselines`
     keyed by `id` (append-only; additive) and `SupabaseFrozenBaselineStore`,
     `fx_writer`-writable, reading fail-safe (absent table → empty).
   - _Requirements: 11.1, 11.2_
 
-- [ ] 10. Comparator_Strategies (R5)
+- [x] 10. Comparator_Strategies (R5)
   - Create `src/performance/comparators.ts`: a `ForecastSource` producing the same
     `{ direction, horizon, SL, TP }` shape as the system, with `trendContinuation`
     (reuse `predictBaseline`/`weeklyTrendSign` from `src/baseline`),
@@ -352,12 +352,12 @@ walk-forward (task 12).
     comparators net of costs OOS (R5.4, R12.6).
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
 
-  - [ ] 10.1 Fairness property test
+  - [x] 10.1 Fairness property test
     - System and comparators consume the IDENTICAL `ExecutionModel` and entry
       timing on the same timestamps; a differing model is a test failure (R5.5).
     - _Requirements: 5.3, 5.5_
 
-- [ ] 11. Calibration with the overlap adjustment (R6)
+- [x] 11. Calibration with the overlap adjustment (R6)
   - Create `src/performance/calibration.ts`: bucket OOS forecasts by
     Earned_Confidence band; per band report `realizedCorrectRate`, `forecastCount`,
     and an `effectiveSampleSize` discounted for analogue OVERLAP (shared windows /
@@ -365,13 +365,13 @@ walk-forward (task 12).
     (R6.1) separately. Deterministic, OOS, LLM-free (R6.5).
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
 
-  - [ ] 11.1 Property test for calibration
+  - [x] 11.1 Property test for calibration
     - A synthetic set with known resolution rates reproduces the expected band
       rates; the overlap adjustment LOWERS effective sample size when neighborhoods
       share windows (R6.4).
     - _Requirements: 6.1, 6.4_
 
-- [ ] 12. Walk_Forward_Evaluation harness (R7)
+- [x] 12. Walk_Forward_Evaluation harness (R7)
   - Create `src/walk-forward/walkForward.ts`: select the `ParameterSet` on an
     in-sample window, FREEZE it, build the ledger + metrics ONLY on the next OOS
     window (reusing `runDailyPipeline`/`evaluatePair` to regenerate forecasts under
@@ -385,7 +385,7 @@ walk-forward (task 12).
     result renders plainly, not hidden.
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
 
-  - [ ] 12.1 Property test for the freeze
+  - [x] 12.1 Property test for the freeze
     - A parameter chosen on the in-sample window is provably frozen before the OOS
       window is scored; a tuned-against window is marked non-independent (R7.6).
     - _Requirements: 7.1, 7.2, 7.6_

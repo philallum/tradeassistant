@@ -63,6 +63,7 @@ import {
   buildSupabaseStores,
   buildSupabaseEvaluationReportStore,
 } from "../../storage/supabase/index.js";
+import { assertHostedHeavyOpAllowed } from "../../storage/supabaseConfig.js";
 
 /**
  * The config id recorded on the first-evaluation report. The spec's first
@@ -187,6 +188,16 @@ export async function runEvaluation(
   // stores (tests), no client is built and no network is touched.
   const needsHostedStores =
     deps.stores === undefined || deps.reportStore === undefined;
+
+  // Deploy-safety: the evaluation backtest reads the full pattern_vectors /
+  // analogue_outcomes history and must NOT accidentally sweep the hosted
+  // free-plan project (egress/log quota). Hard-refuse hosted unless the operator
+  // explicitly opted in. Only relevant when real hosted stores would be built —
+  // when the caller injects all stores (tests use in-memory fixtures), no hosted
+  // read happens, so the guard is skipped.
+  if (needsHostedStores) {
+    assertHostedHeavyOpAllowed(config.supabase, "evaluation-run backtest");
+  }
   const sharedClient = needsHostedStores
     ? makeSharedClient(config, deps.fetchImpl)
     : undefined;
