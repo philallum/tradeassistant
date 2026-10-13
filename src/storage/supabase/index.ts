@@ -32,6 +32,10 @@ export { SupabaseAnalogueStore } from "./analogueStore.js";
 export { SupabaseGateVerdictStore } from "./gateVerdictStore.js";
 export { SupabaseEvaluationReportStore } from "./evaluationReportStore.js";
 export {
+  SupabaseFrozenBaselineStore,
+  type FrozenBaselineLogger,
+} from "./frozenBaselineStore.js";
+export {
   makeSupabaseViewPersister,
   firingSetupRows,
 } from "./viewPersister.js";
