@@ -350,6 +350,17 @@ export class LivingDocs {
     return !rest.some((line) => /^- Verdict:/.test(line));
   }
 
+  /**
+   * Append a trader-edge-validation measurement note to RESEARCH-LOG.md only
+   * (trader-edge-validation R12.5). Carries NO PASS/CUT/KILL token and never
+   * touches PROJECT-STATE.md. `title` becomes an `[EDGE-EVAL]` heading; `lines`
+   * become `- ` bullet lines. Existing entries are never rewritten.
+   */
+  async appendEdgeEvaluation(title: string, lines: readonly string[]): Promise<void> {
+    const entry = [`## [EDGE-EVAL] ${title}`, ...lines.map((l) => `- ${l}`)].join("\n");
+    await this.#appendEntry(entry);
+  }
+
   async #appendEntry(entry: string): Promise<void> {
     const existing = (await this.#store.read(LIVING_DOCS.researchLog)) ?? "";
     const startIdx = existing.indexOf(ENTRIES_BEGIN);

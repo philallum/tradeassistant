@@ -6,8 +6,9 @@
  */
 
 export { GateTab } from "./GateTab";
-export type { GateTabProps, EvaluationReportsLoader } from "./GateTab";
+export type { GateTabProps, EvaluationReportsLoader, NetEvaluationLoader, NetEvaluationSlices } from "./GateTab";
 export { EvaluationReportCard } from "./EvaluationReportCard";
 export type { EvaluationReportCardProps } from "./EvaluationReportCard";
 export { selectLatestReport } from "./selectReport";
 export * from "./format";
+export { NetEvaluationSection } from "./NetEvaluationSection";

@@ -51,7 +51,7 @@ export function DailyNote({ note }: DailyNoteProps): JSX.Element | null {
           margin: `0 0 ${theme.spacing.sm}px 0`,
         }}
       >
-        Daily AI note
+        Daily AI note (advisory)
       </h3>
 
       {/* Advisory label (mirrors the AI tab banner): AI-generated, non-scoring. */}

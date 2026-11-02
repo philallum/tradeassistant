@@ -54,8 +54,8 @@ export const TABS: readonly TabDef[] = [
   { id: "setups", label: "Setups" },
   { id: "pattern-outcomes", label: "Pattern & Outcomes" },
   { id: "gate", label: "Gate" },
-  { id: "ai", label: "AI" },
-  { id: "third-party", label: "Third-party" },
+  { id: "ai", label: "AI (advisory)" },
+  { id: "third-party", label: "Third-party (advisory)" },
 ] as const;
 
 /** Narrowing guard: is `value` one of the five known {@link TabId}s? */

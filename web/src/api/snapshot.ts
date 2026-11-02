@@ -23,14 +23,19 @@
 
 import type {
   AnalogueOutcomeRow,
+  Calibration,
   CandleRow,
   DailyCommentary,
   EvaluationReportRow,
+  Exposure,
   ExternalReferenceComparisonRow,
   FiringSetupRow,
   PairEvaluationRow,
+  ProvenanceRow,
   RealizedOutcomeRow,
   SignalRationaleRow,
+  TradeLedgerSummary,
+  ValidationStatusRow,
 } from "./types";
 
 /**
@@ -61,11 +66,13 @@ export function resolveSnapshotPath(): string {
 /**
  * The schema version the SPA understands. A mismatch is tolerated (best-effort render).
  * v2 added the `pairEvaluations` slice (the per-pair run-completion readout); v3 added the
- * pair-independent `dailyCommentary` object (the daily AI note). An older snapshot simply
+ * pair-independent `dailyCommentary` object (the daily AI note); v4 added the evidence slices
+ * `tradeLedgerSummary`, `calibration`, `exposure`, `provenance`, `validationStatus` (arrays default
+ * to `[]`, objects to an explicit empty value). An older snapshot simply
  * lacks a newer slice and `parseSnapshot` defaults it (`[]` for arrays, an explicit
  * not-generated record for `dailyCommentary`).
  */
-export const SNAPSHOT_SCHEMA_VERSION = 3;
+export const SNAPSHOT_SCHEMA_VERSION = 4;
 
 /**
  * The complete `dashboard.json` envelope. Mirrors the writer's wire shape in
@@ -89,7 +96,21 @@ export interface DashboardSnapshot {
   readonly dailyCommentary: DailyCommentary;
   readonly externalComparison: readonly ExternalReferenceComparisonRow[];
   readonly evaluationReports: readonly EvaluationReportRow[];
+  /** v4: per-strategy net-of-cost summary + comparators. Empty by default. */
+  readonly tradeLedgerSummary: TradeLedgerSummary;
+  /** v4: OOS calibration by confidence band. Empty by default. */
+  readonly calibration: Calibration;
+  /** v4: aggregate currency exposure. Empty by default. */
+  readonly exposure: Exposure;
+  /** v4: per-forecast Signal_Provenance. Empty by default. */
+  readonly provenance: readonly ProvenanceRow[];
+  /** v4: per-forecast validated | unvalidated. Empty by default. */
+  readonly validationStatus: readonly ValidationStatusRow[];
 }
+
+const EMPTY_TRADE_LEDGER_SUMMARY: TradeLedgerSummary = { window: null, strategies: [] };
+const EMPTY_CALIBRATION: Calibration = { bands: [], monotonic: null, wellCalibrated: null };
+const EMPTY_EXPOSURE: Exposure = { perCurrency: [], concentrated: false, strongestPair: null };
 
 /** The default (not-generated) daily-commentary record for an absent/empty slice. */
 const EMPTY_DAILY_COMMENTARY: DailyCommentary = {
@@ -159,6 +180,11 @@ export const EMPTY_SNAPSHOT: DashboardSnapshot = {
   dailyCommentary: EMPTY_DAILY_COMMENTARY,
   externalComparison: [],
   evaluationReports: [],
+  tradeLedgerSummary: EMPTY_TRADE_LEDGER_SUMMARY,
+  calibration: EMPTY_CALIBRATION,
+  exposure: EMPTY_EXPOSURE,
+  provenance: [],
+  validationStatus: [],
 };
 
 /** Narrow an untrusted `dailyCommentary` object, defaulting a missing/malformed one. */
@@ -174,8 +200,42 @@ function parseDailyCommentary(value: unknown): DailyCommentary {
   };
 }
 
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** Narrow an untrusted `tradeLedgerSummary`, defaulting a missing/malformed one. */
+function parseTradeLedgerSummary(value: unknown): TradeLedgerSummary {
+  if (!isObj(value)) return EMPTY_TRADE_LEDGER_SUMMARY;
+  const w = value.window;
+  const window =
+    isObj(w) && typeof w.from === "string" && typeof w.to === "string" ? { from: w.from, to: w.to } : null;
+  return {
+    window,
+    strategies: Array.isArray(value.strategies) ? (value.strategies as TradeLedgerSummary["strategies"]) : [],
+  };
+}
+
+/** Narrow an untrusted `calibration`, defaulting a missing/malformed one. */
+function parseCalibration(value: unknown): Calibration {
+  if (!isObj(value)) return EMPTY_CALIBRATION;
+  return {
+    bands: Array.isArray(value.bands) ? (value.bands as Calibration["bands"]) : [],
+    monotonic: typeof value.monotonic === "boolean" ? value.monotonic : null,
+    wellCalibrated: typeof value.wellCalibrated === "boolean" ? value.wellCalibrated : null,
+  };
+}
+
+/** Narrow an untrusted `exposure`, defaulting a missing/malformed one. */
+function parseExposure(value: unknown): Exposure {
+  if (!isObj(value)) return EMPTY_EXPOSURE;
+  return {
+    perCurrency: Array.isArray(value.perCurrency) ? (value.perCurrency as Exposure["perCurrency"]) : [],
+    concentrated: value.concentrated === true,
+    strongestPair: typeof value.strongestPair === "string" ? value.strongestPair : null,
+  };
+}
+
 /** Narrow an untrusted parsed body into a {@link DashboardSnapshot}, filling absent slices. */
-function parseSnapshot(body: unknown): DashboardSnapshot {
+export function parseSnapshot(body: unknown): DashboardSnapshot {
   if (typeof body !== "object" || body === null) {
     throw new SnapshotError("The dashboard snapshot was malformed.");
   }
@@ -195,6 +255,11 @@ function parseSnapshot(body: unknown): DashboardSnapshot {
     dailyCommentary: parseDailyCommentary(b.dailyCommentary),
     externalComparison: arr<ExternalReferenceComparisonRow>(b.externalComparison),
     evaluationReports: arr<EvaluationReportRow>(b.evaluationReports),
+    tradeLedgerSummary: parseTradeLedgerSummary(b.tradeLedgerSummary),
+    calibration: parseCalibration(b.calibration),
+    exposure: parseExposure(b.exposure),
+    provenance: arr<ProvenanceRow>(b.provenance),
+    validationStatus: arr<ValidationStatusRow>(b.validationStatus),
   };
 }
 

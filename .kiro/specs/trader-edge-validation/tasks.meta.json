@@ -1,0 +1,170 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "13. Aggregate_Exposure (R8)": [
+      {
+        "executionId": "c43fe533-4ffe-4c6c-869a-b73708a39385",
+        "chatSessionId": "sess_b69e3d04-58c9-48e0-93e9-02949e2e52c9",
+        "timestamp": 1793633728104
+      },
+      {
+        "executionId": "c43fe533-4ffe-4c6c-869a-b73708a39385",
+        "chatSessionId": "sess_b69e3d04-58c9-48e0-93e9-02949e2e52c9",
+        "timestamp": 1793634044308
+      }
+    ],
+    "13.1 Unit test for exposure": [
+      {
+        "executionId": "ee9f8fc6-56b5-48c7-9a2a-0f3a011488a3",
+        "chatSessionId": "sess_a9516649-6192-41bf-aaa1-ec28a9fcd89a",
+        "timestamp": 1793634477217
+      },
+      {
+        "executionId": "ee9f8fc6-56b5-48c7-9a2a-0f3a011488a3",
+        "chatSessionId": "sess_a9516649-6192-41bf-aaa1-ec28a9fcd89a",
+        "timestamp": 1793634580166
+      }
+    ],
+    "14. Signal_Provenance (R9)": [
+      {
+        "executionId": "fd2176e3-1514-46aa-90df-095b67542d38",
+        "chatSessionId": "sess_77de3483-9674-488e-9ae2-15add5d552da",
+        "timestamp": 1793634704120
+      }
+    ],
+    "15. Extend the snapshot to v4 and wire the daily run (fail-safe)": [
+      {
+        "executionId": "efd18942-16a3-4dce-a91e-ec1897b0e3c0",
+        "chatSessionId": "sess_a1002c26-79ab-4130-a68e-d9bb419cc6b2",
+        "timestamp": 1793635442163
+      },
+      {
+        "executionId": "efd18942-16a3-4dce-a91e-ec1897b0e3c0",
+        "chatSessionId": "sess_a1002c26-79ab-4130-a68e-d9bb419cc6b2",
+        "timestamp": 1793635837199
+      }
+    ],
+    "16. Mirror the v4 slices in the web wire types + parser": [
+      {
+        "executionId": "80d3380c-d4e5-4ef5-a9d9-207001d1770e",
+        "chatSessionId": "sess_7932ec75-c141-4750-a516-828487884d6a",
+        "timestamp": 1793636019860
+      },
+      {
+        "executionId": "80d3380c-d4e5-4ef5-a9d9-207001d1770e",
+        "chatSessionId": "sess_7932ec75-c141-4750-a516-828487884d6a",
+        "timestamp": 1793636337769
+      }
+    ],
+    "17. SPA — Setups re-org, FORECAST/TRADE distinction, un-validated labels": [
+      {
+        "executionId": "702ff691-5394-4655-92ea-c33595722e5e",
+        "chatSessionId": "sess_42ea69db-7c89-4767-bd49-2e0e2578e953",
+        "timestamp": 1793636520509
+      },
+      {
+        "executionId": "702ff691-5394-4655-92ea-c33595722e5e",
+        "chatSessionId": "sess_42ea69db-7c89-4767-bd49-2e0e2578e953",
+        "timestamp": 1793637017139
+      }
+    ],
+    "17.1 Web tests for the Setups re-org": [
+      {
+        "executionId": "e64c11b3-d6a2-460e-b39d-f4f8368d08eb",
+        "chatSessionId": "sess_42996518-9db2-4a78-95f8-6f8f9ef6499d",
+        "timestamp": 1793637189602
+      },
+      {
+        "executionId": "e64c11b3-d6a2-460e-b39d-f4f8368d08eb",
+        "chatSessionId": "sess_42996518-9db2-4a78-95f8-6f8f9ef6499d",
+        "timestamp": 1793637278840
+      }
+    ],
+    "18. SPA — evaluation view leads with net-of-cost results": [
+      {
+        "executionId": "b7917e01-2bad-4d72-bfd8-2faaa67b9fed",
+        "chatSessionId": "sess_0a16c00d-2cf6-4e6a-b7ed-97f3ec2718dc",
+        "timestamp": 1793637484367
+      },
+      {
+        "executionId": "b7917e01-2bad-4d72-bfd8-2faaa67b9fed",
+        "chatSessionId": "sess_0a16c00d-2cf6-4e6a-b7ed-97f3ec2718dc",
+        "timestamp": 1793638121721
+      }
+    ],
+    "19. SPA — evidence before AI; demote AI, Third-party, and choppiness": [
+      {
+        "executionId": "e23994e2-96db-4995-ade9-946d7388d1bd",
+        "chatSessionId": "sess_ec18eb5e-4168-4983-a5a3-fb44ec7428a7",
+        "timestamp": 1793639265137
+      },
+      {
+        "executionId": "e23994e2-96db-4995-ade9-946d7388d1bd",
+        "chatSessionId": "sess_ec18eb5e-4168-4983-a5a3-fb44ec7428a7",
+        "timestamp": 1793639422111
+      }
+    ],
+    "20. Operator entry: `src/ops/edge-eval/main.ts`": [
+      {
+        "executionId": "6c5a00de-7069-4aa3-9103-ee45b6726279",
+        "chatSessionId": "sess_da35b056-b60f-4e64-8c71-ccb2e5994244",
+        "timestamp": 1793639469147
+      },
+      {
+        "executionId": "6c5a00de-7069-4aa3-9103-ee45b6726279",
+        "chatSessionId": "sess_da35b056-b60f-4e64-8c71-ccb2e5994244",
+        "timestamp": 1793639773607
+      }
+    ],
+    "21. Standing-guard verification (R12 scope discipline)": [
+      {
+        "executionId": "3513c54b-3a7e-4df8-a81d-359b44465bea",
+        "chatSessionId": "sess_8fb92954-f395-443c-9bf7-69be4f2e4000",
+        "timestamp": 1793639922295
+      },
+      {
+        "executionId": "3513c54b-3a7e-4df8-a81d-359b44465bea",
+        "chatSessionId": "sess_8fb92954-f395-443c-9bf7-69be4f2e4000",
+        "timestamp": 1793640576783
+      }
+    ],
+    "22. Living docs": [
+      {
+        "executionId": "d81bba6a-65d9-446f-ae4b-cb2099e2693c",
+        "chatSessionId": "sess_8a86e8dc-95ec-48c2-9eea-400c6da5744c",
+        "timestamp": 1793640658964
+      }
+    ],
+    "23. Final checkpoint": [
+      {
+        "executionId": "b2d51d4f-3a47-40f8-9774-80d0160eb201",
+        "chatSessionId": "sess_d16861a2-a4c1-4aab-8b08-c396084c92f8",
+        "timestamp": 1793640763005
+      },
+      {
+        "executionId": "b2d51d4f-3a47-40f8-9774-80d0160eb201",
+        "chatSessionId": "sess_d16861a2-a4c1-4aab-8b08-c396084c92f8",
+        "timestamp": 1793640986417
+      }
+    ],
+    "OF1. Push the ANN top-k server-side via pgvector (`queryNearest`)": [
+      {
+        "executionId": "d3e5037c-9132-4246-b4d6-c3343cd7ca83",
+        "chatSessionId": "sess_8b8d0260-b75c-4058-8187-12edeb2b6a9b",
+        "timestamp": 1793645199079
+      },
+      {
+        "executionId": "d3e5037c-9132-4246-b4d6-c3343cd7ca83",
+        "chatSessionId": "sess_8b8d0260-b75c-4058-8187-12edeb2b6a9b",
+        "timestamp": 1793645468720
+      }
+    ],
+    "OF1.1 Retrieval parity test (byte-identical ordering)": [
+      {
+        "executionId": "d3e5037c-9132-4246-b4d6-c3343cd7ca83",
+        "chatSessionId": "sess_8b8d0260-b75c-4058-8187-12edeb2b6a9b",
+        "timestamp": 1793645468257
+      }
+    ]
+  }
+}

@@ -25,6 +25,11 @@ const SNAPSHOT: DashboardSnapshot = {
   dailyCommentary: { decision_date: "", note_text: "", generated: false },
   externalComparison: [],
   evaluationReports: [],
+  tradeLedgerSummary: { window: null, strategies: [] },
+  calibration: { bands: [], monotonic: null, wellCalibrated: null },
+  exposure: { perCurrency: [], concentrated: false, strongestPair: null },
+  provenance: [],
+  validationStatus: [],
 };
 
 const originalFetch = globalThis.fetch;

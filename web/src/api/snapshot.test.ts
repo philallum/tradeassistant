@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   loadSnapshot,
+  parseSnapshot,
   resolveSnapshotPath,
   SnapshotError,
   SNAPSHOT_PATH,
@@ -54,6 +55,11 @@ const FULL_SNAPSHOT: DashboardSnapshot = {
   dailyCommentary: { decision_date: "", note_text: "", generated: false },
   externalComparison: [],
   evaluationReports: [],
+  tradeLedgerSummary: { window: null, strategies: [] },
+  calibration: { bands: [], monotonic: null, wellCalibrated: null },
+  exposure: { perCurrency: [], concentrated: false, strongestPair: null },
+  provenance: [],
+  validationStatus: [],
 };
 
 describe("loadSnapshot — same-origin static fetch (R5.1, R4.4)", () => {
@@ -212,5 +218,51 @@ describe("loadSnapshot — failures surface as non-secret SnapshotError", () => 
       ),
     };
     await expect(loadSnapshot({}, deps)).rejects.toBeInstanceOf(SnapshotError);
+  });
+});
+
+describe("parseSnapshot — v4 slices (trader-edge-validation R10.1–10.3)", () => {
+  const EMPTY_V4 = {
+    tradeLedgerSummary: { window: null, strategies: [] },
+    calibration: { bands: [], monotonic: null, wellCalibrated: null },
+    exposure: { perCurrency: [], concentrated: false, strongestPair: null },
+    provenance: [],
+    validationStatus: [],
+  };
+
+  it("defaults every v4 slice when parsing a v3 snapshot", () => {
+    const v3 = { schemaVersion: 3, decisionDate: "2024-03-15", generatedAt: "t", firingSetups: [] };
+    const parsed = parseSnapshot(v3);
+    expect(parsed.schemaVersion).toBe(3);
+    expect(parsed).toMatchObject(EMPTY_V4);
+  });
+
+  it("defaults v4 slices when they are malformed", () => {
+    const parsed = parseSnapshot({
+      tradeLedgerSummary: "x",
+      calibration: [],
+      exposure: 5,
+      provenance: {},
+      validationStatus: null,
+    });
+    expect(parsed).toMatchObject(EMPTY_V4);
+  });
+
+  it("carries populated v4 slices through", () => {
+    const body = {
+      schemaVersion: 4,
+      tradeLedgerSummary: { window: { from: "2024-01-01", to: "2024-03-15" }, strategies: [{ role: "system" }] },
+      calibration: { bands: [{ lo: 0.5, hi: 0.6 }], monotonic: true, wellCalibrated: false },
+      exposure: { perCurrency: [{ currency: "USD", net: 2 }], concentrated: true, strongestPair: "EURUSD" },
+      provenance: [{ pair: "EURUSD" }],
+      validationStatus: [{ decision_date: "2024-03-15", pair: "EURUSD", status: "unvalidated" }],
+    };
+    const parsed = parseSnapshot(body);
+    expect(parsed.tradeLedgerSummary.window).toEqual({ from: "2024-01-01", to: "2024-03-15" });
+    expect(parsed.tradeLedgerSummary.strategies).toHaveLength(1);
+    expect(parsed.calibration).toMatchObject({ monotonic: true, wellCalibrated: false });
+    expect(parsed.exposure).toEqual(body.exposure);
+    expect(parsed.provenance).toHaveLength(1);
+    expect(parsed.validationStatus[0]!.status).toBe("unvalidated");
   });
 });

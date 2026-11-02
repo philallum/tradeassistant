@@ -395,7 +395,7 @@ walk-forward (task 12).
 Two pure modules, not yet wired into the snapshot, so deploying them changes
 nothing live. Grouped because both are small inputs the Stage F snapshot needs.
 
-- [ ] 13. Aggregate_Exposure (R8)
+- [x] 13. Aggregate_Exposure (R8)
   - Create `src/exposure/aggregateExposure.ts`: decompose each firing pair's
     direction into base/quote currency legs, sum per currency, flag `concentrated`
     when the firing set collapses to effectively one currency bet (notably USD
@@ -404,12 +404,12 @@ nothing live. Grouped because both are small inputs the Stage F snapshot needs.
     sizing, no re-entry into firing/scoring (R8.4, R8.5).
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
 
-  - [ ] 13.1 Unit test for exposure
+  - [x] 13.1 Unit test for exposure
     - Three long-USD firings ⇒ `concentrated: true`, net USD = −3 legs; independent
       pairs ⇒ `concentrated: false` (R8.1, R8.2).
     - _Requirements: 8.1, 8.2_
 
-- [ ] 14. Signal_Provenance (R9)
+- [x] 14. Signal_Provenance (R9)
   - Create `src/provenance/signalProvenance.ts`: derive `SignalProvenance`
     (`lastCandleTimestamp` with explicit tz, `computedAt`, `earliestEntryRef`,
     `horizonStart`/`horizonEnd`, `dataComplete`, `staleReason`) deterministically
@@ -421,7 +421,7 @@ nothing live. Grouped because both are small inputs the Stage F snapshot needs.
     run or snapshot yet.
   - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5_
 
-  - [ ] 14.1 Unit test for provenance
+  - [x] 14.1 Unit test for provenance
     - A stale pair ⇒ `dataComplete: false` + the right `staleReason`; a fresh pair ⇒
       complete provenance with `earliestEntryRef` strictly after the last candle.
     - _Requirements: 9.2, 9.3_
@@ -432,7 +432,7 @@ The producer side of the backend/web split. Ships BEFORE the web consumer so the
 new slices exist in `dashboard.json` when the UI deploys. Backward/forward safe:
 the current SPA ignores unknown slices.
 
-- [ ] 15. Extend the snapshot to v4 and wire the daily run (fail-safe)
+- [x] 15. Extend the snapshot to v4 and wire the daily run (fail-safe)
   - In `src/scheduled-run/snapshot.ts` bump `SNAPSHOT_SCHEMA_VERSION` 3→4 and add
     additive, forward/backward-tolerant slices: `tradeLedgerSummary` (per-strategy
     `PerformanceSummary` + comparator rows), `calibration`, `exposure`, and
@@ -453,14 +453,14 @@ the current SPA ignores unknown slices.
 The consumer side. Deploys the SPA only; presentation-only, no decision impact.
 Safe against both a v3 and a v4 snapshot.
 
-- [ ] 16. Mirror the v4 slices in the web wire types + parser
+- [x] 16. Mirror the v4 slices in the web wire types + parser
   - In `web/src/api/types.ts` + `snapshot.ts` add the mirrored slice types and
     `parseSnapshot` defaults (empty array / absent object), structurally
     independent of the core (the SPA never imports from the core). This lands first
     in the stage so the re-org tasks can consume it.
   - _Requirements: 10.1, 10.2, 10.3_
 
-- [ ] 17. SPA — Setups re-org, FORECAST/TRADE distinction, un-validated labels
+- [x] 17. SPA — Setups re-org, FORECAST/TRADE distinction, un-validated labels
   - Re-shape the Setups landing tab to group, per firing pair: direction, entry
     assumption, SL, TP, horizon expiry, estimated Net_Expectancy, analogue count,
     historical agreement, with an explicit FORECAST-vs-TRADE label (R10.1). Render
@@ -470,19 +470,19 @@ Safe against both a v3 and a v4 snapshot.
     establishes order. New pure shapers tested from a snapshot with no network.
   - _Requirements: 10.1, 10.3, 1.7_
 
-  - [ ] 17.1 Web tests for the Setups re-org
+  - [x] 17.1 Web tests for the Setups re-org
     - Loading / empty / content / un-validated states render from an injected
       snapshot; an un-validated SL/TP shows the marker.
     - _Requirements: 10.1, 10.3_
 
-- [ ] 18. SPA — evaluation view leads with net-of-cost results
+- [x] 18. SPA — evaluation view leads with net-of-cost results
   - Re-shape the evaluation (Gate) tab to lead with OOS Net_Expectancy, drawdown,
     profit factor, trade count, after-cost results, the baseline under identical
     assumptions, and whether the sample is large enough / consistent across time
     (R10.2).
   - _Requirements: 10.2_
 
-- [ ] 19. SPA — evidence before AI; demote AI, Third-party, and choppiness
+- [x] 19. SPA — evidence before AI; demote AI, Third-party, and choppiness
   - Show the historical evidence (analogues + their path-resolved outcomes) before
     and more prominently than any AI commentary (R10.4); move AI and Third-party out
     of the primary workflow, kept advisory/non-scoring; keep the suppression list
@@ -496,7 +496,7 @@ Safe against both a v3 and a v4 snapshot.
 
 ### Stage H — Operator entry + close-out (backend deploy; design R12)
 
-- [ ] 20. Operator entry: `src/ops/edge-eval/main.ts`
+- [x] 20. Operator entry: `src/ops/edge-eval/main.ts`
   - A run-to-completion operator entry (modelled on `src/ops/evaluation-run/main.ts`,
     injectable deps, `invokedDirectly()` guard) that runs the evaluation suite over
     a window: capture/choose a Frozen_Baseline, build the ledger, compute metrics +
@@ -505,7 +505,7 @@ Safe against both a v3 and a v4 snapshot.
     EvaluationReport / Living-Docs path — never PROJECT-STATE.md (R12.5).
   - _Requirements: 12.1, 12.5_
 
-- [ ] 21. Standing-guard verification (R12 scope discipline)
+- [x] 21. Standing-guard verification (R12 scope discipline)
   - A test/assertion suite confirming the spec added NO automated execution, broker
     integration, new LLM feature, new third-party forecast provider, or new tunable
     fingerprint/threshold/risk parameter (R12.2), and that the Confidence_Threshold
@@ -514,7 +514,7 @@ Safe against both a v3 and a v4 snapshot.
     LLM-free and the live decision path is byte-identical (R12.1, R12.4).
   - _Requirements: 12.1, 12.2, 12.3, 12.4_
 
-- [ ] 22. Living docs
+- [x] 22. Living docs
   - Update PROJECT-STATE.md prose (code map: the new `src/trade-sim/`,
     `src/trade-ledger/`, `src/performance/`, `src/walk-forward/`, `src/exposure/`,
     `src/provenance/`, `src/ops/edge-eval/` modules; the two new tables; the v4
@@ -522,12 +522,73 @@ Safe against both a v3 and a v4 snapshot.
     RESEARCH-LOG.md via the Living-Docs path, NOT PROJECT-STATE.md (R12.5).
   - _Requirements: 12.5_
 
-- [ ] 23. Final checkpoint
+- [x] 23. Final checkpoint
   - Full `make check` + web build green; all requirements' acceptance criteria met
     or explicitly deferred with a reason; the live firing/scoring decision verified
     byte-identical to pre-spec; a negative edge result (if that is what the
     measurement shows) is surfaced plainly and accepted as valid (R12.6).
   - _Requirements: 1.1, 3.4, 4.6, 7.1, 10.3, 12.1, 12.6_
+
+### Operational follow-ups (infra; NOT part of the R1–R12 evidence layer)
+
+> These tasks are tracked here because they are underway alongside the spec, but
+> they are a DIFFERENT KIND of change from Stages A–H. Stages A–H are read-only
+> consumers that keep the live firing/scoring decision byte-identical (R12.1,
+> R12.4); the task below REFACTORS the live retrieval path itself, so it is NOT
+> an evidence-layer task and does NOT count toward R1–R12. It carries its own
+> hard gate: **prove retrieval output is byte-identical before it ships** — the
+> same deploy-safety bar as Stage A's resolver-parity proof. It is backend-only.
+>
+> Context: a hosted Supabase free-plan egress overage (2026-10-12) traced to the
+> client-side ANN in `queryNearest` pulling the full `(weekly_trend_sign, asset)`
+> candidate slice into Node. Two mitigations already landed OUTSIDE this spec (a
+> hosted-heavy-op guard + column projection that drops `scale_dims` from the
+> `queryNearest` read; `make check` green, live decision byte-identical). Fix 3
+> below is the deferred structural piece.
+
+- [x] OF1. Push the ANN top-k server-side via pgvector (`queryNearest`)
+  - In `src/storage/supabase/patternVectorStore.ts`, change `queryNearest` to rank
+    candidates SERVER-SIDE using the pgvector distance operator (`<=>` cosine)
+    with the embedding passed as the query vector and the existing
+    `weekly_trend_sign` (+ optional `asset`) metadata pre-filter, ordered by
+    distance with a bounded `limit`, so only the top-k rows (not the whole slice)
+    cross the wire. Keep the `select=` projection that omits `scale_dims`. The
+    in-memory reference `InMemoryPatternVectorStore.queryNearest` and the port
+    contract are UNCHANGED; only the Supabase adapter's transport changes.
+  - **Hard parity gate (ships only if met):** the server-side ranking MUST
+    reproduce the current client-side `computeCosineDistance` ordering
+    byte-for-byte, including the documented stable tie-break (distance →
+    decision_date → asset, Req 9.7). Verify against the existing
+    `supabaseStores.integration.test.ts` ANN ordering assertions on a local
+    Supabase; if pgvector's distance/tie-break cannot be made identical, DO NOT
+    ship — fall back to the already-landed projection mitigation and record why.
+  - **Live-decision safety:** `queryNearest` feeds the live firing/scoring path,
+    so this is the one task in this file that touches that path; it is justified
+    ONLY by the egress fix and MUST leave the firing decision byte-identical
+    (same neighborhood → same confidence/direction/SL/TP). Confirmed by the
+    retrieval parity suite, not assumed.
+  - **Verification:** server-side pgvector top-k requires a LOCAL Supabase to
+    exercise (the integration suite is skipped without one); run it there, not
+    against hosted. `make check` green at the task boundary.
+  - **OUTCOME — parity gate NOT met; NOT shipped (projection mitigation retained).**
+    Measured against a real pgvector (pg16) instance: `<=>` over float4 `vector(70)`
+    differs from the client's double-precision `computeCosineDistance` by up to
+    ~3.8e-8 on random 70-dim vectors. The reference tie-break treats distances
+    within 1e-9 as ties (then decision_date, then asset), so server ordering would
+    flip near-ties and the returned `cosineDistance` values (which feed the epsilon
+    filter and scoring) would not be byte-identical. pgvector also cannot express
+    the epsilon-tolerant comparator. Server-side ranking would therefore risk
+    changing the live firing decision, so `queryNearest` is unchanged. A possible
+    future route (not done): an additive RPC returning top-k plus a margin
+    (>= ~1e-6) of candidates, re-ranked client-side with `computeCosineDistance`.
+  - _Scope: infra/egress only — references no R1–R12 requirement; it is a
+    performance refactor of pre-existing retrieval, logged here for continuity._
+
+  - [x] OF1.1 Retrieval parity test (byte-identical ordering)
+    - A test asserting the Supabase `queryNearest` server-side ordering equals the
+      in-memory reference ordering on a shared fixture (same candidates in → same
+      ranked sequence out), covering the tie-break path. Gated on a local Supabase
+      (skips cleanly otherwise), mirroring the existing integration suite.
 
 ## Notes
 
@@ -562,6 +623,18 @@ Safe against both a v3 and a v4 snapshot.
 - **D1-ambiguity default** — tasks 3 and 17 implement "report, don't guess" via the
   `intraCandleResolver` seam and task 3 explicitly does NOT source lower-timeframe
   data. If lower-timeframe disambiguation is wanted, add it to scope before Stage B.
+
+### Note on the Operational follow-ups section
+
+Task OF1 (pgvector server-side top-k) is tracked above under "Operational
+follow-ups" but is explicitly OUTSIDE the R1–R12 evidence layer: it refactors the
+LIVE retrieval path for egress, so unlike every Stage A–H task it is not a
+read-only consumer and must prove byte-identical retrieval parity before shipping
+(its own hard gate). Two related egress mitigations already shipped outside this
+spec (a hosted-heavy-op guard in `assertHostedHeavyOpAllowed` + column projection
+dropping `scale_dims` from the `queryNearest` read); OF1 is the deferred structural
+piece and requires a local Supabase to verify. It does not change the Stage A–H
+deploy-safety story or the final-checkpoint byte-identical guarantee.
 
 ### Conventions
 

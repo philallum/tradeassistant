@@ -38,11 +38,13 @@ import type {
  * run, so a no-fire day shows a credible "run completed" summary rather than a
  * bare "no data" notice). v3 added the pair-INDEPENDENT `dailyCommentary` slice
  * (a short display-only AI note produced every trading day, fired or not, as an
- * LLM-path liveness signal). The SPA tolerates a version mismatch (best-effort
+ * LLM-path liveness signal). v4 (trader-edge-validation) adds the additive
+ * evidence slices `tradeLedgerSummary`, `calibration`, `exposure`, `provenance`
+ * and `validationStatus`, each defaulting to empty/absent. The SPA tolerates a version mismatch (best-effort
  * render) and defaults an absent slice to its empty value, so each bump is
  * backward- and forward-compatible.
  */
-export const SNAPSHOT_SCHEMA_VERSION = 3 as const;
+export const SNAPSHOT_SCHEMA_VERSION = 4 as const;
 
 /** The canonical file name the SPA fetches as a same-origin static asset. */
 export const SNAPSHOT_FILE_NAME = "dashboard.json" as const;
@@ -192,6 +194,101 @@ export interface SnapshotEvaluationReportRow {
   readonly delta_vs_baseline: number;
 }
 
+// ---------------------------------------------------------------------------------------
+// v4 evidence slices (trader-edge-validation R8.1, R9.1, R10). Independent structural
+// copies of the SPA wire types; all derived from deterministic artifacts, LLM-free,
+// display-only, and never re-entering firing / scoring.
+// ---------------------------------------------------------------------------------------
+
+/** Net-of-cost performance summary for one strategy (wire form of `PerformanceSummary`). */
+export interface SnapshotPerformanceSummary {
+  readonly strategyId: string;
+  readonly netExpectancyPips: number;
+  readonly netExpectancyR: number;
+  readonly grossExpectancyPips: number;
+  readonly winRate: number;
+  readonly avgWinPips: number;
+  readonly avgLossPips: number;
+  /** `null` when undefined/infinite (wins with no losses) — JSON cannot carry Infinity. */
+  readonly profitFactor: number | null;
+  readonly maxDrawdownPips: number;
+  readonly longestLosingStreak: number;
+  readonly tradeCount: number;
+  readonly timeInMarketDays: number;
+  readonly ambiguousShare: number;
+  readonly expiredShare: number;
+}
+
+/** One strategy row of the ledger summary: the system or a comparator. */
+export interface SnapshotStrategySummaryRow {
+  readonly role: "system" | "comparator";
+  readonly summary: SnapshotPerformanceSummary;
+}
+
+/** Per-strategy `PerformanceSummary` + comparator rows (empty when no ledger exists). */
+export interface SnapshotTradeLedgerSummary {
+  /** Inclusive window the ledger rows were read over, or null when none. */
+  readonly window: { readonly from: string; readonly to: string } | null;
+  readonly strategies: readonly SnapshotStrategySummaryRow[];
+}
+
+export interface SnapshotCalibrationBand {
+  readonly lo: number;
+  readonly hi: number;
+  readonly forecastCount: number;
+  readonly realizedCorrectRate: number;
+  readonly effectiveSampleSize: number;
+}
+
+/** Calibration report; `monotonic`/`wellCalibrated` are null when not measured. */
+export interface SnapshotCalibration {
+  readonly bands: readonly SnapshotCalibrationBand[];
+  readonly monotonic: boolean | null;
+  readonly wellCalibrated: boolean | null;
+}
+
+export interface SnapshotExposure {
+  readonly perCurrency: readonly { readonly currency: string; readonly net: number }[];
+  readonly concentrated: boolean;
+  readonly strongestPair: string | null;
+}
+
+/** Per-forecast Signal_Provenance (wire form). */
+export interface SnapshotProvenanceRow {
+  readonly decision_date: string;
+  readonly pair: string;
+  readonly lastCandleTimestamp: string;
+  readonly computedAt: string;
+  readonly earliestEntryRef: string;
+  readonly horizonStart: string;
+  readonly horizonEnd: string;
+  readonly dataComplete: boolean;
+  readonly staleReason: string | null;
+}
+
+export type SnapshotValidationStatus = "validated" | "unvalidated";
+
+/** Per-forecast validation flag: has the edge been shown OOS, net of costs? */
+export interface SnapshotValidationStatusRow {
+  readonly decision_date: string;
+  readonly pair: string;
+  readonly status: SnapshotValidationStatus;
+}
+
+/** The optional v4 slices a run supplies; any omitted slice takes its empty default. */
+export interface SnapshotEdgeSlices {
+  readonly tradeLedgerSummary?: SnapshotTradeLedgerSummary;
+  readonly calibration?: SnapshotCalibration;
+  readonly exposure?: SnapshotExposure;
+  readonly provenance?: readonly SnapshotProvenanceRow[];
+  readonly validationStatus?: readonly SnapshotValidationStatusRow[];
+}
+
+/** Empty defaults for the v4 slices (also what a failed slice degrades to). */
+export const EMPTY_TRADE_LEDGER_SUMMARY: SnapshotTradeLedgerSummary = { window: null, strategies: [] };
+export const EMPTY_CALIBRATION: SnapshotCalibration = { bands: [], monotonic: null, wellCalibrated: null };
+export const EMPTY_EXPOSURE: SnapshotExposure = { perCurrency: [], concentrated: false, strongestPair: null };
+
 /**
  * The complete `dashboard.json` envelope the SPA fetches. Every field is a
  * read-only array of wire-format rows plus the Decision_Date the run was for and
@@ -227,6 +324,16 @@ export interface DashboardSnapshot {
   readonly dailyCommentary: SnapshotDailyCommentary;
   readonly externalComparison: readonly SnapshotExternalComparisonRow[];
   readonly evaluationReports: readonly SnapshotEvaluationReportRow[];
+  /** v4: per-strategy net-of-cost summary + comparator rows. Empty by default. */
+  readonly tradeLedgerSummary: SnapshotTradeLedgerSummary;
+  /** v4: OOS calibration by confidence band. Empty by default. */
+  readonly calibration: SnapshotCalibration;
+  /** v4: aggregate currency exposure of the firing set. Empty by default. */
+  readonly exposure: SnapshotExposure;
+  /** v4: per-forecast Signal_Provenance. Empty by default. */
+  readonly provenance: readonly SnapshotProvenanceRow[];
+  /** v4: per-forecast `validated` | `unvalidated`. Empty by default. */
+  readonly validationStatus: readonly SnapshotValidationStatusRow[];
 }
 
 /** The v1 deterministic system Strategy_Source (schema default 'system'). */
@@ -382,6 +489,7 @@ function externalComparisonRow(
  * @param now             Injected clock for the freshness marker (defaults to `new Date()`).
  * @param pairEvaluations The per-pair run-completion readout rows (every pair
  *                        evaluated this run, fired or not). Omitted → `[]`.
+ * @param edge            The v4 evidence slices; each omitted slice takes its empty default.
  */
 export function buildDashboardSnapshot(
   view: DashboardView,
@@ -389,6 +497,7 @@ export function buildDashboardSnapshot(
   history: SnapshotHistory = {},
   now: Date = new Date(),
   pairEvaluations: readonly SnapshotPairEvaluationRow[] = [],
+  edge: SnapshotEdgeSlices = {},
 ): DashboardSnapshot {
   const decisionDate = view.decisionDate;
   const todayFiring = view.cards.map((card) => firingSetupRow(decisionDate, card));
@@ -423,6 +532,11 @@ export function buildDashboardSnapshot(
     dailyCommentary,
     externalComparison,
     evaluationReports: history.evaluationReports ?? [],
+    tradeLedgerSummary: edge.tradeLedgerSummary ?? EMPTY_TRADE_LEDGER_SUMMARY,
+    calibration: edge.calibration ?? EMPTY_CALIBRATION,
+    exposure: edge.exposure ?? EMPTY_EXPOSURE,
+    provenance: edge.provenance ?? [],
+    validationStatus: edge.validationStatus ?? [],
   };
 }
 

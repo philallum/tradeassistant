@@ -23,9 +23,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ApiResult } from "../../api/snapshot";
 import { getSnapshot } from "../../api/snapshotCache";
-import type { EvaluationReportRow } from "../../api/types";
+import type { Calibration, EvaluationReportRow, TradeLedgerSummary } from "../../api/types";
+import { shapeEvaluationNet, type EvaluationNetShape } from "../../pure/shapeEvaluationNet";
 import { theme } from "../../theme/darkTheme";
 import { EvaluationReportCard } from "./EvaluationReportCard";
+import { NetEvaluationSection } from "./NetEvaluationSection";
 import { selectLatestReport } from "./selectReport";
 
 /** Loader for the evaluation reports. Injected for testability; defaults to the snapshot. */
@@ -43,9 +45,29 @@ const defaultReportsLoader: EvaluationReportsLoader = async (options) => {
   };
 };
 
+/** The v4 net-of-cost slices (empty on a v3 snapshot). */
+export interface NetEvaluationSlices {
+  readonly tradeLedgerSummary: TradeLedgerSummary;
+  readonly calibration: Calibration;
+}
+
+/** Loader for the net-of-cost slices. Injected for testability; defaults to the snapshot. */
+export type NetEvaluationLoader = (options?: {
+  readonly signal?: AbortSignal;
+}) => Promise<NetEvaluationSlices>;
+
+const defaultNetLoader: NetEvaluationLoader = async (options) => {
+  const snapshot = await getSnapshot(0, {
+    ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+  });
+  return { tradeLedgerSummary: snapshot.tradeLedgerSummary, calibration: snapshot.calibration };
+};
+
 export interface GateTabProps {
   /** Evaluation-reports loader; defaults to reading the shared snapshot. */
   readonly loadEvaluationReports?: EvaluationReportsLoader;
+  /** Net-of-cost slices loader; defaults to reading the shared snapshot. */
+  readonly loadNetEvaluation?: NetEvaluationLoader;
 }
 
 /** Discriminated load state so the view renders loading / error / empty / ready distinctly. */
@@ -53,10 +75,15 @@ type LoadState =
   | { readonly kind: "loading" }
   | { readonly kind: "error" }
   | { readonly kind: "empty" }
-  | { readonly kind: "ready"; readonly report: EvaluationReportRow };
+  | {
+      readonly kind: "ready";
+      readonly report: EvaluationReportRow | null;
+      readonly net: EvaluationNetShape;
+    };
 
 export function GateTab({
   loadEvaluationReports = defaultReportsLoader,
+  loadNetEvaluation = defaultNetLoader,
 }: GateTabProps): JSX.Element {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
 
@@ -71,15 +98,20 @@ export function GateTab({
   const load = useCallback(async () => {
     setState({ kind: "loading" });
     try {
-      const reports = await loadEvaluationReports();
+      const [reports, slices] = await Promise.all([loadEvaluationReports(), loadNetEvaluation()]);
       const report = selectLatestReport(reports.rows);
+      const net = shapeEvaluationNet(slices);
       if (!mounted.current) return;
-      setState(report === null ? { kind: "empty" } : { kind: "ready", report });
+      setState(
+        report === null && net.kind === "empty"
+          ? { kind: "empty" }
+          : { kind: "ready", report, net },
+      );
     } catch {
       // Non-secret failure surface only — no raw payload / stack trace.
       if (mounted.current) setState({ kind: "error" });
     }
-  }, [loadEvaluationReports]);
+  }, [loadEvaluationReports, loadNetEvaluation]);
 
   useEffect(() => {
     void load();
@@ -118,8 +150,14 @@ export function GateTab({
       )}
 
       {state.kind === "ready" && (
+        <section aria-label="Net-of-cost out-of-sample results" style={sectionStyle}>
+          <h3 style={subheadingStyle}>Out-of-sample results after costs</h3>
+          <NetEvaluationSection shape={state.net} />
+        </section>
+      )}
+      {state.kind === "ready" && state.report !== null && (
         <section aria-label="Model versus baseline evaluation report" style={sectionStyle}>
-          <h3 style={subheadingStyle}>Model vs baseline</h3>
+          <h3 style={subheadingStyle}>Directional accuracy (secondary, un-validated as a trade result)</h3>
           <EvaluationReportCard row={state.report} />
         </section>
       )}
