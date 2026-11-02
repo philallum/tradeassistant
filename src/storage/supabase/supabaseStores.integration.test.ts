@@ -24,6 +24,8 @@ import {
 } from "../supabaseConfig.js";
 import type { Candle } from "../../guard/types.js";
 import type { PatternVector } from "../../encoder/types.js";
+import { InMemoryPatternVectorStore } from "../../encoder/types.js";
+import type { Pair } from "../../ingestion/types.js";
 import type { AnalogueRecord } from "../../retrieval/types.js";
 import type { DashboardView } from "../../dashboard/index.js";
 import { SupabaseRestClient } from "./client.js";
@@ -183,6 +185,51 @@ describe.skipIf(!isLocalTarget)(
       expect(nearest[0]?.cosineDistance ?? 1).toBeLessThan(1e-6);
     });
 
+    it("OF1.1 retrieval parity: Supabase queryNearest ordering is byte-identical to the in-memory reference (incl. tie-break)", async () => {
+      if (!shouldRun() || !client) return;
+      const supa = new SupabasePatternVectorStore(client);
+      const mem = new InMemoryPatternVectorStore();
+      // float4-rounded so both stores hold the exact values pgvector stores.
+      const f32 = (v: number[]): number[] => v.map((x) => Math.fround(x));
+      const query = f32(seventyDims(1));
+      const tied = f32(seventyDims(3));
+      const other = f32(seventyDims(5));
+      // Exact-distance ties across (decision_date, asset) force the Req 9.7
+      // tie-break path (distance -> decision_date -> asset).
+      const fixture: [Pair, string, number[]][] = [
+        ["USDJPY", TEST_DATE_2, tied],
+        ["EURUSD", TEST_DATE_2, tied],
+        ["GBPUSD", TEST_DATE_1, tied],
+        ["EURUSD", TEST_DATE_3, tied],
+        ["USDCHF", TEST_DATE_1, other],
+        ["USDCAD", TEST_DATE_3, f32(seventyDims(1).map((v) => -v))],
+      ];
+      for (const [asset, date, emb] of fixture) {
+        const v = makeVector(emb, "UP");
+        await supa.upsertVector(asset, date, v);
+        await mem.upsertVector(asset, date, v);
+      }
+      // Restrict both to the fixture's far-future dates so pre-existing rows
+      // cannot perturb the comparison.
+      const keep = (r: { vector: { decisionDate: string } }): boolean =>
+        TEST_DATES.includes(r.vector.decisionDate);
+      const project = (
+        rs: readonly { vector: { asset: string; decisionDate: string }; cosineDistance: number }[],
+      ) =>
+        rs.filter(keep).map((r) => ({
+          asset: r.vector.asset,
+          date: r.vector.decisionDate,
+          d: r.cosineDistance,
+        }));
+      const expected = project(await mem.queryNearest(query, "UP"));
+      const actual = project(await supa.queryNearest(query, "UP"));
+      expect(actual).toEqual(expected);
+      // Bounded limit must return the same prefix as the reference.
+      const lim = 3;
+      expect(project(await supa.queryNearest(query, "UP", { limit: 1000 })).slice(0, lim)).toEqual(
+        expected.slice(0, lim),
+      );
+    });
     it("SupabaseAnalogueStore round-trips outcomes and filters matured/pre-date", async () => {
       if (!shouldRun() || !client) return;
       const store = new SupabaseAnalogueStore(client);

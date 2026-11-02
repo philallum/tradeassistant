@@ -183,6 +183,86 @@ export interface DailyCommentary {
   readonly generated: boolean;
 }
 
+// ---------------------------------------------------------------------------------------
+// v4 evidence slices (trader-edge-validation R8.1, R9.1, R10). Independent structural
+// copies of the writer's wire shapes in `src/scheduled-run/snapshot.ts`; display-only.
+// ---------------------------------------------------------------------------------------
+
+/** Net-of-cost performance summary for one strategy. */
+export interface PerformanceSummaryRow {
+  readonly strategyId: string;
+  readonly netExpectancyPips: number;
+  readonly netExpectancyR: number;
+  readonly grossExpectancyPips: number;
+  readonly winRate: number;
+  readonly avgWinPips: number;
+  readonly avgLossPips: number;
+  /** `null` when undefined/infinite (wins with no losses). */
+  readonly profitFactor: number | null;
+  readonly maxDrawdownPips: number;
+  readonly longestLosingStreak: number;
+  readonly tradeCount: number;
+  readonly timeInMarketDays: number;
+  readonly ambiguousShare: number;
+  readonly expiredShare: number;
+}
+
+/** One strategy row of the ledger summary: the system or a comparator. */
+export interface StrategySummaryRow {
+  readonly role: "system" | "comparator";
+  readonly summary: PerformanceSummaryRow;
+}
+
+/** Per-strategy summary + comparator rows (empty when no ledger exists). */
+export interface TradeLedgerSummary {
+  readonly window: { readonly from: string; readonly to: string } | null;
+  readonly strategies: readonly StrategySummaryRow[];
+}
+
+export interface CalibrationBand {
+  readonly lo: number;
+  readonly hi: number;
+  readonly forecastCount: number;
+  readonly realizedCorrectRate: number;
+  readonly effectiveSampleSize: number;
+}
+
+/** Calibration report; flags are null when not measured. */
+export interface Calibration {
+  readonly bands: readonly CalibrationBand[];
+  readonly monotonic: boolean | null;
+  readonly wellCalibrated: boolean | null;
+}
+
+/** Aggregate currency exposure of the firing set. */
+export interface Exposure {
+  readonly perCurrency: readonly { readonly currency: string; readonly net: number }[];
+  readonly concentrated: boolean;
+  readonly strongestPair: string | null;
+}
+
+/** Per-forecast Signal_Provenance. */
+export interface ProvenanceRow {
+  readonly decision_date: string;
+  readonly pair: string;
+  readonly lastCandleTimestamp: string;
+  readonly computedAt: string;
+  readonly earliestEntryRef: string;
+  readonly horizonStart: string;
+  readonly horizonEnd: string;
+  readonly dataComplete: boolean;
+  readonly staleReason: string | null;
+}
+
+export type ValidationStatus = "validated" | "unvalidated";
+
+/** Per-forecast validation flag: has the edge been shown OOS, net of costs? */
+export interface ValidationStatusRow {
+  readonly decision_date: string;
+  readonly pair: string;
+  readonly status: ValidationStatus;
+}
+
 /** A bare decision-date row (drives the Historical_Browse selector). */
 export interface DecisionDateRow {
   readonly decision_date: string;

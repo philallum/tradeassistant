@@ -107,7 +107,7 @@ export function SuppressionList({ suppressions }: SuppressionListProps): JSX.Ele
           margin: `0 0 ${theme.spacing.sm}px 0`,
         }}
       >
-        Suppressions
+        Suppressions (explanatory)
       </h3>
       <ul
         style={{

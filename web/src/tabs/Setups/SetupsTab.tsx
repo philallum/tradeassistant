@@ -39,11 +39,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiResult } from "../../api/snapshot";
 import { getSnapshot } from "../../api/snapshotCache";
 import type {
+  AnalogueOutcomeRow,
   DailyCommentary,
   DecisionDateRow,
   FiringSetupRow,
   PairEvaluationRow,
+  ProvenanceRow,
+  TradeLedgerSummary,
+  ValidationStatusRow,
 } from "../../api/types";
+import { shapeEvidence } from "../../pure/shapeEvidence";
+import { EvidencePanel } from "./EvidencePanel";
+import { shapeSetupTrades } from "../../pure/shapeSetupTrades";
 import { shapeDailyNote } from "../../pure/shapeDailyNote";
 import { selectBrowseDate } from "../../pure/selectDates";
 import { shapeDashboardView } from "../../pure/shapeDashboard";
@@ -51,7 +58,7 @@ import { shapeRunSummary } from "../../pure/shapeRunSummary";
 import { ALL_PAIRS, useSelection } from "../../state/selection";
 import { theme } from "../../theme/darkTheme";
 import { DailyNote } from "./DailyNote";
-import { FiringCard } from "./FiringCard";
+import { SetupTradeCard } from "./SetupTradeCard";
 import { RunSummary } from "./RunSummary";
 import { resolveSetupsViewState } from "./setupsViewState";
 import { SuppressionList } from "./SuppressionList";
@@ -133,7 +140,37 @@ const defaultLoadDailyCommentary: DailyCommentaryLoader = async (decisionDate, o
     : { decision_date: "", note_text: "", generated: false };
 };
 
+/** The v4 evidence slices the re-organised Setups cards consume (default empty on v3). */
+export interface SetupsEvidence {
+  readonly analogueOutcomes: readonly AnalogueOutcomeRow[];
+  readonly tradeLedgerSummary: TradeLedgerSummary;
+  readonly provenance: readonly ProvenanceRow[];
+  readonly validationStatus: readonly ValidationStatusRow[];
+}
+
+const NO_EVIDENCE: SetupsEvidence = {
+  analogueOutcomes: [],
+  tradeLedgerSummary: { window: null, strategies: [] },
+  provenance: [],
+  validationStatus: [],
+};
+
+/** Loader for the v4 evidence slices. Injected for testability. */
+export type SetupsEvidenceLoader = (options?: SetupsLoadOptions) => Promise<SetupsEvidence>;
+
+const defaultLoadEvidence: SetupsEvidenceLoader = async (options) => {
+  const snapshot = await snapshotFor(options);
+  return {
+    analogueOutcomes: snapshot.analogueOutcomes,
+    tradeLedgerSummary: snapshot.tradeLedgerSummary,
+    provenance: snapshot.provenance,
+    validationStatus: snapshot.validationStatus,
+  };
+};
+
 export interface SetupsTabProps {
+  /** v4 evidence loader (FORECAST/TRADE card inputs); defaults to the snapshot slices. */
+  readonly loadEvidence?: SetupsEvidenceLoader;
   /** Decision_Dates loader; defaults to the real `/decision-dates` fetch. */
   readonly loadDecisionDates?: DecisionDatesLoader;
   /** Firing-setups loader; defaults to the real `/firing-setups` fetch. */
@@ -155,6 +192,8 @@ type LoadState =
       readonly rows: readonly FiringSetupRow[];
       readonly pairEvaluations: readonly PairEvaluationRow[];
       readonly dailyCommentary: DailyCommentary;
+      readonly evidence: SetupsEvidence;
+      readonly decisionDate: string;
     };
 
 /** Shared tabpanel wrapper so every state renders inside the correct ARIA panel + heading. */
@@ -201,6 +240,7 @@ export function SetupsTab({
   loadFiringSetups = defaultLoadFiringSetups,
   loadPairEvaluations = defaultLoadPairEvaluations,
   loadDailyCommentary = defaultLoadDailyCommentary,
+  loadEvidence = defaultLoadEvidence,
   refreshNonce = 0,
 }: SetupsTabProps): JSX.Element {
   const { pair, date } = useSelection();
@@ -236,6 +276,8 @@ export function SetupsTab({
             rows: [],
             pairEvaluations: [],
             dailyCommentary: { decision_date: "", note_text: "", generated: false },
+            evidence: NO_EVIDENCE,
+            decisionDate: "",
           });
           return;
         }
@@ -243,10 +285,11 @@ export function SetupsTab({
         // All reads share the one cached snapshot (same generation), so this is a single
         // fetch. The per-pair readout drives the silent-day summary; the daily note is the
         // pair-independent AI commentary shown every trading day.
-        const [rowsResult, evalResult, commentary] = await Promise.all([
+        const [rowsResult, evalResult, commentary, evidence] = await Promise.all([
           loadFiringSetups(effectiveDate, opts),
           loadPairEvaluations(effectiveDate, opts),
           loadDailyCommentary(effectiveDate, opts),
+          loadEvidence(opts),
         ]);
         if (signal.aborted || !mounted.current) return;
         setState({
@@ -254,6 +297,8 @@ export function SetupsTab({
           rows: rowsResult.rows,
           pairEvaluations: evalResult.rows,
           dailyCommentary: commentary,
+          evidence,
+          decisionDate: effectiveDate,
         });
       } catch (cause) {
         if (signal.aborted || !mounted.current) return;
@@ -266,7 +311,7 @@ export function SetupsTab({
         setState({ kind: "error", message });
       }
     },
-    [date, loadDecisionDates, loadFiringSetups, loadPairEvaluations, loadDailyCommentary, refreshNonce],
+    [date, loadDecisionDates, loadFiringSetups, loadPairEvaluations, loadDailyCommentary, loadEvidence, refreshNonce],
   );
 
   // (Re)load whenever the browsed date or the refresh signal changes. A bumped
@@ -306,6 +351,17 @@ export function SetupsTab({
   const scope = pair === ALL_PAIRS ? ALL_PAIRS : pair;
   const model = shapeDashboardView(state.rows, scope);
   const viewState = resolveSetupsViewState(model, pair);
+  // Group each firing pair into FORECAST + TRADE with un-validated markers (R10.1, R10.3).
+  const setupTrades = shapeSetupTrades({
+    cards: model.cards,
+    decisionDate: state.decisionDate,
+    ...state.evidence,
+  });
+  const evidence = shapeEvidence({
+    cards: model.cards,
+    analogueOutcomes: state.evidence.analogueOutcomes,
+    tradeLedgerSummary: state.evidence.tradeLedgerSummary,
+  });
   // The run-completion readout for the silent (no-fire) state (schema v2). Absent on an
   // older v1 snapshot, in which case the silent branch keeps the plain message.
   const runSummary = shapeRunSummary(state.pairEvaluations);
@@ -335,7 +391,6 @@ export function SetupsTab({
   // rendered FIRST in both states so it appears every trading day (Req: liveness signal).
   return (
     <Panel>
-      <DailyNote note={dailyNote} />
       {viewState === "silent" ? (
         runSummary.present ? (
           <RunSummary summary={runSummary} />
@@ -364,14 +419,20 @@ export function SetupsTab({
               gap: theme.spacing.sm,
             }}
           >
-            {model.cards.map((card) => (
-              <FiringCard key={`${card.pair}:${card.strategyId}`} card={card} />
+            {setupTrades.map((vm) => (
+              <SetupTradeCard key={`${vm.pair}:${vm.strategyId}`} vm={vm} />
             ))}
           </ul>
         </section>
       )}
 
+      {/* Evidence FIRST and prominent (R10.4); AI commentary and suppressions follow. */}
+      <EvidencePanel items={evidence} />
+
       <SuppressionList suppressions={model.suppressions} />
+
+      {/* Advisory AI note: demoted below the evidence, non-scoring (R10.4). */}
+      <DailyNote note={dailyNote} />
     </Panel>
   );
 }

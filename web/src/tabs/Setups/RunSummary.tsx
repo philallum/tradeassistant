@@ -112,8 +112,8 @@ export function RunSummary({ summary }: RunSummaryProps): JSX.Element {
             padding: `0 0 ${theme.spacing.xs}px 0`,
           }}
         >
-          Per-pair evaluation — direction, earned confidence vs the {thresholdPct} threshold,
-          and trend quality (choppiness). Display-only.
+          Per-pair evaluation — direction and earned confidence vs the {thresholdPct}{" "}
+          threshold. Display-only.
         </caption>
         <thead>
           <tr>
@@ -121,7 +121,6 @@ export function RunSummary({ summary }: RunSummaryProps): JSX.Element {
             <th scope="col" style={headStyle}>Direction</th>
             <th scope="col" style={headStyle}>Confidence</th>
             <th scope="col" style={headStyle}>vs threshold</th>
-            <th scope="col" style={headStyle}>Choppiness</th>
           </tr>
         </thead>
         <tbody>
@@ -144,9 +143,6 @@ export function RunSummary({ summary }: RunSummaryProps): JSX.Element {
                 </td>
                 <td style={{ ...cellStyle, fontFamily: theme.font.mono, color: theme.colors.textSecondary }}>
                   {formatGap(p.gapToThreshold)}
-                </td>
-                <td style={{ ...cellStyle, fontFamily: theme.font.mono, color: theme.colors.textSecondary }}>
-                  {formatConfidence(p.choppiness)}
                 </td>
               </tr>
             );

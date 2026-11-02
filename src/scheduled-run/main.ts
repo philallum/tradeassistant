@@ -59,6 +59,8 @@ import {
 import { loadSnapshotHistory } from "./snapshotHistory.js";
 import { makeGcsSnapshotSink } from "./gcsSnapshotSink.js";
 import { SupabaseRestClient } from "../storage/supabase/index.js";
+import { SupabaseTradeLedgerStore } from "../storage/supabase/tradeLedgerStore.js";
+import { buildEdgeSlices } from "./edgeSlices.js";
 
 /**
  * Load the deterministic per-pair evaluations for the Decision_Date by running
@@ -370,12 +372,29 @@ async function main(): Promise<void> {
     // (captured by `cachingLoader`); the run uses the default dashboard config,
     // so `pairEvaluationRows` derives the same `fired` flag the view used.
     const pairEvaluations = pairEvaluationRows(view.decisionDate, cached.get());
+    // v4 evidence slices (trader-edge-validation R8.1, R9.1, R10): read-only,
+    // deterministic, and fail-safe per slice (a failing slice degrades to empty
+    // with a secret-free log). Only the output artifact grows; firing is untouched.
+    let edge: Awaited<ReturnType<typeof buildEdgeSlices>> = {};
+    try {
+      const stores = buildSupabaseStores(supabase);
+      edge = await buildEdgeSlices({
+        view,
+        evaluations: cached.get(),
+        ledgerStore: new SupabaseTradeLedgerStore(new SupabaseRestClient(supabase)),
+        candleStore: stores.candleStore,
+        now: new Date(),
+      });
+    } catch (err) {
+      logStartupWarning("edge_slices", err);
+    }
     const snapshot = buildDashboardSnapshot(
       view,
       displayOnly,
       history,
       undefined,
       pairEvaluations,
+      edge,
     );
     await writeDashboardSnapshot(snapshot, snapshotSink);
   };
