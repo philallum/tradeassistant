@@ -267,3 +267,80 @@ export interface ValidationStatusRow {
 export interface DecisionDateRow {
   readonly decision_date: string;
 }
+
+// ---------------------------------------------------------------------------------------
+// v5 confluence slice (multi-strategy-confluence-engine R11). An INDEPENDENT, hand-duplicated
+// structural copy of the writer's wire shapes in `src/scheduled-run/snapshot.ts`
+// (`SnapshotConfluence*` / `EMPTY_CONFLUENCE`). This file imports NOTHING from the
+// deterministic core (`src/`); the two definitions are kept in lockstep by hand, exactly as
+// the other slices are. The slice is derived only from deterministic artifacts, carries NO
+// LLM provenance fields (Requirement 11.10), is display-only, and never re-enters scoring.
+// ---------------------------------------------------------------------------------------
+
+/**
+ * A Strategy_Id as carried in the snapshot, in `STRATEGY_IDS` order. Mirrors the backend
+ * `SnapshotConfluenceStrategyId`; kept in lockstep by hand.
+ */
+export type ConfluenceStrategyId =
+  | "trend"
+  | "breakout"
+  | "range"
+  | "reversal"
+  | "custom_pattern"
+  | "third_party";
+
+/** The aggregated Confluence_Status for one Pair (mirrors the backend `ConfluenceStatus`). */
+export type ConfluenceStatus =
+  | "ALIGNED_UP"
+  | "ALIGNED_DOWN"
+  | "NEUTRAL"
+  | "CONFLICT_FLAT"
+  | "INSUFFICIENT_DATA";
+
+/**
+ * One Strategy_Id cell for one Pair: either an available `StrategySignal` (direction +
+ * strength + rationale) or an explicit `unavailable` marker with a non-empty `reason` naming
+ * the failure (Requirement 11.2). `direction` reuses the shared {@link Direction} union.
+ */
+export type ConfluenceCell =
+  | {
+      readonly strategyId: ConfluenceStrategyId;
+      readonly available: true;
+      readonly direction: Direction;
+      readonly strength: number;
+      readonly rationale: string;
+    }
+  | {
+      readonly strategyId: ConfluenceStrategyId;
+      readonly available: false;
+      readonly reason: string;
+    };
+
+/**
+ * The aggregated confluence for one Pair: the bounded Confluence_Score, the
+ * Confluence_Status, the opposing Strategy_Ids (non-empty ONLY when the status is
+ * `CONFLICT_FLAT` — Requirements 11.3, 11.4), and exactly six cells in `STRATEGY_IDS` order
+ * (Requirement 11.2).
+ */
+export interface ConfluencePair {
+  readonly pair: string;
+  readonly score: number;
+  readonly status: ConfluenceStatus;
+  readonly opposingStrategyIds: readonly ConfluenceStrategyId[];
+  readonly cells: readonly ConfluenceCell[];
+}
+
+/**
+ * The per-run Confluence_Matrix carried in the snapshot (Requirement 11). The
+ * `validationLabel` is the literal `"unvalidated"` until an out-of-sample measurement exists
+ * (Requirement 11.6); `weights`, `conflictThreshold`, and `alignmentThreshold` are the exact
+ * values the engine used for the run (Requirement 11.5). `pairs` is either empty (the
+ * fail-safe default) or exactly the five Pairs in `PAIRS` order.
+ */
+export interface Confluence {
+  readonly validationLabel: "unvalidated";
+  readonly weights: Readonly<Record<ConfluenceStrategyId, number>>;
+  readonly conflictThreshold: number;
+  readonly alignmentThreshold: number;
+  readonly pairs: readonly ConfluencePair[];
+}

@@ -188,7 +188,13 @@ function oracle(s: Scenario): Expected {
   const contributors = contributingCount(s);
   let status: ConfluenceStatus;
   if (contributors >= 2) {
-    if (score >= s.alignmentThreshold) status = "ALIGNED_UP";
+    // Mirror the engine exactly: a score of exactly 0 expresses no directional
+    // lean and is always NEUTRAL, even when alignmentThreshold is 0 (where the
+    // `>=` / `<=` bounds would otherwise both admit zero and break UP/DOWN
+    // symmetry). For every non-zero score the threshold comparisons are
+    // unchanged (Requirements 9.3, 9.4, 9.5, 9.8).
+    if (score === 0) status = "NEUTRAL";
+    else if (score >= s.alignmentThreshold) status = "ALIGNED_UP";
     else if (score <= -s.alignmentThreshold) status = "ALIGNED_DOWN";
     else status = "NEUTRAL";
   } else {

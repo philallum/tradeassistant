@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getSnapshot, resetSnapshotCache } from "./snapshotCache";
-import type { DashboardSnapshot } from "./snapshot";
+import { EMPTY_CONFLUENCE, type DashboardSnapshot } from "./snapshot";
 
 const SNAPSHOT: DashboardSnapshot = {
   schemaVersion: 1,
@@ -30,6 +30,9 @@ const SNAPSHOT: DashboardSnapshot = {
   exposure: { perCurrency: [], concentrated: false, strongestPair: null },
   provenance: [],
   validationStatus: [],
+  // A v1 (pre-v5) fixture has no real confluence slice; the loader defaults a pre-v5
+  // snapshot to EMPTY_CONFLUENCE, so the fixture mirrors that fail-safe empty value.
+  confluence: EMPTY_CONFLUENCE,
 };
 
 const originalFetch = globalThis.fetch;

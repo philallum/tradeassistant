@@ -4,22 +4,18 @@
 
 ## 8. Immediate next steps
 
-1. ACTIVE — CONTINUE `multi-strategy-confluence-engine` Stage F. Stages A-E
-   are COMPLETE locally and Stage F is IN PROGRESS: task 17 (snapshot v5 types +
-   builder) is DONE locally — `src/scheduled-run/snapshot.ts` now carries the
-   `SnapshotConfluence*` wire types + `EMPTY_CONFLUENCE`, `SNAPSHOT_SCHEMA_VERSION`
-   is 5, and `buildDashboardSnapshot` takes an optional trailing `confluence`
-   param appended as the LAST key (earlier keys byte-identical, Req 11.8);
-   snapshot.test.ts has the default + append-only-delta tests. `make check`
-   green (1164 passed/7 skipped, exit 0). NOT deployed. NEXT ready task is 18.1
-   (fail-safe `src/scheduled-run/confluenceSlice.ts` — pure `toSnapshotConfluence`
-   + `buildConfluenceSlice` that never throws, degrading to `EMPTY_CONFLUENCE`
-   with a secret-free warning), then 18.2/18.3 (tests + round-trip Property 26),
-   and task 19 (`persistView` wiring). Stage F is the FIRST backend deploy of the
-   feature: it grows `dashboard.json` only (additive `confluence` key +
-   schemaVersion 5); firing, persisted rows, and every earlier slice stay
-   byte-identical. The backend module stayed unwired through Stage E; it
-   becomes a producer at Stage F. Keep `make check` green each task.
+1. DONE — `multi-strategy-confluence-engine` is COMPLETE locally (all 91 tasks
+   `[x]`). The final checkpoint task 26 PASSED this turn: the unified `make check`
+   exits 0 (backend lint/typecheck + 1178 passed/7 skipped, then web build + 267
+   passed). The last blocker — the seed-dependent Property 19 "flake" in
+   `engineStatus.property.test.ts` — was root-caused as a test-ORACLE bug and
+   FIXED (the oracle now mirrors the engine's zero-score⇒NEUTRAL rule; no
+   production code changed); original failing seed + 8 isolated reruns now green.
+   NEXT real-world action is NOT a spec task: the operator merges dev->main to
+   DEPLOY (backend v5 producer first, then the web consumer; a torn deploy stays
+   harmless because the web parser treats a declared schema version < 5 as the
+   empty-confluence default). Nothing is deployed yet.
+
 2. TOP PRIORITY — CONTINUE `daily-candle-freshness-and-cleanup` Phase 6 cleanup
    (R7-R11), then Phase 7. Phases 1-5 are DONE: the Candle_Freshness_Stage
    (tasks 1-11) is merged to `main`; the ☁️ task 13 hosted backfill closed the

@@ -349,111 +349,111 @@ Deploying this stage grows only the output: `dashboard.json` gains an appended `
     - Change the version assertions from 4 to 5 and nothing else. Add: `confluence` defaults to `EMPTY_CONFLUENCE` when omitted; serialising with and without a confluence slice differs only in `schemaVersion` and `confluence`.
     - _Requirements: 11.1, 11.7, 11.8_
 
-- [ ] 18. Fail-safe confluence slice
-  - [~] 18.1 Implement `src/scheduled-run/confluenceSlice.ts`
+- [x] 18. Fail-safe confluence slice
+  - [x] 18.1 Implement `src/scheduled-run/confluenceSlice.ts`
     - Pure `toSnapshotConfluence(matrix)` (copies weights and thresholds from `engine.config`, `validationLabel: "unvalidated"`, zero or five Pairs, six cells each). `buildConfluenceSlice(deps)` never throws: resolve config via `confluenceConfigFromEnv` (fallback to defaults with a secret-free warning), load candles per Pair with `candleStore.getCandles(pair, windowStart, dayBefore(decisionDate))` using `HISTORY_WINDOW_DAYS` and `windowStartDate`, read third-party refs from `displayOnly?.comparisons`, run `buildConfluenceMatrix`. A per-Pair load failure yields all-unavailable cells with reason `candles_unavailable`; any other failure logs slice name and `err.message` only and returns `EMPTY_CONFLUENCE`.
     - _Requirements: 10.1, 10.4, 10.6, 10.7, 11.2, 11.3, 11.4, 11.5, 11.6, 11.10_
 
-  - [~] 18.2 Write unit tests in `src/scheduled-run/confluenceSlice.test.ts`
+  - [x] 18.2 Write unit tests in `src/scheduled-run/confluenceSlice.test.ts`
     - Throwing candle store returns `EMPTY_CONFLUENCE` and logs a warning with no secret-like substrings (store error carrying a fake key); per-Pair candle-load failure; third-party extraction from `displayOnly`; one shared `decisionDate`; invalid env falls back to defaults.
     - _Requirements: 10.4, 10.6, 10.7_
 
-  - [~] 18.3 Write the snapshot round-trip property test
+  - [x] 18.3 Write the snapshot round-trip property test
     - **Property 26: Snapshot slice invariants and serialization round trip**
     - In `src/scheduled-run/confluenceSlice.property.test.ts` (fast-check 4.10.0, `numRuns >= 100`): slice invariants, then serialise, `JSON.parse`, serialise is a fixed point and parse is deeply equal. Required by Requirement 13.9.
     - **Validates: Requirements 11.2, 11.3, 11.4, 11.5, 11.6, 11.9, 11.10, 13.9**
 
-- [ ] 19. Wire into `persistView`
-  - [~] 19.1 Update `src/scheduled-run/main.ts`
+- [x] 19. Wire into `persistView`
+  - [x] 19.1 Update `src/scheduled-run/main.ts`
     - After the v4 edge slices, call `buildConfluenceSlice` with the cached evaluations, `displayOnly`, and `buildSupabaseStores(supabase).candleStore`; pass the result as the new trailing argument to `buildDashboardSnapshot`. The step writes nothing to the DB and returns nothing that firing reads.
     - _Requirements: 10.1, 10.2, 10.5, 10.6, 10.7, 11.1_
 
-  - [~] 19.2 Extend `src/scheduled-run/main.test.ts`
+  - [x] 19.2 Extend `src/scheduled-run/main.test.ts`
     - The firing view, persisted rows, and `cards` passed to the persister are identical whether the confluence step succeeds or throws; the snapshot still publishes with an empty slice when it throws.
     - _Requirements: 10.5, 10.6, 13.7_
 
-- [~] 20. Checkpoint - Stage F green (producer ready to deploy first)
+- [x] 20. Checkpoint - Stage F green (producer ready to deploy first)
   - Ensure all tests pass, ask the user if questions arise.
 
 ### Stage G: Web parser, shapers, and ConfluencePanel (consumer, frontend deploy)
 
 Web tests use the web workspace's fast-check 3.23.1; generators use only the stable API (`fc.property`, `fc.assert`, `fc.record`, `fc.array`, `fc.float`). Run `cd web && npm run build && npm test` at the end of the stage.
 
-- [ ] 21. Web wire types and strict v5 parsing
-  - [~] 21.1 Add Confluence wire types to `web/src/api/types.ts`
+- [x] 21. Web wire types and strict v5 parsing
+  - [x] 21.1 Add Confluence wire types to `web/src/api/types.ts`
     - Independent structural copy of the backend slice types (`Confluence`, `ConfluencePair`, `ConfluenceCell`, ids, status). Do not import from `src/`.
     - _Requirements: 11.1, 11.2, 11.5, 11.6_
 
-  - [~] 21.2 Update `web/src/api/snapshot.ts`
+  - [x] 21.2 Update `web/src/api/snapshot.ts`
     - `SNAPSHOT_SCHEMA_VERSION = 5`, `confluence: Confluence` on `DashboardSnapshot`, `EMPTY_CONFLUENCE`, and `EMPTY_SNAPSHOT`. In `parseSnapshot`, `declared = typeof schemaVersion === "number" ? schemaVersion : 0`; `declared < 5` gives `EMPTY_CONFLUENCE` (never an error); `declared >= 5` runs `parseConfluenceStrict`, throwing `SnapshotError("The dashboard snapshot has an invalid confluence slice.")` on a missing or defective slice with no partial snapshot returned.
     - _Requirements: 11.11, 11.12_
 
-  - [~] 21.3 Update existing web snapshot tests
+  - [x] 21.3 Update existing web snapshot tests
     - Adjust only the assertions that depend on the default or current schema version; schemaVersion 1 to 4 fixtures must still yield the empty confluence default.
     - _Requirements: 11.11_
 
-  - [~] 21.4 Write the parseSnapshot v4 / v5 test
+  - [x] 21.4 Write the parseSnapshot v4 / v5 test
     - `web/src/api/snapshot.confluence.test.ts`: a v4 document and a valid v5 document both parse without error; a document with no `schemaVersion` parses with the empty default; a v5 document with missing or defective `confluence` throws `SnapshotError`. Required by Requirement 13.9.
     - _Requirements: 11.11, 11.12, 13.9_
 
-  - [~] 21.5 Write property test for snapshot parsing
+  - [x] 21.5 Write property test for snapshot parsing
     - **Property 27: Snapshot parsing is backward compatible and strict for v5**
     - In `web/src/api/snapshot.confluence.property.test.ts` using `arbConfluenceSlice` and `arbBrokenSlice` (single defect per case).
     - **Validates: Requirements 11.11, 11.12**
 
-- [ ] 22. Pure shapers
-  - [~] 22.1 Implement `web/src/pure/shapeConfluence.ts`
+- [x] 22. Pure shapers
+  - [x] 22.1 Implement `web/src/pure/shapeConfluence.ts`
     - `shapeConfluence(slice)` returning `ConfluenceViewModel` per the design: empty state text, "Un-validated" label, "Strength is not a probability" note, columns in `STRATEGY_IDS` order with `third_party` "display-only" header while its weight is 0, rows in `PAIRS` order, marker mapping (green / red / neutral / conflict "Stay Flat"), direction words plus glyphs, conflict highlighting from `opposingStrategyIds` with "Conflicting" label, and accessible names. No DOM, clock, fetch, or `src/` imports.
     - Folded-in presentation fields (all pure, derived only from the slice): a per-`CONFLICT_FLAT`-row `conflictSummary` sentence naming an opposing UP and DOWN id (null otherwise); a per-row `gauge: GaugeVM` over [-1,1] with `value = score` and `±alignmentThreshold` ticks while keeping `scoreText`; a `summary: SummaryVM` with aligned/conflict/neutral counts summing to `rows.length`; a per-cell `emphasis` of `"signal"` only when available, non-FLAT, and `weights[strategyId] > 0`, else `"muted"` (never removing a label); and `validated = (slice.validationLabel !== "unvalidated")`. Always compute `marker`/`markerText` regardless of `validated`.
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.6, 12.7, 12.9, 12.11, 12.12, 12.13, 12.14, 12.15, 12.16, 12.17, 12.18, 14.1, 14.2, 14.3, 14.4_
 
-  - [~] 22.2 Implement `web/src/pure/confluenceNav.ts`
+  - [x] 22.2 Implement `web/src/pure/confluenceNav.ts`
     - `nextCell(pos, key, rowCount, colCount)` mapping Arrow/Home/End to clamped positions and Escape to `"dismiss"`, otherwise `null`.
     - _Requirements: 12.10_
 
-  - [~] 22.3 Write view-model unit tests
+  - [x] 22.3 Write view-model unit tests
     - `web/src/pure/shapeConfluence.test.ts`: one case per Confluence_Status (`ALIGNED_UP`, `ALIGNED_DOWN`, `NEUTRAL`, `CONFLICT_FLAT`, `INSUFFICIENT_DATA`), an unavailable cell, and the empty state, each asserting the expected view-model output. Required by Requirement 13.10. The existing `purity.structural.test.ts` scans the new modules automatically.
     - Folded-in cases (Requirement 13.10a): a `CONFLICT_FLAT` row's `conflictSummary` names an opposing UP and DOWN id while a non-conflict row's is `null` (12.14, 12.15); `gauge` spans [-1,1] with both threshold ticks and `scoreText` is retained (12.16); `summary` counts partition the rows and sum to `rows.length` (12.17); `cell.emphasis` is `signal` only for an available non-FLAT positive-weight cell and labels are intact (12.18); and `validated` is false for an `unvalidated` slice with status text still present, true for any other label (14.1-14.4).
     - _Requirements: 12.1, 12.3, 12.6, 12.7, 12.9, 12.12, 12.14, 12.15, 12.16, 12.17, 12.18, 14.1, 14.2, 14.3, 14.4, 13.10, 13.10a_
 
-  - [~] 22.4 Write property tests for the view-model
+  - [x] 22.4 Write property tests for the view-model
     - **Property 28: View-model is complete, labelled, and deterministic**
     - **Property 30: Supplementary presentation is faithful to the slice**
     - **Property 31: Colour is suppressed until validated**
     - In `web/src/pure/shapeConfluence.property.test.ts`.
     - **Validates: Requirements 12.1, 12.2, 12.3, 12.4, 12.6, 12.7, 12.9, 12.11, 12.12, 12.13, 12.14, 12.15, 12.16, 12.17, 12.18, 14.1, 14.2, 14.3, 14.4**
 
-  - [~] 22.5 Write property test for grid navigation
+  - [x] 22.5 Write property test for grid navigation
     - **Property 29: Grid navigation stays inside the grid**
     - In `web/src/pure/confluenceNav.property.test.ts`.
     - **Validates: Requirements 12.10**
 
-- [ ] 23. ConfluencePanel and SetupsTab integration
-  - [~] 23.1 Implement `web/src/tabs/Setups/ConfluencePanel.tsx`
+- [x] 23. ConfluencePanel and SetupsTab integration
+  - [x] 23.1 Implement `web/src/tabs/Setups/ConfluencePanel.tsx`
     - Props `{ viewModel }`. Render the `summary` line above a `<table role="grid">` with caption, `<th scope="col">` and `<th scope="row">`, one `<button type="button" aria-label={accessibleName}>` per cell with roving `tabIndex`, arrow keys via `nextCell` move focus without selecting, click/Enter/Space select, detail region (`role="region"`, `aria-live="polite"`) shows rationale as a React text child with a Dismiss button, Escape dismisses, visible `:focus-visible` outline. Validation label and "Strength is not a probability" in the header and the detail region. Empty view model renders only heading, label, and "no confluence data for this run".
     - Folded-in rendering: per-row `gauge` as a diverging bar over [-1,1] with both alignment-threshold ticks, shown beside the numeric `scoreText` (12.16); a `conflictSummary` sentence on each `CONFLICT_FLAT` row (12.14); each cell's `emphasis` as a style hook (e.g. `data-emphasis`) so `muted` cells are visually quiet without dropping labels (12.18); and the status colour treatment applied ONLY when `viewModel.validated` is true — while un-validated, one neutral treatment for every status, meaning carried by `markerText`/`statusLabel` and the "Stay Flat" marker (14.1-14.3).
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8, 12.9, 12.10, 12.11, 12.12, 12.14, 12.16, 12.17, 12.18, 14.1, 14.2, 14.3_
 
-  - [~] 23.2 Render the panel from `SetupsTab`
+  - [x] 23.2 Render the panel from `SetupsTab`
     - Add an injected `loadConfluence` (default `getSnapshot` then `snapshot.confluence`), pass through `shapeConfluence`, render `<ConfluencePanel>` below `RunSummary` as a section (no sixth tab; `TAB_IDS` unchanged). A load failure renders the empty view model.
     - _Requirements: 12.1, 12.12, 12.13_
 
-  - [~] 23.3 Write DOM tests for the panel
+  - [x] 23.3 Write DOM tests for the panel
     - `web/src/tabs/Setups/ConfluencePanel.dom.test.tsx` (Testing Library): click, Enter, and Space each show the rationale synchronously and keep it until another cell or Dismiss/Escape; label and probability note in both regions; single tab stop with arrow-key focus movement; empty message; `SetupsTab` load failure renders the empty state.
     - Folded-in DOM checks: the Confluence_Summary line and a per-row Score_Gauge render alongside the numeric score (12.16, 12.17); a `CONFLICT_FLAT` row shows its conflict-summary sentence (12.14); muted-emphasis cells carry the style hook while keeping their labels (12.18); and with an `unvalidated` slice the status markers render in one neutral colour treatment yet stay distinguishable by text (14.1, 14.2).
     - _Requirements: 12.5, 12.8, 12.10, 12.12, 12.14, 12.16, 12.17, 12.18, 14.1, 14.2_
 
-- [~] 24. Checkpoint - Stage G green
+- [x] 24. Checkpoint - Stage G green
   - Ensure all tests pass (`cd web && npm run build && npm test`), ask the user if questions arise.
 
 ### Stage H: Build tooling and final verification
 
-- [ ] 25. Extend `make check` to cover the web workspace
-  - [~] 25.1 Update the `Makefile`
+- [x] 25. Extend `make check` to cover the web workspace
+  - [x] 25.1 Update the `Makefile`
     - Add a `check-web` target (`cd web && npm run build && npm test`); make `check` run `npm run check` then `check-web`; add `check-web` to `.PHONY`. `make` stops at the first failing recipe, giving a non-zero exit that names the failing step.
     - _Requirements: 13.11, 13.12_
 
-- [~] 26. Final checkpoint - Ensure all tests pass
+- [x] 26. Final checkpoint - Ensure all tests pass
   - Run `make check` and confirm exit code 0 with lint, typecheck, backend tests, web build, and web tests. Confirm the firing decision, Earned_Confidence, and every pre-existing snapshot slice are unchanged (tasks 15.5, 17.2, 19.2). Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

@@ -65,6 +65,7 @@ import { makeGcsSnapshotSink } from "./gcsSnapshotSink.js";
 import { SupabaseRestClient } from "../storage/supabase/index.js";
 import { SupabaseTradeLedgerStore } from "../storage/supabase/tradeLedgerStore.js";
 import { buildEdgeSlices } from "./edgeSlices.js";
+import { buildConfluenceSlice } from "./confluenceSlice.js";
 
 /**
  * Load the deterministic per-pair evaluations for the Decision_Date by running
@@ -338,6 +339,180 @@ export function logFreshnessDegradation(
   });
 }
 
+/**
+ * Injectable seams for {@link makePersistView} so the end-of-run snapshot
+ * assembly is unit-testable with no live network/DB. Production wiring (in
+ * {@link main}) leaves every seam at its default; a test injects in-memory
+ * stubs/spies to assert, e.g., that the firing view, the persisted rows, and
+ * the `cards` handed to the persister are IDENTICAL whether the (fail-safe)
+ * confluence step succeeds or throws (Requirement 10.5), and that the snapshot
+ * still publishes with an `EMPTY_CONFLUENCE` slice when it throws (10.6, 13.7).
+ */
+export interface PersistViewDeps {
+  /** The cached deterministic evaluations the view was built from. */
+  readonly cached: { get(): readonly PairEvaluation[] };
+  /** Display-only producer collaborators (LLM / external provider), as resolved. */
+  readonly displayDeps: DisplayOnlyDeps;
+  /** The resolved snapshot destination sink, or `undefined` for a no-op write. */
+  readonly snapshotSink: SnapshotSink | undefined;
+  /** The DB view persister. Defaults to the Supabase writer (the source of truth). */
+  readonly persist?: (view: DashboardView, supabase: SupabaseConfigArg) => Promise<void>;
+  /** Build the display-only writes. Defaults to {@link buildDisplayOnly}. */
+  readonly buildDisplay?: (
+    view: DashboardView,
+    evaluations: readonly PairEvaluation[],
+    deps: DisplayOnlyDeps,
+  ) => Promise<DisplayOnlyWrite | undefined>;
+  /** Load the read-back history slices. Defaults to {@link loadSnapshotHistory}. */
+  readonly loadHistory?: (
+    supabase: SupabaseConfigArg,
+    view: DashboardView,
+  ) => Promise<Awaited<ReturnType<typeof loadSnapshotHistory>>>;
+  /** Build the v4 edge slices. Defaults to {@link buildEdgeSlices} over Supabase. */
+  readonly buildEdge?: (
+    supabase: SupabaseConfigArg,
+    view: DashboardView,
+    evaluations: readonly PairEvaluation[],
+  ) => Promise<Awaited<ReturnType<typeof buildEdgeSlices>>>;
+  /** Build the v5 confluence slice. Defaults to {@link buildConfluenceSlice} over Supabase. */
+  readonly buildConfluence?: (
+    supabase: SupabaseConfigArg,
+    view: DashboardView,
+    evaluations: readonly PairEvaluation[],
+    displayOnly: DisplayOnlyWrite | undefined,
+  ) => Promise<Awaited<ReturnType<typeof buildConfluenceSlice>>>;
+  /** Assemble the snapshot envelope. Defaults to {@link buildDashboardSnapshot}. */
+  readonly buildSnapshot?: typeof buildDashboardSnapshot;
+  /** Write the assembled snapshot. Defaults to {@link writeDashboardSnapshot}. */
+  readonly writeSnapshot?: typeof writeDashboardSnapshot;
+  /** Secret-free warning sink. Defaults to {@link logStartupWarning}. */
+  readonly warn?: (collaborator: string, err: unknown) => void;
+}
+
+/** The Supabase connection argument the persister receives (alias for readability). */
+type SupabaseConfigArg = Parameters<DashboardViewPersister>[1];
+
+/**
+ * Build the end-of-run {@link DashboardViewPersister}: write the firing view to
+ * `firing_setups` (the source of truth) FIRST, then assemble the read-only
+ * `dashboard.json` snapshot and write it fail-safely.
+ *
+ * The confluence step (subtask 19.1) is a separate read-only consumer: it writes
+ * nothing to the DB and returns nothing firing reads, and it is wrapped in a
+ * fail-safe try/catch so that a defect degrades the snapshot to an
+ * `EMPTY_CONFLUENCE` slice (via `buildDashboardSnapshot`'s default) WITHOUT
+ * changing the firing view, the persisted rows, or the `cards` the persister saw
+ * (Requirements 10.5, 10.6, 13.7).
+ */
+export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
+  const warn = deps.warn ?? logStartupWarning;
+  const persist =
+    deps.persist ?? ((view, supabase) => makeSupabaseViewPersister(supabase)(view, supabase));
+  const buildDisplay =
+    deps.buildDisplay ?? ((view, evaluations, d) => buildDisplayOnly(view, evaluations, d));
+  const loadHistory =
+    deps.loadHistory ??
+    ((supabase, view) =>
+      loadSnapshotHistory(new SupabaseRestClient(supabase), {
+        decisionDate: view.decisionDate,
+      }));
+  const buildEdge =
+    deps.buildEdge ??
+    (async (supabase, view, evaluations) => {
+      const stores = buildSupabaseStores(supabase);
+      return buildEdgeSlices({
+        view,
+        evaluations,
+        ledgerStore: new SupabaseTradeLedgerStore(new SupabaseRestClient(supabase)),
+        candleStore: stores.candleStore,
+        now: new Date(),
+      });
+    });
+  const buildConfluence =
+    deps.buildConfluence ??
+    ((supabase, view, evaluations, displayOnly) =>
+      buildConfluenceSlice({
+        decisionDate: view.decisionDate,
+        evaluations,
+        displayOnly,
+        candleStore: buildSupabaseStores(supabase).candleStore,
+      }));
+  const buildSnapshot = deps.buildSnapshot ?? buildDashboardSnapshot;
+  const writeSnapshot = deps.writeSnapshot ?? writeDashboardSnapshot;
+
+  return async (view: DashboardView, supabase) => {
+    // The persisted DB rows are the source of truth and are written FIRST.
+    await persist(view, supabase);
+
+    let displayOnly: DisplayOnlyWrite | undefined;
+    try {
+      displayOnly = await buildDisplay(view, deps.cached.get(), deps.displayDeps);
+    } catch (err) {
+      warn("display_build", err);
+      displayOnly = undefined;
+    }
+
+    // Public_Read_Path (simplify-to-cloud-minimal R5.1, R5.2): at the END of the
+    // run, serialise the dashboard view + display-only writes into the
+    // `dashboard.json` snapshot the hosted SPA fetches, and write it fail-safely.
+    // This runs AFTER the DB rows are persisted, and the write is best-effort:
+    // `writeDashboardSnapshot` logs and swallows any failure so a snapshot error
+    // can never corrupt the persisted rows nor fail the run (design Error
+    // Handling).
+    //
+    // History slices (prior firing setups, realized/analogue outcomes, a bounded
+    // recent window of candles, evaluation reports, and the Decision_Date list)
+    // are READ BACK from the just-persisted source-of-truth rows so the SPA's
+    // tabs render real data instead of an empty state. The read is read-only and
+    // fail-safe per slice: a slice that cannot load degrades to an empty array
+    // and never breaks the run (see `loadSnapshotHistory`). `buildDashboardSnapshot`
+    // merges today's produced view on TOP of the historical firing setups.
+    const history = await loadHistory(supabase, view);
+    // Per-pair run-completion readout (schema v2): carry EVERY evaluated pair —
+    // fired or not — so a silent (no-fire) day shows a credible "run evaluated
+    // all five pairs" summary instead of a bare "no data" notice. The full
+    // evaluations are the exact deterministic ones the view was built from
+    // (captured by `cachingLoader`); the run uses the default dashboard config,
+    // so `pairEvaluationRows` derives the same `fired` flag the view used.
+    const pairEvaluations = pairEvaluationRows(view.decisionDate, deps.cached.get());
+    // v4 evidence slices (trader-edge-validation R8.1, R9.1, R10): read-only,
+    // deterministic, and fail-safe per slice (a failing slice degrades to empty
+    // with a secret-free log). Only the output artifact grows; firing is untouched.
+    let edge: Awaited<ReturnType<typeof buildEdgeSlices>> = {};
+    try {
+      edge = await buildEdge(supabase, view, deps.cached.get());
+    } catch (err) {
+      warn("edge_slices", err);
+    }
+    // v5 confluence slice (multi-strategy-confluence-engine R10, R11): a
+    // separate read-only consumer of already-produced deterministic data. It
+    // reads candles + the display-only third-party references, runs the four
+    // classical strategies + the two adapters through the engine, and maps the
+    // result to the appended `confluence` key. It writes NOTHING to the DB and
+    // returns NOTHING firing reads (Requirement 10.5). `buildConfluenceSlice`
+    // itself never throws (it degrades to `EMPTY_CONFLUENCE` on any internal
+    // failure), but the call is wrapped in the same fail-safe try/catch the
+    // edge slices use so a defect here can never fail the run or disturb the
+    // persisted rows (Requirement 10.6).
+    let confluence: Awaited<ReturnType<typeof buildConfluenceSlice>> | undefined;
+    try {
+      confluence = await buildConfluence(supabase, view, deps.cached.get(), displayOnly);
+    } catch (err) {
+      warn("confluence_slice", err);
+    }
+    const snapshot = buildSnapshot(
+      view,
+      displayOnly,
+      history,
+      undefined,
+      pairEvaluations,
+      edge,
+      confluence,
+    );
+    await writeSnapshot(snapshot, deps.snapshotSink);
+  };
+}
+
 /** Run the scheduled daily refresh and report the outcome, then exit. */
 async function main(): Promise<void> {
   const config = loadScheduledRunConfig();
@@ -393,69 +568,7 @@ async function main(): Promise<void> {
    */
   const snapshotSink = await resolveSnapshotSink(config);
 
-  const persistView: DashboardViewPersister = async (view: DashboardView, supabase) => {
-    // The persisted DB rows are the source of truth and are written FIRST.
-    await makeSupabaseViewPersister(supabase)(view, supabase);
-
-    let displayOnly: DisplayOnlyWrite | undefined;
-    try {
-      displayOnly = await buildDisplayOnly(view, cached.get(), displayDeps);
-    } catch (err) {
-      logStartupWarning("display_build", err);
-      displayOnly = undefined;
-    }
-
-    // Public_Read_Path (simplify-to-cloud-minimal R5.1, R5.2): at the END of the
-    // run, serialise the dashboard view + display-only writes into the
-    // `dashboard.json` snapshot the hosted SPA fetches, and write it fail-safely.
-    // This runs AFTER the DB rows are persisted, and the write is best-effort:
-    // `writeDashboardSnapshot` logs and swallows any failure so a snapshot error
-    // can never corrupt the persisted rows nor fail the run (design Error
-    // Handling).
-    //
-    // History slices (prior firing setups, realized/analogue outcomes, a bounded
-    // recent window of candles, evaluation reports, and the Decision_Date list)
-    // are READ BACK from the just-persisted source-of-truth rows so the SPA's
-    // tabs render real data instead of an empty state. The read is read-only and
-    // fail-safe per slice: a slice that cannot load degrades to an empty array
-    // and never breaks the run (see `loadSnapshotHistory`). `buildDashboardSnapshot`
-    // merges today's produced view on TOP of the historical firing setups.
-    const history = await loadSnapshotHistory(new SupabaseRestClient(supabase), {
-      decisionDate: view.decisionDate,
-    });
-    // Per-pair run-completion readout (schema v2): carry EVERY evaluated pair —
-    // fired or not — so a silent (no-fire) day shows a credible "run evaluated
-    // all five pairs" summary instead of a bare "no data" notice. The full
-    // evaluations are the exact deterministic ones the view was built from
-    // (captured by `cachingLoader`); the run uses the default dashboard config,
-    // so `pairEvaluationRows` derives the same `fired` flag the view used.
-    const pairEvaluations = pairEvaluationRows(view.decisionDate, cached.get());
-    // v4 evidence slices (trader-edge-validation R8.1, R9.1, R10): read-only,
-    // deterministic, and fail-safe per slice (a failing slice degrades to empty
-    // with a secret-free log). Only the output artifact grows; firing is untouched.
-    let edge: Awaited<ReturnType<typeof buildEdgeSlices>> = {};
-    try {
-      const stores = buildSupabaseStores(supabase);
-      edge = await buildEdgeSlices({
-        view,
-        evaluations: cached.get(),
-        ledgerStore: new SupabaseTradeLedgerStore(new SupabaseRestClient(supabase)),
-        candleStore: stores.candleStore,
-        now: new Date(),
-      });
-    } catch (err) {
-      logStartupWarning("edge_slices", err);
-    }
-    const snapshot = buildDashboardSnapshot(
-      view,
-      displayOnly,
-      history,
-      undefined,
-      pairEvaluations,
-      edge,
-    );
-    await writeDashboardSnapshot(snapshot, snapshotSink);
-  };
+  const persistView = makePersistView({ cached, displayDeps, snapshotSink });
 
   const result = await runScheduledDaily(config, { loadEvaluations: cached.loader, persistView });
 
