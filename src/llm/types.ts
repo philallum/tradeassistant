@@ -164,6 +164,14 @@ export type LlmTagged<T> = {
 } & { readonly [PROVENANCE_BRAND]: true };
 
 /**
+ * The deterministic (non-LLM) type projection, re-exported here so consumers at
+ * the AI / Deterministic boundary can pull both {@link isLlmTagged} and
+ * `Deterministic<T>` from this single vocabulary module. The canonical
+ * definition lives with the ScoringInputGuard; this is a type-only re-export.
+ */
+export type { Deterministic } from "./scoringInputGuard.js";
+
+/**
  * Runtime detector for the provenance brand. Returns true for any value carrying
  * the non-enumerable {@link PROVENANCE_BRAND} symbol — i.e. anything the
  * LLM_Interface produced. The ScoringInputGuard (task 9.2) uses this to reject

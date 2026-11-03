@@ -341,13 +341,13 @@ export function createConfluenceEngine(
 6. Conflict: let `strongUp = {i : w_i > 0, UP, s_i >= conflictThreshold}` and `strongDown` likewise. If both are non-empty, the status is `CONFLICT_FLAT`, the score is left as computed, and `opposingStrategyIds` is the canonical-order union of both sets (Requirements 9.1, 9.2, 9.9, 11.4).
 7. Otherwise let `contributing = {i : w_i > 0, direction ≠ FLAT}`.
    - `|contributing| = 1`: `NEUTRAL` (Requirement 9.10).
-   - `|contributing| >= 2`: `ALIGNED_UP` if `score >= alignmentThreshold`, `ALIGNED_DOWN` if `score <= -alignmentThreshold`, else `NEUTRAL` (Requirements 9.3 to 9.5).
+   - `|contributing| >= 2`: `NEUTRAL` if `score === 0` (no directional lean — see below), otherwise `ALIGNED_UP` if `score >= alignmentThreshold`, `ALIGNED_DOWN` if `score <= -alignmentThreshold`, else `NEUTRAL` (Requirements 9.3 to 9.5, 9.8).
    - `|contributing| = 0` (every positive-weight signal is FLAT, so `score = 0`): `NEUTRAL`. The requirements do not define this case; see "Resolved gaps" below.
 8. `opposingStrategyIds` is `[]` unless the status is `CONFLICT_FLAT` (Requirement 11.3).
 
 Zero-weight signals still appear in `signals` (and therefore in the matrix) but contribute to nothing. This gives the `third_party` neutrality property (Requirements 8.4, 13.6).
 
-Symmetry follows because step 5 negates every term exactly when directions flip, the classification thresholds are symmetric, and the canonical ordering fixes the summation order.
+Symmetry follows because step 5 negates every term exactly when directions flip, the classification thresholds are symmetric, and the canonical ordering fixes the summation order. One degenerate point needs the explicit zero guard in step 7: criteria 9.3 (`score >= alignmentThreshold`) and 9.4 (`score <= -alignmentThreshold`) both admit `score = 0` when `alignmentThreshold = 0`, and resolving that overlap by evaluation order would classify a zero score as `ALIGNED_UP` on both the original and the flipped set, breaking the 9.8 symmetry invariant. Because a score of exactly 0 carries no directional lean, it is always `NEUTRAL` (consistent with 9.5 and the Score_Gauge being centred at 0); every non-zero score follows 9.3/9.4 unchanged.
 
 ### 7. Per-run orchestration: `src/strategies/confluenceMatrix.ts`
 
@@ -442,19 +442,32 @@ export interface ConfluenceViewModel {
   readonly empty: boolean;
   readonly emptyText: string;          // "no confluence data for this run"
   readonly validationLabel: string;    // "Un-validated"
+  readonly validated: boolean;         // false while slice.validationLabel === "unvalidated"
   readonly strengthNote: string;       // "Strength is not a probability"
+  readonly summary: SummaryVM;         // Confluence_Summary counts (Requirement 12.17)
   readonly columns: readonly ColumnVM[];
   readonly rows: readonly RowVM[];
 }
+export interface SummaryVM {
+  readonly aligned: number;    // ALIGNED_UP + ALIGNED_DOWN
+  readonly conflict: number;   // CONFLICT_FLAT
+  readonly neutral: number;    // NEUTRAL + INSUFFICIENT_DATA
+  readonly text: string;       // e.g. "2 aligned, 1 conflict, 2 neutral"
+}
 export interface ColumnVM { strategyId: StrategyId; header: string; displayOnly: boolean }
+export interface GaugeVM {
+  readonly min: -1; readonly max: 1; readonly value: number;     // the (clamped) score
+  readonly posThreshold: number; readonly negThreshold: number;  // ±alignmentThreshold
+}
 export interface RowVM {
-  pair: Pair; scoreText: string; score: number; status: ConfluenceStatus;
+  pair: Pair; scoreText: string; score: number; gauge: GaugeVM; status: ConfluenceStatus;
   statusLabel: string; marker: "green" | "red" | "neutral" | "conflict"; markerText: string;
-  stayFlat: boolean; cells: readonly CellVM[];
+  stayFlat: boolean; conflictSummary: string | null; cells: readonly CellVM[];
 }
 export interface CellVM {
   strategyId: StrategyId; available: boolean; directionLabel: string;   // "Up" | "Down" | "Flat" | "Unavailable"
   glyph: string; strengthText: string; strength: number | null;
+  emphasis: "signal" | "muted";     // Requirement 12.18
   detailText: string;               // rationale, or the unavailable reason
   highlighted: boolean; highlightLabel: string | null; accessibleName: string;
 }
@@ -462,9 +475,20 @@ export interface CellVM {
 
 Mappings: `ALIGNED_UP` gives marker `green` with text "Aligned up"; `ALIGNED_DOWN` gives `red` with "Aligned down"; `NEUTRAL` and `INSUFFICIENT_DATA` give `neutral` with "Neutral" / "Insufficient data"; `CONFLICT_FLAT` gives `conflict` with "Stay Flat" and `stayFlat = true` (Requirement 12.3). Directions are always words plus a glyph (`▲`, `▼`, `–`) so colour is never the only cue (Requirement 12.4). `highlighted` is true when the status is `CONFLICT_FLAT` and the strategy is in `opposingStrategyIds`, with `highlightLabel = "Conflicting"` (Requirement 12.7). `third_party` has `displayOnly = true` and header "Third party (display-only)" while `weights.third_party === 0` (Requirement 12.9). `accessibleName` is `"<PAIR>, <strategyId>, <Direction>, strength <0.00>"`, or `"<PAIR>, <strategyId>, unavailable: <reason>"` (Requirement 12.11). Rows follow the canonical `PAIRS` order and columns follow `STRATEGY_IDS`.
 
+**New view-model fields (folded-in improvements).**
+
+- `conflictSummary` (Requirement 12.14, 12.15): for a `CONFLICT_FLAT` row, a deterministic sentence built only from `opposingStrategyIds` and the row's cells, e.g. `"Stay flat: trend ▲ Up (0.72) opposes reversal ▼ Down (0.68)."`. It names at least one opposing UP and one opposing DOWN Strategy_Id. It is `null` for every non-`CONFLICT_FLAT` row. It introduces no value absent from the slice.
+- `gauge` (Requirement 12.16): a `GaugeVM` over the fixed `[-1, 1]` interval with `value = score` and `posThreshold`/`negThreshold = ±slice.alignmentThreshold`. It is presentation metadata only; `scoreText` (the number) is always kept, so the gauge supplements rather than replaces it.
+- `summary` (Requirement 12.17): the `SummaryVM` counts over the rendered rows, partitioning them into aligned / conflict / neutral so the three sum to `rows.length`. `text` is a stable human sentence.
+- `cell.emphasis` (Requirement 12.18): `"signal"` when the cell is available, non-`FLAT`, and its Strategy_Id weight (from `slice.weights`) is `> 0`; `"muted"` otherwise. It is a pure presentation hint — every direction, strength, score, status, and required text label is unchanged whatever the emphasis. This lets the panel visually quiet FLAT / unavailable / zero-weight cells (notably the display-only `third_party` column) without hiding information.
+
+**Colour-after-validation (Requirement 14, honest presentation).** `validated = (slice.validationLabel !== "unvalidated")`. The view-model always computes `marker` (so the data is testable), but the panel reads `validated` to decide whether to *apply* the green/red/neutral/conflict colour treatment (`validated === true`) or render every status in one neutral colour treatment (`validated === false`). While un-validated, colour cannot distinguish statuses, but the per-status `statusLabel`/`markerText` and the `CONFLICT_FLAT` "Stay Flat" marker still do (Requirements 14.1, 14.2). Because `validationLabel` is the literal `"unvalidated"` for this feature (Requirement 11.6), the panel ships in the colour-suppressed state; the colour treatment turns on only if a future measurement sets a different label. The decision is derived purely from the slice, so it is deterministic and DOM-free (Requirement 14.4).
+
+**Out-of-scope dependency (recorded, not built here).** The only thing that may flip `validationLabel` away from `"unvalidated"` is an out-of-sample, net-of-cost measurement of the Confluence_Matrix. That measurement — e.g. "when these strategies aligned historically, the net outcome was X" tied to the `trader-edge-validation` Trade_Ledger — is a FUTURE spec, explicitly out of scope here (Requirement 14.5). This feature only renders the honest un-validated state and leaves the hook (`validated`) for that later capability.
+
 **`web/src/pure/confluenceNav.ts`**: `nextCell(pos, key, rowCount, colCount): Pos | "dismiss" | null` maps ArrowUp / Down / Left / Right / Home / End to a clamped new position and Escape to `"dismiss"`. It is pure so the keyboard model is testable without a DOM (Requirement 12.10).
 
-**`web/src/tabs/Setups/ConfluencePanel.tsx`.** Props: `{ viewModel: ConfluenceViewModel }`. It renders a `<table role="grid">` with a caption, `<th scope="col">` headers per strategy and `<th scope="row">` per Pair, plus the score and status text in each row. Each cell contains one `<button type="button">` with `aria-label={accessibleName}` and roving `tabIndex` (one tab stop for the grid; arrow keys move focus using `nextCell`). Activating a button with click, Enter, or Space (native button behaviour) sets `selected = {row, col}`, and the detail region renders synchronously, well within 200 ms (Requirement 12.5). Arrow keys move focus without changing selection, so exploring the grid does not hide the pinned rationale. The detail region is `role="region"` with `aria-live="polite"`, contains the rationale as a React text child (no `dangerouslySetInnerHTML`), and has a "Dismiss" button. Escape also dismisses. All focusable elements get a visible `:focus-visible` outline. Unavailable cells show "Unavailable: reason" and remain selectable. Conflict rows show a "Stay Flat" badge and cells with a "Conflicting" text label. The validation label and "Strength is not a probability" appear in the panel header and again in the detail region, which are the two regions where strengths and scores appear (Requirement 12.8). The empty view model renders only the heading, the validation label, and "no confluence data for this run" (Requirement 12.12).
+**`web/src/tabs/Setups/ConfluencePanel.tsx`.** Props: `{ viewModel: ConfluenceViewModel }`. It renders the `summary` line (Confluence_Summary counts, Requirement 12.17) above a `<table role="grid">` with a caption, `<th scope="col">` headers per strategy and `<th scope="row">` per Pair, plus the score text, the `gauge` (a diverging bar over [-1,1] with both alignment-threshold ticks, Requirement 12.16; the numeric `scoreText` stays beside it), and the status text in each row. A `CONFLICT_FLAT` row additionally renders its `conflictSummary` sentence (Requirement 12.14). Each cell carries its `emphasis` as a style hook (e.g. a `data-emphasis` attribute / muted class) so `muted` cells are visually quiet without losing any label (Requirement 12.18). The status marker's colour treatment is applied only when `viewModel.validated` is true; while un-validated (the shipping state) every marker uses one neutral treatment and relies on `markerText`/`statusLabel` for meaning (Requirement 14). Each cell contains one `<button type="button">` with `aria-label={accessibleName}` and roving `tabIndex` (one tab stop for the grid; arrow keys move focus using `nextCell`). Activating a button with click, Enter, or Space (native button behaviour) sets `selected = {row, col}`, and the detail region renders synchronously, well within 200 ms (Requirement 12.5). Arrow keys move focus without changing selection, so exploring the grid does not hide the pinned rationale. The detail region is `role="region"` with `aria-live="polite"`, contains the rationale as a React text child (no `dangerouslySetInnerHTML`), and has a "Dismiss" button. Escape also dismisses. All focusable elements get a visible `:focus-visible` outline. Unavailable cells show "Unavailable: reason" and remain selectable. Conflict rows show a "Stay Flat" badge and cells with a "Conflicting" text label. The validation label and "Strength is not a probability" appear in the panel header and again in the detail region, which are the two regions where strengths and scores appear (Requirement 12.8). The empty view model renders only the heading, the validation label, and "no confluence data for this run" (Requirement 12.12).
 
 `SetupsTab` calls an injected `loadConfluence` (default: `getSnapshot` then `snapshot.confluence`), passes the result through `shapeConfluence`, and renders `<ConfluencePanel>` below `RunSummary`. A load failure renders the empty view model rather than an error, because the matrix is advisory.
 
@@ -573,7 +597,7 @@ The prework produced many per-criterion properties. They were consolidated as fo
 - Score bounds (8.2) and the weighted-mean formula (8.1, 8.5) are kept separate: bounds must hold for any valid weights, including cases where float rounding could exceed 1.
 - Conflict (9.1, 9.2, 9.9, 11.4) is one property. Non-conflict classification (9.3 to 9.5, 9.10, 11.3) is another. Symmetry (9.8) and permutation invariance (8.8) are distinct metamorphic relations and are kept separate.
 - Slice invariants (11.2 to 11.6) and the round trip (11.9) are separate because they check different things (shape rules versus serialization stability).
-- View-model criteria (12.1 to 12.4, 12.6, 12.7, 12.9, 12.11, 12.13) share a generator of arbitrary valid slices and are split into two properties: structure and labelling (Property 28) and determinism with purity (covered by the existing purity scan and the determinism clause of Property 28).
+- View-model criteria (12.1 to 12.4, 12.6, 12.7, 12.9, 12.11, 12.13) share a generator of arbitrary valid slices and are split into two properties: structure and labelling (Property 28) and determinism with purity (covered by the existing purity scan and the determinism clause of Property 28). The folded-in presentation criteria (12.14 to 12.18 — conflict summary, score gauge, confluence summary counts, cell emphasis) form one further property (Property 30) over the same generator, and the colour-suppression-until-validated criteria (14.1 to 14.4) form another (Property 31); both reuse `arbConfluenceSlice`.
 
 Criteria classified as EXAMPLE, EDGE_CASE, SMOKE, or INTEGRATION are covered in the Testing Strategy, not as properties.
 
@@ -745,6 +769,18 @@ Criteria classified as EXAMPLE, EDGE_CASE, SMOKE, or INTEGRATION are covered in 
 
 **Validates: Requirements 12.1, 12.2, 12.3, 12.4, 12.6, 12.7, 12.9, 12.11, 12.12, 12.13**
 
+### Property 30: Supplementary presentation is faithful to the slice
+
+*For any* valid confluence slice with at least one Pair, `shapeConfluence` additionally guarantees: every `CONFLICT_FLAT` row has a non-empty `conflictSummary` naming at least one opposing UP and one opposing DOWN Strategy_Id drawn from `opposingStrategyIds`, and every non-`CONFLICT_FLAT` row has `conflictSummary === null` (Requirements 12.14, 12.15); every row's `gauge` has `min === -1`, `max === 1`, `value === row.score`, and `posThreshold`/`negThreshold === ±slice.alignmentThreshold`, while `scoreText` remains the numeric score (Requirement 12.16); `summary.aligned + summary.conflict + summary.neutral === rows.length` with each status counted in exactly one bucket (Requirement 12.17); each cell's `emphasis` is `"signal"` iff it is available, non-`FLAT`, and `slice.weights[strategyId] > 0`, else `"muted"`, and toggling emphasis never changes any direction, strength, score, status, or required label (Requirement 12.18); and `conflictSummary`, `gauge`, `summary`, and `emphasis` introduce no value not derivable from the slice. Two calls with deeply equal input return deeply equal output.
+
+**Validates: Requirements 12.14, 12.15, 12.16, 12.17, 12.18**
+
+### Property 31: Colour is suppressed until validated
+
+*For any* valid confluence slice, `shapeConfluence` sets `validated === (slice.validationLabel !== "unvalidated")`, and always computes each row's `marker` and `markerText`/`statusLabel` from its status regardless of `validated`. *For any* slice whose `validationLabel` is `"unvalidated"`, the view-model still distinguishes every status via `markerText`/`statusLabel` and keeps the `CONFLICT_FLAT` "Stay Flat" marker, so meaning survives colour suppression. The output is a pure function of the slice, so the decision is deterministic and DOM-free.
+
+**Validates: Requirements 14.1, 14.2, 14.3, 14.4**
+
 ### Property 29: Grid navigation stays inside the grid
 
 *For any* grid size and starting position, applying any sequence of Arrow, Home, and End keys through `nextCell` always yields a position inside the grid, and Escape yields `"dismiss"`. Every cell is reachable from any other cell by arrow keys.
@@ -779,7 +815,7 @@ The strategies and the engine never throw for data-dependent conditions. Only pr
 
 ### Approach
 
-Unit tests cover concrete cases, boundaries, wiring, and DOM behaviour. Property-based tests cover the 29 properties above. Both are required: the unit tests pin the formulas with hand-checked numbers, and the property tests check them across the input space.
+Unit tests cover concrete cases, boundaries, wiring, and DOM behaviour. Property-based tests cover the 31 properties above. Both are required: the unit tests pin the formulas with hand-checked numbers, and the property tests check them across the input space.
 
 ### Libraries and configuration
 
@@ -828,10 +864,10 @@ The per-strategy unit tests use small hand-built series where the expected direc
 ### Web tests (`web/src/`)
 
 - `api/snapshot.test.ts` (existing, extended): Property 27, plus the explicit example that both a v4 document and a v5 document parse without error (Requirement 13.9). Existing tests with `schemaVersion` 1 to 4 continue to expect the empty default.
-- `pure/shapeConfluence.test.ts` and `pure/shapeConfluence.property.test.ts`: Property 28, with unit cases for each of the five Confluence_Status values, an unavailable cell, and the empty state (Requirement 13.10).
+- `pure/shapeConfluence.test.ts` and `pure/shapeConfluence.property.test.ts`: Properties 28, 30, and 31, with unit cases for each of the five Confluence_Status values, an unavailable cell, and the empty state (Requirement 13.10), plus the folded-in cases (Requirement 13.10a): a `CONFLICT_FLAT` row yields a `conflictSummary` naming an opposing UP and DOWN id while non-conflict rows yield `null`; the `gauge` spans [-1,1] with both threshold ticks and `scoreText` is retained; the `summary` counts partition the rows and sum to `rows.length`; `cell.emphasis` is `signal` only for an available non-FLAT positive-weight cell; and `validated === false` with per-status text labels still present when `validationLabel === "unvalidated"`, flipping to per-status colour markers when it is not.
 - `pure/confluenceNav.property.test.ts`: Property 29.
 - `pure/purity.structural.test.ts` (existing, unchanged): automatically scans the two new pure modules from disk.
-- `tabs/Setups/ConfluencePanel.dom.test.tsx`: Testing Library tests for DOM behaviour that is not a universal property. These cover click, Enter, and Space each showing the rationale synchronously and keeping it visible until another cell is chosen or Dismiss or Escape is used (Requirement 12.5); the validation label and "Strength is not a probability" appearing in the header and the detail region (Requirement 12.8); one tab stop for the grid with arrow-key focus movement and a focus indicator class (Requirement 12.10); and the empty message (Requirement 12.12). These use example-based tests because they check rendering and interaction, where property-based testing is not appropriate.
+- `tabs/Setups/ConfluencePanel.dom.test.tsx`: Testing Library tests for DOM behaviour that is not a universal property. These cover click, Enter, and Space each showing the rationale synchronously and keeping it visible until another cell is chosen or Dismiss or Escape is used (Requirement 12.5); the validation label and "Strength is not a probability" appearing in the header and the detail region (Requirement 12.8); one tab stop for the grid with arrow-key focus movement and a focus indicator class (Requirement 12.10); the empty message (Requirement 12.12); the Confluence_Summary line and a per-row Score_Gauge rendering alongside the numeric score (Requirements 12.16, 12.17); a `CONFLICT_FLAT` row showing its conflict-summary sentence (Requirement 12.14); muted-emphasis cells carrying a style hook while keeping their labels (Requirement 12.18); and that while `validationLabel` is `"unvalidated"` the status markers render in one neutral colour treatment yet remain distinguishable by text (Requirement 14.1, 14.2). These use example-based tests because they check rendering and interaction, where property-based testing is not appropriate.
 
 ### Why property tests apply here
 

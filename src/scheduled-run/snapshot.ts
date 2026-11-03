@@ -40,11 +40,15 @@ import type {
  * (a short display-only AI note produced every trading day, fired or not, as an
  * LLM-path liveness signal). v4 (trader-edge-validation) adds the additive
  * evidence slices `tradeLedgerSummary`, `calibration`, `exposure`, `provenance`
- * and `validationStatus`, each defaulting to empty/absent. The SPA tolerates a version mismatch (best-effort
- * render) and defaults an absent slice to its empty value, so each bump is
- * backward- and forward-compatible.
+ * and `validationStatus`, each defaulting to empty/absent. v5
+ * (multi-strategy-confluence-engine) appends the pair-INDEPENDENT `confluence`
+ * slice (the per-run Confluence_Matrix: six Strategy_Id cells per Pair plus the
+ * aggregated score/status, with the weights and thresholds used and the
+ * `unvalidated` Validation_Label), defaulting to `EMPTY_CONFLUENCE`. The SPA
+ * tolerates a version mismatch (best-effort render) and defaults an absent slice
+ * to its empty value, so each bump is backward- and forward-compatible.
  */
-export const SNAPSHOT_SCHEMA_VERSION = 4 as const;
+export const SNAPSHOT_SCHEMA_VERSION = 5 as const;
 
 /** The canonical file name the SPA fetches as a same-origin static asset. */
 export const SNAPSHOT_FILE_NAME = "dashboard.json" as const;
@@ -289,6 +293,95 @@ export const EMPTY_TRADE_LEDGER_SUMMARY: SnapshotTradeLedgerSummary = { window: 
 export const EMPTY_CALIBRATION: SnapshotCalibration = { bands: [], monotonic: null, wellCalibrated: null };
 export const EMPTY_EXPOSURE: SnapshotExposure = { perCurrency: [], concentrated: false, strongestPair: null };
 
+// ---------------------------------------------------------------------------------------
+// v5 confluence slice (multi-strategy-confluence-engine R11). An INDEPENDENT structural
+// copy of the backend `ConfluenceMatrix` output (`src/strategies/confluenceMatrix.ts`):
+// the core never imports from `web/` and vice versa, so these wire types are kept in
+// lockstep by hand exactly as the other slices are. The slice is derived only from
+// deterministic artifacts, is LLM-free (no provenance fields; the type does not admit
+// them — Requirement 11.10), display-only, and never re-enters firing / scoring.
+// ---------------------------------------------------------------------------------------
+
+/** A Strategy_Id as carried in the snapshot, in `STRATEGY_IDS` order. */
+export type SnapshotConfluenceStrategyId =
+  | "trend"
+  | "breakout"
+  | "range"
+  | "reversal"
+  | "custom_pattern"
+  | "third_party";
+
+/** The aggregated Confluence_Status for one Pair (mirrors `ConfluenceStatus`). */
+export type SnapshotConfluenceStatus =
+  | "ALIGNED_UP"
+  | "ALIGNED_DOWN"
+  | "NEUTRAL"
+  | "CONFLICT_FLAT"
+  | "INSUFFICIENT_DATA";
+
+/**
+ * One Strategy_Id cell for one Pair: either an available {@link StrategySignal}
+ * (direction + strength + rationale) or an explicit `unavailable` marker with a
+ * non-empty `reason` naming the failure (Requirement 11.2).
+ */
+export type SnapshotConfluenceCell =
+  | {
+      readonly strategyId: SnapshotConfluenceStrategyId;
+      readonly available: true;
+      readonly direction: SnapshotDirection;
+      readonly strength: number;
+      readonly rationale: string;
+    }
+  | {
+      readonly strategyId: SnapshotConfluenceStrategyId;
+      readonly available: false;
+      readonly reason: string;
+    };
+
+/**
+ * The aggregated confluence for one Pair: the bounded Confluence_Score, the
+ * Confluence_Status, the opposing Strategy_Ids (non-empty ONLY when the status
+ * is `CONFLICT_FLAT` — Requirements 11.3, 11.4), and exactly six cells in
+ * `STRATEGY_IDS` order (Requirement 11.2).
+ */
+export interface SnapshotConfluencePair {
+  readonly pair: string;
+  readonly score: number;
+  readonly status: SnapshotConfluenceStatus;
+  readonly opposingStrategyIds: readonly SnapshotConfluenceStrategyId[];
+  readonly cells: readonly SnapshotConfluenceCell[];
+}
+
+/**
+ * The per-run Confluence_Matrix carried in the snapshot (Requirement 11). The
+ * `validationLabel` is the literal `"unvalidated"` until an out-of-sample
+ * measurement exists (Requirement 11.6); `weights`, `conflictThreshold`, and
+ * `alignmentThreshold` are the exact values the engine used for the run
+ * (Requirement 11.5). `pairs` is either empty (the fail-safe default) or exactly
+ * the five Pairs in `PAIRS` order.
+ */
+export interface SnapshotConfluenceSlice {
+  readonly validationLabel: "unvalidated";
+  readonly weights: Readonly<Record<SnapshotConfluenceStrategyId, number>>;
+  readonly conflictThreshold: number;
+  readonly alignmentThreshold: number;
+  readonly pairs: readonly SnapshotConfluencePair[];
+}
+
+/**
+ * The empty/fail-safe default for the v5 confluence slice (Requirement 11.7):
+ * an empty Pair collection, the `unvalidated` Validation_Label, and the default
+ * weights/thresholds, so a run that supplies no evaluation (or whose confluence
+ * step failed) still emits a well-formed slice with no missing keys.
+ */
+export const EMPTY_CONFLUENCE: SnapshotConfluenceSlice = {
+  validationLabel: "unvalidated",
+  weights: { trend: 1, breakout: 1, range: 1, reversal: 1, custom_pattern: 1, third_party: 0 },
+  conflictThreshold: 0.6,
+  alignmentThreshold: 0.4,
+  pairs: [],
+};
+
 /**
  * The complete `dashboard.json` envelope the SPA fetches. Every field is a
  * read-only array of wire-format rows plus the Decision_Date the run was for and
@@ -334,6 +427,13 @@ export interface DashboardSnapshot {
   readonly provenance: readonly SnapshotProvenanceRow[];
   /** v4: per-forecast `validated` | `unvalidated`. Empty by default. */
   readonly validationStatus: readonly SnapshotValidationStatusRow[];
+  /**
+   * v5: the per-run Confluence_Matrix (six Strategy_Id cells per Pair plus the
+   * aggregated score/status, the weights/thresholds used, and the `unvalidated`
+   * Validation_Label). `EMPTY_CONFLUENCE` by default. Always present so the SPA
+   * renders an explicit state without guarding for a missing key.
+   */
+  readonly confluence: SnapshotConfluenceSlice;
 }
 
 /** The v1 deterministic system Strategy_Source (schema default 'system'). */
@@ -490,6 +590,7 @@ function externalComparisonRow(
  * @param pairEvaluations The per-pair run-completion readout rows (every pair
  *                        evaluated this run, fired or not). Omitted → `[]`.
  * @param edge            The v4 evidence slices; each omitted slice takes its empty default.
+ * @param confluence      The v5 per-run Confluence_Matrix slice; omitted → `EMPTY_CONFLUENCE`.
  */
 export function buildDashboardSnapshot(
   view: DashboardView,
@@ -498,6 +599,7 @@ export function buildDashboardSnapshot(
   now: Date = new Date(),
   pairEvaluations: readonly SnapshotPairEvaluationRow[] = [],
   edge: SnapshotEdgeSlices = {},
+  confluence: SnapshotConfluenceSlice = EMPTY_CONFLUENCE,
 ): DashboardSnapshot {
   const decisionDate = view.decisionDate;
   const todayFiring = view.cards.map((card) => firingSetupRow(decisionDate, card));
@@ -537,6 +639,8 @@ export function buildDashboardSnapshot(
     exposure: edge.exposure ?? EMPTY_EXPOSURE,
     provenance: edge.provenance ?? [],
     validationStatus: edge.validationStatus ?? [],
+    // v5: appended LAST so every earlier key keeps its byte order (Requirement 11.8).
+    confluence,
   };
 }
 

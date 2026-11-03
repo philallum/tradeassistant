@@ -28,9 +28,11 @@ import {
   pairEvaluationRows,
   serializeSnapshot,
   writeDashboardSnapshot,
+  EMPTY_CONFLUENCE,
   SNAPSHOT_FILE_NAME,
   SNAPSHOT_SCHEMA_VERSION,
   type DashboardSnapshot,
+  type SnapshotConfluenceSlice,
   type SnapshotSink,
 } from "./snapshot.js";
 
@@ -368,6 +370,57 @@ describe("buildDashboardSnapshot — serialises the view + display-only + histor
     );
     const parsed = JSON.parse(serializeSnapshot(snapshot)) as DashboardSnapshot;
     expect(parsed).toEqual(snapshot);
+  });
+
+  it("defaults the confluence slice to EMPTY_CONFLUENCE when the 7th arg is omitted (R11.1, R11.7)", () => {
+    const snapshot = buildDashboardSnapshot(viewFor("2024-03-15"), undefined, {}, FIXED_NOW);
+    expect(snapshot.confluence).toEqual(EMPTY_CONFLUENCE);
+  });
+
+  it("differs from a no-confluence snapshot ONLY by appending the confluence slice, every earlier key byte-identical (R11.8)", () => {
+    // A supplied confluence slice (one aligned-up Pair) vs. the empty default.
+    const confluence: SnapshotConfluenceSlice = {
+      ...EMPTY_CONFLUENCE,
+      pairs: [
+        {
+          pair: "EURUSD",
+          score: 0.5,
+          status: "ALIGNED_UP",
+          opposingStrategyIds: [],
+          cells: [
+            { strategyId: "trend", available: true, direction: "UP", strength: 0.5, rationale: "up" },
+          ],
+        },
+      ],
+    };
+    const withoutConfluence = buildDashboardSnapshot(viewFor("2024-03-15"), undefined, {}, FIXED_NOW);
+    const withConfluence = buildDashboardSnapshot(
+      viewFor("2024-03-15"),
+      undefined,
+      {},
+      FIXED_NOW,
+      [],
+      {},
+      confluence,
+    );
+
+    // schemaVersion is 5 in BOTH (R11.1), so the two envelopes differ in exactly
+    // one key: `confluence`. Every other key is deep-equal.
+    expect(withConfluence.schemaVersion).toBe(withoutConfluence.schemaVersion);
+    const { confluence: aConf, ...aRest } = withConfluence;
+    const { confluence: bConf, ...bRest } = withoutConfluence;
+    expect(aRest).toEqual(bRest);
+    expect(aConf).not.toEqual(bConf);
+
+    // Byte-level: `confluence` is appended LAST, so the serialized prefix up to
+    // the `"confluence":` key is byte-for-byte identical (R11.8) — every earlier
+    // slice keeps its exact bytes; only the appended confluence value differs.
+    const aJson = serializeSnapshot(withConfluence);
+    const bJson = serializeSnapshot(withoutConfluence);
+    const marker = '  "confluence":';
+    const aPrefix = aJson.slice(0, aJson.indexOf(marker));
+    const bPrefix = bJson.slice(0, bJson.indexOf(marker));
+    expect(aPrefix).toBe(bPrefix);
   });
 });
 
