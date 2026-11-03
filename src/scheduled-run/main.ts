@@ -576,7 +576,10 @@ async function main(): Promise<void> {
     JSON.stringify({
       event: "scheduled_run.complete",
       decisionDate: result.decisionDate,
-      firingCards: result.view.cards.length,
+      // The number of setups that FIRED on this run's Decision_Date (the
+      // rendered firing cards), distinct from the snapshot's rolling
+      // `surfacedSetupsTotal` across all dates.
+      firedToday: result.view.cards.length,
       persisted: result.persisted,
     }),
   );

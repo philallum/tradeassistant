@@ -4,17 +4,22 @@
 
 ## 8. Immediate next steps
 
-1. DONE — `multi-strategy-confluence-engine` is COMPLETE locally (all 91 tasks
-   `[x]`). The final checkpoint task 26 PASSED this turn: the unified `make check`
-   exits 0 (backend lint/typecheck + 1178 passed/7 skipped, then web build + 267
-   passed). The last blocker — the seed-dependent Property 19 "flake" in
-   `engineStatus.property.test.ts` — was root-caused as a test-ORACLE bug and
-   FIXED (the oracle now mirrors the engine's zero-score⇒NEUTRAL rule; no
-   production code changed); original failing seed + 8 isolated reruns now green.
-   NEXT real-world action is NOT a spec task: the operator merges dev->main to
-   DEPLOY (backend v5 producer first, then the web consumer; a torn deploy stays
-   harmless because the web parser treats a declared schema version < 5 as the
-   empty-confluence default). Nothing is deployed yet.
+1. DONE + LIVE-VERIFIED — `multi-strategy-confluence-engine` is COMPLETE
+   locally (all 91 tasks `[x]`; task 26 unified `make check` exit 0) AND the
+   backend confluence v5 producer is CONFIRMED DEPLOYED: the 2026-11-07 live
+   shakedown run (Job `scheduled-daily-run-4gzgb`, exit 0) published a schema-v5
+   `dashboard.json` with a fully populated `confluence` slice (5 pairs, 6/6
+   cells, engine ran live). The deployed image already carried it, correcting the
+   earlier "NOT deployed" note. The remaining un-merged local work is test/tooling
+   only (the Property 19 oracle fix + the `make check` web wiring) and is
+   operator-gated dev->main; it is not visible in the live snapshot.
+
+   SHAKEDOWN FOLLOW-UPS (from the live run, see RISKS.md) — decide whether to
+   open a small bugfix spec: (a) snapshot `generatedAt` is stale vs the actual
+   GCS publish time (stamp it at build time); (b) the two `firingCards` log
+   fields mean different things (rolling surfaced count vs fired-today count) —
+   rename/document; (c) `dashboard.json` cache-control max-age=3600 (noted,
+   likely fine for a daily cadence).
 
 2. TOP PRIORITY — CONTINUE `daily-candle-freshness-and-cleanup` Phase 6 cleanup
    (R7-R11), then Phase 7. Phases 1-5 are DONE: the Candle_Freshness_Stage
