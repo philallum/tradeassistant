@@ -1,0 +1,10 @@
+{
+  "_comment": "Committed, version-controlled Cloud Monitoring EMAIL notification channel for the Candle_Freshness_Stage degraded alert (daily-candle-freshness-and-cleanup Phase 2b). The email address is the operator's own alert inbox (non-secret contact detail, intentionally in version control so the channel is reproducible). The apply script (ops/monitoring/apply-candle-freshness-alert.sh) creates this channel if absent, resolves its channel id, and substitutes it into the alert policy's notificationChannels before creating/updating the policy.",
+  "type": "email",
+  "displayName": "Operator alert email (candle freshness)",
+  "description": "Email channel for the daily-run candle-freshness degraded alert.",
+  "labels": {
+    "email_address": "allum.phil@gmail.com"
+  },
+  "enabled": true
+}

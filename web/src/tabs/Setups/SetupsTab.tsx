@@ -36,10 +36,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { ApiResult } from "../../api/snapshot";
+import { EMPTY_CONFLUENCE, type ApiResult } from "../../api/snapshot";
 import { getSnapshot } from "../../api/snapshotCache";
 import type {
   AnalogueOutcomeRow,
+  Confluence,
   DailyCommentary,
   DecisionDateRow,
   FiringSetupRow,
@@ -53,10 +54,12 @@ import { EvidencePanel } from "./EvidencePanel";
 import { shapeSetupTrades } from "../../pure/shapeSetupTrades";
 import { shapeDailyNote } from "../../pure/shapeDailyNote";
 import { selectBrowseDate } from "../../pure/selectDates";
+import { shapeConfluence } from "../../pure/shapeConfluence";
 import { shapeDashboardView } from "../../pure/shapeDashboard";
 import { shapeRunSummary } from "../../pure/shapeRunSummary";
 import { ALL_PAIRS, useSelection } from "../../state/selection";
 import { theme } from "../../theme/darkTheme";
+import { ConfluencePanel } from "./ConfluencePanel";
 import { DailyNote } from "./DailyNote";
 import { SetupTradeCard } from "./SetupTradeCard";
 import { RunSummary } from "./RunSummary";
@@ -93,6 +96,9 @@ export type DailyCommentaryLoader = (
   decisionDate: string,
   options?: SetupsLoadOptions,
 ) => Promise<DailyCommentary>;
+
+/** Loader for the per-run Confluence_Matrix slice (schema v5). Injected for testability. */
+export type ConfluenceLoader = (options?: SetupsLoadOptions) => Promise<Confluence>;
 
 /** Resolve the shared snapshot for a load, forwarding the generation + abort signal. */
 function snapshotFor(options?: SetupsLoadOptions) {
@@ -168,6 +174,18 @@ const defaultLoadEvidence: SetupsEvidenceLoader = async (options) => {
   };
 };
 
+const defaultLoadConfluence: ConfluenceLoader = async (options) => {
+  // The per-run Confluence_Matrix slice. A failed load degrades gracefully to the fail-safe
+  // EMPTY_CONFLUENCE slice (which shapes to the panel's explicit empty state, Req 12.12)
+  // rather than crashing the tab — the Confluence panel is a parallel, read-only consumer.
+  try {
+    const snapshot = await snapshotFor(options);
+    return snapshot.confluence;
+  } catch {
+    return EMPTY_CONFLUENCE;
+  }
+};
+
 export interface SetupsTabProps {
   /** v4 evidence loader (FORECAST/TRADE card inputs); defaults to the snapshot slices. */
   readonly loadEvidence?: SetupsEvidenceLoader;
@@ -179,6 +197,8 @@ export interface SetupsTabProps {
   readonly loadPairEvaluations?: PairEvaluationsLoader;
   /** Daily AI commentary loader (the LLM-path liveness note); defaults to the snapshot slice. */
   readonly loadDailyCommentary?: DailyCommentaryLoader;
+  /** Confluence_Matrix loader (the per-run strategy-confluence slice); defaults to the snapshot slice. */
+  readonly loadConfluence?: ConfluenceLoader;
   /** Bumped by the shell to force a cache-busting refresh (Req 17.1, 17.2). */
   readonly refreshNonce?: number;
 }
@@ -193,6 +213,7 @@ type LoadState =
       readonly pairEvaluations: readonly PairEvaluationRow[];
       readonly dailyCommentary: DailyCommentary;
       readonly evidence: SetupsEvidence;
+      readonly confluence: Confluence;
       readonly decisionDate: string;
     };
 
@@ -241,6 +262,7 @@ export function SetupsTab({
   loadPairEvaluations = defaultLoadPairEvaluations,
   loadDailyCommentary = defaultLoadDailyCommentary,
   loadEvidence = defaultLoadEvidence,
+  loadConfluence = defaultLoadConfluence,
   refreshNonce = 0,
 }: SetupsTabProps): JSX.Element {
   const { pair, date } = useSelection();
@@ -277,6 +299,7 @@ export function SetupsTab({
             pairEvaluations: [],
             dailyCommentary: { decision_date: "", note_text: "", generated: false },
             evidence: NO_EVIDENCE,
+            confluence: EMPTY_CONFLUENCE,
             decisionDate: "",
           });
           return;
@@ -285,11 +308,12 @@ export function SetupsTab({
         // All reads share the one cached snapshot (same generation), so this is a single
         // fetch. The per-pair readout drives the silent-day summary; the daily note is the
         // pair-independent AI commentary shown every trading day.
-        const [rowsResult, evalResult, commentary, evidence] = await Promise.all([
+        const [rowsResult, evalResult, commentary, evidence, confluence] = await Promise.all([
           loadFiringSetups(effectiveDate, opts),
           loadPairEvaluations(effectiveDate, opts),
           loadDailyCommentary(effectiveDate, opts),
           loadEvidence(opts),
+          loadConfluence(opts),
         ]);
         if (signal.aborted || !mounted.current) return;
         setState({
@@ -298,6 +322,7 @@ export function SetupsTab({
           pairEvaluations: evalResult.rows,
           dailyCommentary: commentary,
           evidence,
+          confluence,
           decisionDate: effectiveDate,
         });
       } catch (cause) {
@@ -311,7 +336,7 @@ export function SetupsTab({
         setState({ kind: "error", message });
       }
     },
-    [date, loadDecisionDates, loadFiringSetups, loadPairEvaluations, loadDailyCommentary, loadEvidence, refreshNonce],
+    [date, loadDecisionDates, loadFiringSetups, loadPairEvaluations, loadDailyCommentary, loadEvidence, loadConfluence, refreshNonce],
   );
 
   // (Re)load whenever the browsed date or the refresh signal changes. A bumped
@@ -369,6 +394,9 @@ export function SetupsTab({
   // LLM-path liveness signal, in both the silent and content states. `absent` on an older
   // snapshot (the component renders nothing then).
   const dailyNote = shapeDailyNote(state.dailyCommentary);
+  // The per-run Confluence_Matrix view model (schema v5). Pure and display-only; an empty or
+  // failed slice shapes to the panel's explicit empty state (Req 12.12, 12.13).
+  const confluenceViewModel = shapeConfluence(state.confluence);
 
   if (viewState === "no-data-date") {
     return (
@@ -425,6 +453,11 @@ export function SetupsTab({
           </ul>
         </section>
       )}
+
+      {/* The per-run strategy-confluence matrix, below the run summary. A parallel, read-only
+          consumer that never affects firing; an empty/failed slice renders the empty state.
+          `ConfluencePanel` is itself a labelled <section>, so it is rendered directly. */}
+      <ConfluencePanel viewModel={confluenceViewModel} />
 
       {/* Evidence FIRST and prominent (R10.4); AI commentary and suppressions follow. */}
       <EvidencePanel items={evidence} />

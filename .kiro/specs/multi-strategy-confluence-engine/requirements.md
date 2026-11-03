@@ -79,6 +79,11 @@ Two scoping decisions are recorded here for review:
 - **Dashboard_Snapshot**: The `dashboard.json` envelope built by `buildDashboardSnapshot`.
 - **Confluence_Panel**: The SPA component rendering the Confluence_Matrix for all Pairs.
 - **Validation_Label**: The explicit "un-validated" marker shown until the edge is measured out-of-sample.
+- **Conflict_Summary**: A deterministic, human-readable one-line sentence, built purely from `opposingStrategyIds` and their directions and strengths, stating which strategies oppose each other and that the verdict is no-trade (shown for a `CONFLICT_FLAT` Pair).
+- **Score_Gauge**: The view-model description of a diverging bar for a Pair's Confluence_Score over the interval [-1.0, +1.0], centred at 0, marking the positive and negative alignment thresholds; it is non-numeric presentation data derived purely from the score and the alignment threshold.
+- **Confluence_Summary**: The aggregate count, across the rendered Pairs, of how many are `ALIGNED_UP`/`ALIGNED_DOWN` (aligned), `CONFLICT_FLAT` (conflict), and `NEUTRAL`/`INSUFFICIENT_DATA` (neutral).
+- **Emphasis_Level**: A per-cell view-model hint — `signal` for a weighted, non-`FLAT`, available cell versus `muted` for a `FLAT`, unavailable, or zero-weight cell — so presentation can de-emphasise cells that carry no signal. It never changes any direction, strength, score, or status value.
+- **Validated_State**: Whether an out-of-sample measurement exists for the Confluence_Matrix. Until it does, the Validation_Label is `unvalidated` and colour semantics are suppressed (see Requirement 14).
 
 ## Requirements
 
@@ -286,6 +291,23 @@ Two scoping decisions are recorded here for review:
 11. THE Confluence_Panel SHALL expose for each cell an accessible name that includes the Pair, Strategy_Id, direction, and strength (or the unavailable reason).
 12. IF the snapshot's `confluence` slice is empty, THEN THE Confluence_Panel SHALL show the text "no confluence data for this run" and SHALL NOT render any Pair rows.
 13. THE Confluence_Panel SHALL shape snapshot data through a pure view-model function that performs no I/O and returns identical output for identical input, so that it is unit-testable without a DOM.
+14. WHEN a Pair's Confluence_Status is `CONFLICT_FLAT`, THE Confluence_Panel SHALL show a Conflict_Summary sentence for that Pair that names at least one opposing `UP` Strategy_Id and at least one opposing `DOWN` Strategy_Id with their directions, and states that the verdict is no-trade; the sentence SHALL be derived only from the Pair's `opposingStrategyIds` and its cells, and SHALL contain no value absent from the slice.
+15. WHEN a Pair's Confluence_Status is not `CONFLICT_FLAT`, THE Confluence_Panel SHALL NOT show a Conflict_Summary sentence for that Pair.
+16. WHEN the snapshot's `confluence` slice contains at least one Pair, THE Confluence_Panel SHALL render, for each Pair, a Score_Gauge spanning the fixed interval [-1.0, +1.0] centred at 0 with the positive and negative alignment thresholds marked, AND SHALL also keep the numeric Confluence_Score text required by criterion 2 (the gauge supplements, never replaces, the number).
+17. WHEN the snapshot's `confluence` slice contains at least one Pair, THE Confluence_Panel SHALL display a Confluence_Summary giving the count of aligned, conflict, and neutral Pairs across the rendered Pairs, where aligned counts `ALIGNED_UP` and `ALIGNED_DOWN`, conflict counts `CONFLICT_FLAT`, and neutral counts `NEUTRAL` and `INSUFFICIENT_DATA`, and the three counts sum to the number of rendered Pairs.
+18. THE Confluence_Panel SHALL assign each cell an Emphasis_Level of `signal` when the cell is available, has a non-`FLAT` direction, and its Strategy_Id has a weight greater than 0, and `muted` otherwise, AND the Emphasis_Level SHALL NOT alter the cell's direction, strength, rationale, Confluence_Score, or Confluence_Status, NOR suppress any text label required by criteria 1, 4, 6, or 11.
+
+### Requirement 14: Honest Presentation Until Validated
+
+**User Story:** As a trader, I want an un-validated Confluence_Matrix to never look like a high-conviction trade signal, so that agreement between strategies is not mistaken for a proven edge (the standing "nothing shown as more certain than the evidence" guard).
+
+#### Acceptance Criteria
+
+1. WHILE the Validation_Label is `unvalidated`, THE Confluence_Panel SHALL render every Pair's status marker in a single neutral colour treatment, so that `ALIGNED_UP`, `ALIGNED_DOWN`, `NEUTRAL`, `INSUFFICIENT_DATA`, and `CONFLICT_FLAT` are NOT distinguishable from one another by colour.
+2. WHILE the Validation_Label is `unvalidated`, THE Confluence_Panel SHALL still distinguish every status through the visible text label required by Requirement 12.4 and the distinct `CONFLICT_FLAT` "Stay Flat" marker required by Requirement 12.3, so that suppressing colour never suppresses meaning.
+3. WHEN the Validation_Label is any value other than `unvalidated`, THE Confluence_Panel SHALL apply the green / red / neutral / conflict colour treatment described in Requirement 12.3.
+4. THE Confluence_Panel SHALL derive the colour-suppression decision solely from the slice's Validation_Label, through the pure view-model function, so that it is deterministic and unit-testable without a DOM.
+5. THE System SHALL keep the Validation_Label at `unvalidated` for this feature, because no out-of-sample measurement of the Confluence_Matrix exists; a future measurement capability (the `trader-edge-validation` Trade_Ledger) is the only thing that may set it otherwise, and that capability is out of scope here.
 
 ### Requirement 13: Testing and Verification
 
@@ -303,5 +325,6 @@ Two scoping decisions are recorded here for review:
 8. THE System SHALL include a guardrail test asserting that an LLM-tagged value supplied to a strategy, to an adapter output, or to the Confluence_Engine is rejected with an error and does not alter the output of any of them.
 9. THE System SHALL include a fast-check snapshot round-trip property test, running at least 100 generated cases, asserting that serializing then parsing the `confluence` slice yields a deeply equal value, and a web test asserting that `parseSnapshot` accepts both a v4 document and a v5 document without error.
 10. THE System SHALL include web tests for the Confluence_Panel view-model covering each Confluence_Status value, a cell whose signal is unavailable, and the empty state with no confluence data, each asserting the expected view-model output.
+10a. THE System SHALL include web tests asserting: a `CONFLICT_FLAT` Pair yields a Conflict_Summary naming an opposing UP and an opposing DOWN Strategy_Id while a non-`CONFLICT_FLAT` Pair yields none (Requirements 12.14, 12.15); the Score_Gauge spans [-1.0, +1.0] with both alignment thresholds marked and the numeric score text is still present (Requirement 12.16); the Confluence_Summary counts partition the rendered Pairs and sum to their count (Requirement 12.17); each cell's Emphasis_Level is `signal` only for an available, non-`FLAT`, positive-weight cell and `muted` otherwise, with no text label removed (Requirement 12.18); and that WHILE the Validation_Label is `unvalidated` the view-model marks every status with one neutral colour treatment yet still carries each status's text label, while a non-`unvalidated` label restores the per-status colour treatment (Requirement 14.1-14.4).
 11. WHEN `make check` runs on a tree where all tests pass, THE System SHALL run lint, type-check, and the full test suite (backend, plus web where the existing check includes it) and exit with code 0.
 12. IF lint, type-check, or any test fails during `make check`, THEN THE System SHALL exit with a non-zero code and report the failing step and test names.

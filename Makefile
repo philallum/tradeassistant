@@ -3,13 +3,17 @@
 # confidence-shrinkage formula is the TypeScript property test
 # (`src/confidence/`); there is no separate language toolchain.
 
-.PHONY: install check lint typecheck test
+.PHONY: install check check-web lint typecheck test
 
 install:
 	npm install
 
 check:
 	npm run check
+	$(MAKE) check-web
+
+check-web:
+	cd web && npm run build && npm test
 
 lint:
 	npm run lint

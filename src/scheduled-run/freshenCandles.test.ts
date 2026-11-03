@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { freshenCandles, type FreshenCandlesDeps } from "./main.js";
+import { freshenCandles, logFreshnessDegradation, type FreshenCandlesDeps } from "./main.js";
 import type { loadScheduledRunConfig } from "./config.js";
-import type { CandleFreshnessDeps } from "./candleFreshness.js";
+import type { CandleFreshnessDeps, CandleFreshnessPairSummary } from "./candleFreshness.js";
 import { InMemoryCandleStore } from "../ingestion/types.js";
 import { InMemoryPatternVectorStore } from "../encoder/types.js";
 import type { TradingDate } from "../guard/types.js";
@@ -59,7 +59,9 @@ describe("freshenCandles daily-entry wiring", () => {
   it("(a) skips the stage with a secret-free warning when no provider is configured", async () => {
     const console_ = captureConsole();
     try {
-      const runStage = vi.fn((): Promise<unknown> => Promise.resolve([]));
+      const runStage = vi.fn(
+        (): Promise<readonly CandleFreshnessPairSummary[]> => Promise.resolve([]),
+      );
       const buildStores = vi.fn();
       const deps: FreshenCandlesDeps = {
         // Empty env ⇒ ohlcFeedConfigFromEnv returns { providers: [] }.
@@ -89,7 +91,7 @@ describe("freshenCandles daily-entry wiring", () => {
       let captured: CandleFreshnessDeps | undefined;
       const runStage = vi.fn((stageDeps: CandleFreshnessDeps) => {
         captured = stageDeps;
-        return Promise.resolve<unknown>([]);
+        return Promise.resolve<readonly CandleFreshnessPairSummary[]>([]);
       });
       const buildStores = vi.fn(() => stores);
       const deps: FreshenCandlesDeps = {
@@ -121,12 +123,66 @@ describe("freshenCandles daily-entry wiring", () => {
     }
   });
 
+  it("(b2) emits a high-severity candle_freshness.degraded event when a pair is left behind", async () => {
+    const console_ = captureConsole();
+    try {
+      const stores = makeStores();
+      // A degraded EURUSD (no provider served it) + an up-to-date GBPUSD.
+      const summaries: readonly CandleFreshnessPairSummary[] = [
+        {
+          pair: "EURUSD",
+          gap: "backfill",
+          provider: null,
+          fetched: 0,
+          accepted: 0,
+          rejected: 0,
+          latestDate: "2026-09-10",
+          target: "2026-09-16",
+          residualGap: true,
+          degraded: true,
+        },
+        {
+          pair: "GBPUSD",
+          gap: "up_to_date",
+          provider: null,
+          fetched: 0,
+          accepted: 0,
+          rejected: 0,
+          latestDate: "2026-09-16",
+          target: "2026-09-16",
+          residualGap: false,
+          degraded: false,
+        },
+      ];
+      const runStage = vi.fn(
+        (): Promise<readonly CandleFreshnessPairSummary[]> => Promise.resolve(summaries),
+      );
+      const deps: FreshenCandlesDeps = {
+        env: { EXTERNAL_SIGNAL_API_KEY: "fcs-key-not-logged" },
+        runStage,
+        buildStores: vi.fn(() => stores),
+      };
+
+      await freshenCandles(makeConfig(), deps);
+
+      const logs = console_.logs();
+      expect(logs).toContain("candle_freshness.degraded");
+      expect(logs).toContain("\"severity\":\"ERROR\"");
+      // Names the behind pair, not the fresh one.
+      expect(logs).toContain("EURUSD");
+      expect(logs).not.toContain("fcs-key-not-logged");
+    } finally {
+      console_.restore();
+    }
+  });
+
   it("(c) catches a thrown stage error and resolves (fail-safe)", async () => {
     const console_ = captureConsole();
     try {
       const stores = makeStores();
       const runStage = vi.fn(
-        (): Promise<unknown> => Promise.reject(new Error("unexpected stage boom")),
+        (): Promise<readonly CandleFreshnessPairSummary[]> =>
+          Promise.reject(new Error("unexpected stage boom")),
       );
       const buildStores = vi.fn(() => stores);
       const deps: FreshenCandlesDeps = {
@@ -146,5 +202,49 @@ describe("freshenCandles daily-entry wiring", () => {
     } finally {
       console_.restore();
     }
+  });
+});
+
+describe("logFreshnessDegradation (Phase 2a alert signal)", () => {
+  const fresh = (pair: string): CandleFreshnessPairSummary => ({
+    pair: pair as CandleFreshnessPairSummary["pair"],
+    gap: "up_to_date",
+    provider: null,
+    fetched: 0,
+    accepted: 0,
+    rejected: 0,
+    latestDate: "2026-09-16",
+    target: "2026-09-16",
+    residualGap: false,
+    degraded: false,
+  });
+
+  it("emits NOTHING when every pair is up to date", () => {
+    const events: object[] = [];
+    logFreshnessDegradation("2026-09-16", [fresh("EURUSD"), fresh("GBPUSD")], (e) =>
+      events.push(e),
+    );
+    expect(events).toEqual([]);
+  });
+
+  it("fires on a residual gap even when not marked degraded (e.g. provider served but still behind)", () => {
+    const events: Array<Record<string, unknown>> = [];
+    const stillBehind: CandleFreshnessPairSummary = {
+      ...fresh("USDJPY"),
+      gap: "backfill",
+      provider: "TwelveData",
+      latestDate: "2026-09-12",
+      residualGap: true,
+      degraded: false,
+    };
+    logFreshnessDegradation("2026-09-16", [stillBehind, fresh("EURUSD")], (e) =>
+      events.push(e as Record<string, unknown>),
+    );
+    expect(events).toHaveLength(1);
+    const event = events[0]!;
+    expect(event.event).toBe("candle_freshness.degraded");
+    expect(event.severity).toBe("ERROR");
+    const pairsBehind = event.pairsBehind as Array<{ pair: string }>;
+    expect(pairsBehind.map((p) => p.pair)).toEqual(["USDJPY"]);
   });
 });

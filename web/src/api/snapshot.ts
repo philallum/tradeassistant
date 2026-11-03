@@ -25,7 +25,13 @@ import type {
   AnalogueOutcomeRow,
   Calibration,
   CandleRow,
+  Confluence,
+  ConfluenceCell,
+  ConfluencePair,
+  ConfluenceStatus,
+  ConfluenceStrategyId,
   DailyCommentary,
+  Direction,
   EvaluationReportRow,
   Exposure,
   ExternalReferenceComparisonRow,
@@ -68,11 +74,15 @@ export function resolveSnapshotPath(): string {
  * v2 added the `pairEvaluations` slice (the per-pair run-completion readout); v3 added the
  * pair-independent `dailyCommentary` object (the daily AI note); v4 added the evidence slices
  * `tradeLedgerSummary`, `calibration`, `exposure`, `provenance`, `validationStatus` (arrays default
- * to `[]`, objects to an explicit empty value). An older snapshot simply
- * lacks a newer slice and `parseSnapshot` defaults it (`[]` for arrays, an explicit
- * not-generated record for `dailyCommentary`).
+ * to `[]`, objects to an explicit empty value); v5 added the `confluence` slice (the per-run
+ * Confluence_Matrix). An older (v1–v4, or `schemaVersion`-less) snapshot simply lacks the
+ * `confluence` slice and `parseSnapshot` defaults it to `EMPTY_CONFLUENCE` — the pre-v5 slices
+ * stay lenient (`[]` for arrays, an explicit not-generated record for `dailyCommentary`). A
+ * document that DECLARES v5 or newer, by contrast, must carry a well-formed `confluence` slice:
+ * `parseSnapshot` validates it strictly and throws a {@link SnapshotError} on a missing or
+ * defective slice rather than returning a partial snapshot (Requirements 11.11, 11.12).
  */
-export const SNAPSHOT_SCHEMA_VERSION = 4;
+export const SNAPSHOT_SCHEMA_VERSION = 5;
 
 /**
  * The complete `dashboard.json` envelope. Mirrors the writer's wire shape in
@@ -106,11 +116,34 @@ export interface DashboardSnapshot {
   readonly provenance: readonly ProvenanceRow[];
   /** v4: per-forecast validated | unvalidated. Empty by default. */
   readonly validationStatus: readonly ValidationStatusRow[];
+  /**
+   * v5: the per-run Confluence_Matrix (six Strategy_Id cells per Pair plus the aggregated
+   * score/status, the weights/thresholds the engine used, and the `unvalidated`
+   * Validation_Label). `EMPTY_CONFLUENCE` by default (pre-v5 or `schemaVersion`-less
+   * snapshots). Always present so the SPA renders an explicit state without guarding for a
+   * missing key.
+   */
+  readonly confluence: Confluence;
 }
 
 const EMPTY_TRADE_LEDGER_SUMMARY: TradeLedgerSummary = { window: null, strategies: [] };
 const EMPTY_CALIBRATION: Calibration = { bands: [], monotonic: null, wellCalibrated: null };
 const EMPTY_EXPOSURE: Exposure = { perCurrency: [], concentrated: false, strongestPair: null };
+
+/**
+ * The fail-safe empty `confluence` slice: the value the SPA renders for a pre-v5 (or
+ * `schemaVersion`-less) snapshot that has no confluence slice at all. Mirrors the backend
+ * producer's `EMPTY_CONFLUENCE` (`src/scheduled-run/snapshot.ts`) — `validationLabel`
+ * `"unvalidated"`, the engine's default weights (`third_party` display-only at weight 0), the
+ * default thresholds, and no Pairs. Kept in lockstep with the backend by hand.
+ */
+export const EMPTY_CONFLUENCE: Confluence = {
+  validationLabel: "unvalidated",
+  weights: { trend: 1, breakout: 1, range: 1, reversal: 1, custom_pattern: 1, third_party: 0 },
+  conflictThreshold: 0.6,
+  alignmentThreshold: 0.4,
+  pairs: [],
+};
 
 /** The default (not-generated) daily-commentary record for an absent/empty slice. */
 const EMPTY_DAILY_COMMENTARY: DailyCommentary = {
@@ -185,6 +218,7 @@ export const EMPTY_SNAPSHOT: DashboardSnapshot = {
   exposure: EMPTY_EXPOSURE,
   provenance: [],
   validationStatus: [],
+  confluence: EMPTY_CONFLUENCE,
 };
 
 /** Narrow an untrusted `dailyCommentary` object, defaulting a missing/malformed one. */
@@ -234,6 +268,125 @@ function parseExposure(value: unknown): Exposure {
   };
 }
 
+// ---------------------------------------------------------------------------------------
+// v5 confluence slice: STRICT parsing. Unlike every pre-v5 slice (which defaults a
+// missing/malformed value to its empty form), a snapshot that DECLARES schema v5+ MUST carry
+// a well-formed `confluence` slice. A single defect — a missing field, a wrong type, an
+// unknown Strategy_Id or Confluence_Status, the wrong cell count — throws the one fixed
+// `SnapshotError` below and yields NO partial snapshot (Requirements 11.11, 11.12).
+// ---------------------------------------------------------------------------------------
+
+/** The single, fixed, non-secret message for any defect in a declared-v5 confluence slice. */
+const CONFLUENCE_ERROR_MESSAGE = "The dashboard snapshot has an invalid confluence slice.";
+
+/** The six Strategy_Ids in `STRATEGY_IDS` order — a declared-v5 Pair carries exactly these. */
+const CONFLUENCE_STRATEGY_IDS: readonly ConfluenceStrategyId[] = [
+  "trend",
+  "breakout",
+  "range",
+  "reversal",
+  "custom_pattern",
+  "third_party",
+];
+
+const CONFLUENCE_STRATEGY_ID_SET: ReadonlySet<string> = new Set(CONFLUENCE_STRATEGY_IDS);
+
+const CONFLUENCE_STATUSES: ReadonlySet<string> = new Set<ConfluenceStatus>([
+  "ALIGNED_UP",
+  "ALIGNED_DOWN",
+  "NEUTRAL",
+  "CONFLICT_FLAT",
+  "INSUFFICIENT_DATA",
+]);
+
+const CELL_DIRECTIONS: ReadonlySet<string> = new Set<Direction>(["UP", "DOWN", "FLAT"]);
+
+/** Fail strict parsing: every confluence defect surfaces as the one fixed, non-secret error. */
+function failConfluence(): never {
+  throw new SnapshotError(CONFLUENCE_ERROR_MESSAGE);
+}
+
+const isFiniteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+const isNonEmptyString = (v: unknown): v is string => typeof v === "string" && v.length > 0;
+
+/** Strictly validate one {@link ConfluenceCell}; any defect throws. */
+function parseConfluenceCell(value: unknown, expectedId: ConfluenceStrategyId): ConfluenceCell {
+  if (!isObj(value)) failConfluence();
+  if (value.strategyId !== expectedId) failConfluence();
+  if (value.available === true) {
+    if (typeof value.direction !== "string" || !CELL_DIRECTIONS.has(value.direction)) failConfluence();
+    if (!isFiniteNumber(value.strength)) failConfluence();
+    if (typeof value.rationale !== "string") failConfluence();
+    return {
+      strategyId: expectedId,
+      available: true,
+      direction: value.direction as Direction,
+      strength: value.strength,
+      rationale: value.rationale,
+    };
+  }
+  if (value.available === false) {
+    if (!isNonEmptyString(value.reason)) failConfluence();
+    return { strategyId: expectedId, available: false, reason: value.reason };
+  }
+  return failConfluence();
+}
+
+/** Strictly validate one {@link ConfluencePair}; any defect throws. */
+function parseConfluencePair(value: unknown): ConfluencePair {
+  if (!isObj(value)) failConfluence();
+  if (typeof value.pair !== "string") failConfluence();
+  if (!isFiniteNumber(value.score)) failConfluence();
+  if (typeof value.status !== "string" || !CONFLUENCE_STATUSES.has(value.status)) failConfluence();
+  if (!Array.isArray(value.opposingStrategyIds)) failConfluence();
+  const opposingStrategyIds = value.opposingStrategyIds.map((id) => {
+    if (typeof id !== "string" || !CONFLUENCE_STRATEGY_ID_SET.has(id)) failConfluence();
+    return id as ConfluenceStrategyId;
+  });
+  const rawCells = value.cells;
+  if (!Array.isArray(rawCells) || rawCells.length !== CONFLUENCE_STRATEGY_IDS.length) failConfluence();
+  const cells = CONFLUENCE_STRATEGY_IDS.map((id, i) => parseConfluenceCell(rawCells[i], id));
+  return {
+    pair: value.pair,
+    score: value.score,
+    status: value.status as ConfluenceStatus,
+    opposingStrategyIds,
+    cells,
+  };
+}
+
+/**
+ * Strictly validate the `confluence` slice of a snapshot that DECLARES schema v5+. On ANY
+ * defect — missing slice, wrong `validationLabel`, a weight missing or non-finite for any of
+ * the six Strategy_Ids, a non-finite threshold, or a malformed Pair/cell — it throws the one
+ * fixed {@link SnapshotError} and returns no partial value (Requirements 11.11, 11.12).
+ * `pairs` must be either empty or well-formed; the writer only ever emits zero or five Pairs.
+ */
+export function parseConfluenceStrict(value: unknown): Confluence {
+  if (!isObj(value)) failConfluence();
+  if (value.validationLabel !== "unvalidated") failConfluence();
+  if (!isObj(value.weights)) failConfluence();
+  const rawWeights = value.weights;
+  const weights = {} as Record<ConfluenceStrategyId, number>;
+  for (const id of CONFLUENCE_STRATEGY_IDS) {
+    const w = rawWeights[id];
+    if (!isFiniteNumber(w)) failConfluence();
+    weights[id] = w;
+  }
+  if (!isFiniteNumber(value.conflictThreshold)) failConfluence();
+  if (!isFiniteNumber(value.alignmentThreshold)) failConfluence();
+  if (!Array.isArray(value.pairs)) failConfluence();
+  const pairs = value.pairs.map((p) => parseConfluencePair(p));
+  return {
+    validationLabel: "unvalidated",
+    weights,
+    conflictThreshold: value.conflictThreshold,
+    alignmentThreshold: value.alignmentThreshold,
+    pairs,
+  };
+}
+
 /** Narrow an untrusted parsed body into a {@link DashboardSnapshot}, filling absent slices. */
 export function parseSnapshot(body: unknown): DashboardSnapshot {
   if (typeof body !== "object" || body === null) {
@@ -241,6 +394,11 @@ export function parseSnapshot(body: unknown): DashboardSnapshot {
   }
   const b = body as Partial<Record<keyof DashboardSnapshot, unknown>>;
   const arr = <T>(value: unknown): readonly T[] => (Array.isArray(value) ? (value as T[]) : []);
+  // The confluence slice is the sole strictly-parsed slice, gated on the DECLARED version. A
+  // missing/non-numeric `schemaVersion` is treated as 0, so pre-v5 and version-less snapshots
+  // default to EMPTY_CONFLUENCE (never an error); a declared v5+ must carry a valid slice.
+  const declared = typeof b.schemaVersion === "number" ? b.schemaVersion : 0;
+  const confluence = declared < 5 ? EMPTY_CONFLUENCE : parseConfluenceStrict(b.confluence);
   return {
     schemaVersion: typeof b.schemaVersion === "number" ? b.schemaVersion : SNAPSHOT_SCHEMA_VERSION,
     decisionDate: typeof b.decisionDate === "string" ? b.decisionDate : "",
@@ -260,6 +418,7 @@ export function parseSnapshot(body: unknown): DashboardSnapshot {
     exposure: parseExposure(b.exposure),
     provenance: arr<ProvenanceRow>(b.provenance),
     validationStatus: arr<ValidationStatusRow>(b.validationStatus),
+    confluence,
   };
 }
 

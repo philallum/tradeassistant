@@ -55,8 +55,8 @@ const view = dailyRun("2024-03-15", [evaluation("EURUSD"), evaluation("GBPUSD")]
 describe("snapshot v4 shape + defaults", () => {
   it("is schema v4 and defaults every new slice to empty/absent", () => {
     const snap = buildDashboardSnapshot(view, undefined, {}, NOW);
-    expect(SNAPSHOT_SCHEMA_VERSION).toBe(4);
-    expect(snap.schemaVersion).toBe(4);
+    expect(SNAPSHOT_SCHEMA_VERSION).toBe(5);
+    expect(snap.schemaVersion).toBe(5);
     expect(snap.tradeLedgerSummary).toEqual({ window: null, strategies: [] });
     expect(snap.calibration).toEqual({ bands: [], monotonic: null, wellCalibrated: null });
     expect(snap.exposure).toEqual({ perCurrency: [], concentrated: false, strongestPair: null });
