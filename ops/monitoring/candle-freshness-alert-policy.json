@@ -1,0 +1,25 @@
+{
+  "_comment": "Committed, version-controlled Cloud Monitoring alert policy for the Candle_Freshness_Stage degraded signal (daily-candle-freshness-and-cleanup Phase 2b). This is a LOG-BASED alert: it fires when the daily Cloud Run Job 'scheduled-daily-run' emits a 'candle_freshness.degraded' / severity=ERROR log line (produced by logFreshnessDegradation in src/scheduled-run/main.ts) — i.e. one or more pairs were left behind the most recent Completed_Trading_Day after the freshness stage ran. That is exactly the silent-degrade condition that let the 2026-10-08 stuck-candle incident go unnoticed for ~3 weeks: the Job exits 0 even when it fetched nothing. The run stays fail-safe (still exits 0); this policy is the external signal that turns a silent no-op into a notification. NO secret value appears here (project/channel names only). Apply via ops/monitoring/apply-candle-freshness-alert.sh; the notificationChannels placeholder is substituted at apply time.",
+  "displayName": "Candle freshness degraded (daily run left a pair behind)",
+  "documentation": {
+    "content": "The daily Cloud Run Job 'scheduled-daily-run' emitted a candle_freshness.degraded (severity ERROR) log line: one or more FX pairs are still behind the most recent Completed_Trading_Day after the Candle_Freshness_Stage ran.\n\nThis usually means every configured OHLC provider failed or returned nothing for a multi-day gap. The run is fail-safe and still exits 0, so the dashboard keeps rendering on whatever history exists — but candle data is going stale.\n\nWhat to check:\n1. Logs Explorer: resource.type=cloud_run_job, job 'scheduled-daily-run', jsonPayload.event=candle_freshness.degraded — see which pairs (pairsBehind) and their latestDate vs target.\n2. Confirm the provider keys are injected + healthy: TWELVE_DATA_API_KEY, MASSIVE_API_KEY, EXTERNAL_SIGNAL_API_KEY (FCS is latest-only; a multi-day gap needs Twelve Data or Massive).\n3. If a gap opened, run the one-off backfill (dist/ops/candle-backfill/main.js) to recover, then confirm the next daily run reports degraded=false.\n\nRunbook: see docs/ fix plan and PROJECT-STATE.md 'daily-candle-freshness-and-cleanup'.",
+    "mimeType": "text/markdown"
+  },
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "candle_freshness.degraded ERROR log from scheduled-daily-run",
+      "conditionMatchedLog": {
+        "filter": "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"scheduled-daily-run\" AND jsonPayload.event=\"candle_freshness.degraded\""
+      }
+    }
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": {
+      "period": "3600s"
+    },
+    "autoClose": "604800s"
+  },
+  "enabled": true,
+  "notificationChannels": ["__NOTIFICATION_CHANNEL__"]
+}

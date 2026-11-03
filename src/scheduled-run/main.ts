@@ -27,7 +27,11 @@ import { fileURLToPath } from "node:url";
 import { loadScheduledRunConfig } from "./config.js";
 import type { PairEvaluationLoader, DashboardViewPersister } from "./scheduledRun.js";
 import { runScheduledDaily } from "./scheduledRun.js";
-import { runCandleFreshnessStage, type CandleFreshnessDeps } from "./candleFreshness.js";
+import {
+  runCandleFreshnessStage,
+  type CandleFreshnessDeps,
+  type CandleFreshnessPairSummary,
+} from "./candleFreshness.js";
 import { resolveMaxLookback } from "./candleGap.js";
 import { makePipelineLoader } from "../pipeline/index.js";
 import {
@@ -209,7 +213,9 @@ export interface FreshenCandlesDeps {
     config: ReturnType<typeof loadScheduledRunConfig>,
   ) => Pick<ReturnType<typeof buildSupabaseStores>, "candleStore" | "vectorStore">;
   /** Run the freshness stage. Defaults to {@link runCandleFreshnessStage}. */
-  readonly runStage?: (stageDeps: CandleFreshnessDeps) => Promise<unknown>;
+  readonly runStage?: (
+    stageDeps: CandleFreshnessDeps,
+  ) => Promise<readonly CandleFreshnessPairSummary[]>;
   /** Env map the OHLC-feed config + lookback are read from. Defaults to `process.env`. */
   readonly env?: Readonly<Record<string, string | undefined>>;
 }
@@ -258,7 +264,7 @@ export async function freshenCandles(
     );
 
     const stores = buildStores(config);
-    await runStage({
+    const summaries = await runStage({
       decisionDate: config.decisionDate,
       ingestion: new OhlcIngestion(stores.candleStore),
       candleStore: stores.candleStore,
@@ -266,6 +272,18 @@ export async function freshenCandles(
       chain: buildProviderChain(chainConfig),
       maxLookbackTradingDays: resolveMaxLookback(env),
     });
+
+    // Phase 2a (daily-candle-freshness-and-cleanup): the stage is fail-safe and
+    // never throws for a provider failure, so a day where NO provider could
+    // close a pair's gap would otherwise look identical to a healthy up-to-date
+    // run and exit 0 silently — exactly how the Oct-8 stuck-candle incident went
+    // unnoticed for ~3 weeks. Emit a DISTINCT, high-severity (ERROR) structured
+    // event naming the still-behind pairs so a log-based alert can fire. This
+    // does NOT change the fail-safe behaviour: the run still proceeds on
+    // existing history and still exits 0 (a provider hiccup must not blank the
+    // dashboard); the ERROR line is purely an alerting signal. Secret-free:
+    // names/dates/counts only.
+    logFreshnessDegradation(config.decisionDate, summaries);
 
     console.log(
       JSON.stringify({
@@ -278,6 +296,46 @@ export async function freshenCandles(
     // existing history with a secret-free warning (no key value is logged).
     logStartupWarning("candle_freshness", err);
   }
+}
+
+/**
+ * Phase 2a: emit a high-severity, secret-free `candle_freshness.degraded` event
+ * when one or more pairs are still behind after the Candle_Freshness_Stage — a
+ * pair that is `degraded` (every provider failed/was unconfigured for it) OR
+ * still carries a `residualGap` (its latest stored candle is behind the most
+ * recent Completed_Trading_Day). A fully up-to-date run logs NOTHING here.
+ *
+ * This is purely an alerting signal (a log-based alert keys on it); it does not
+ * change the fail-safe flow — the caller still proceeds and exits 0. The payload
+ * carries only names/dates/counts (no secret). `severity: "ERROR"` is a field in
+ * the structured JSON so a log-based metric/alert filter can match on it; the
+ * run itself is not failed.
+ */
+export function logFreshnessDegradation(
+  decisionDate: string,
+  summaries: readonly CandleFreshnessPairSummary[],
+  log: (event: object) => void = (event) => {
+    console.log(JSON.stringify(event));
+  },
+): void {
+  const behind = summaries.filter((s) => s.degraded || s.residualGap);
+  if (behind.length === 0) {
+    return;
+  }
+  log({
+    event: "candle_freshness.degraded",
+    severity: "ERROR",
+    decisionDate,
+    pairsBehind: behind.map((s) => ({
+      pair: s.pair,
+      gap: s.gap,
+      provider: s.provider,
+      latestDate: s.latestDate,
+      target: s.target,
+      degraded: s.degraded,
+      residualGap: s.residualGap,
+    })),
+  });
 }
 
 /** Run the scheduled daily refresh and report the outcome, then exit. */
