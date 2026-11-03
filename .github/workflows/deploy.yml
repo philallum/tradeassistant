@@ -31,10 +31,17 @@ name: Deploy (scheduled daily-run Job + dashboard SPA)
 # (project, region, model, target) is passed via `--set-env-vars`.
 #
 # simplify-to-cloud-minimal Req 6.6: the provider secrets that served the
-# since-removed subsystems (news, news-calendar, yields, and the API-based OHLC
-# ingestion — alpha-vantage, twelve-data, finnhub, massive) are NO LONGER
-# injected; no retained runtime module reads them. The only provider key kept is
-# the external-signal (FCS) key the one retained cross-reference adapter needs.
+# since-removed subsystems (news, news-calendar, yields — alpha-vantage,
+# finnhub) are NO LONGER injected; no retained runtime module reads them.
+#
+# daily-candle-freshness-and-cleanup (2026-11-03): the OHLC feed providers
+# twelve-data and massive ARE injected again. The daily Candle_Freshness_Stage's
+# Provider_Fallback_Chain (FCS -> Twelve Data -> Massive) needs a RANGE-capable
+# provider to close a multi-day Gap_Backfill; FCS is latest-only, so without
+# Twelve Data / Massive a gap >1 trading day could never self-heal (this is the
+# root cause of the Oct-8 stuck-candle incident). TWELVE_DATA_API_KEY and
+# MASSIVE_API_KEY are therefore REQUIRED runtime secrets, not orphans — do NOT
+# remove them in a future resource cleanup.
 #
 # ONE-TIME PREREQUISITE for the frontend deploy: the WIF-impersonated deploy
 # service account (`DEPLOY_SERVICE_ACCOUNT`) needs the Firebase Hosting admin
@@ -194,10 +201,12 @@ jobs:
       # --set-env-vars; runtime secrets via --set-secrets (Secret Manager),
       # never baked into the image. --set-secrets injects only the Secret_Keys
       # the retained Job actually reads at runtime — the Supabase
-      # URL/key/publishable-key/pooler-url plus the one external-signal (FCS)
-      # provider key — each as a `<secret-name>:latest` Secret Manager reference,
-      # so no value lives in this file. SUPABASE_POOLER_URL routes over the
-      # IPv4-reachable pooler/REST endpoint (Cloud Run has no IPv6 egress).
+      # URL/key/publishable-key/pooler-url, the external-signal (FCS) provider
+      # key, and the two OHLC range providers (Twelve Data + Massive) the
+      # Candle_Freshness_Stage falls back to for a Gap_Backfill — each as a
+      # `<secret-name>:latest` Secret Manager reference, so no value lives in
+      # this file. SUPABASE_POOLER_URL routes over the IPv4-reachable
+      # pooler/REST endpoint (Cloud Run has no IPv6 egress).
       #
       # Write credential (simplify-to-cloud-minimal Req 4.6): under the
       # public-data model the single Write_Credential is the `supabase-key`
@@ -212,10 +221,17 @@ jobs:
       # Public read is open; the write path is not publicly writable.
       #
       # simplify-to-cloud-minimal Req 6.6: the provider secrets for the removed
-      # subsystems (alpha-vantage, twelve-data, finnhub, massive, news,
-      # news-calendar) are REMOVED from --set-secrets — no retained module reads
-      # them. The RLS/scoped-JWT read-side security and the read-proxy are gone,
-      # so there is no scoped-read secret, read-view, or read-proxy step here.
+      # subsystems (alpha-vantage, finnhub, news, news-calendar) are REMOVED
+      # from --set-secrets — no retained module reads them. The RLS/scoped-JWT
+      # read-side security and the read-proxy are gone, so there is no
+      # scoped-read secret, read-view, or read-proxy step here.
+      #
+      # daily-candle-freshness-and-cleanup (2026-11-03): twelve-data-api-key and
+      # massive-api-key are RE-ADDED (TWELVE_DATA_API_KEY / MASSIVE_API_KEY).
+      # They are NOT orphans — the daily Candle_Freshness_Stage's
+      # Provider_Fallback_Chain (FCS -> Twelve Data -> Massive) needs a
+      # range-capable provider to self-heal a multi-day candle gap (FCS is
+      # latest-only). Do NOT remove them in a future cleanup.
       - name: Deploy SHA-pinned image to Cloud Run Job
         run: |
           gcloud run jobs deploy "${CLOUD_RUN_JOB}" \
@@ -224,7 +240,7 @@ jobs:
             --image "${{ steps.image.outputs.uri }}" \
             --service-account "${RUNTIME_SERVICE_ACCOUNT}" \
             --set-env-vars "GCP_PROJECT_ID=${GCP_PROJECT_ID},GCP_REGION=${GCP_REGION},GEMINI_MODEL=${GEMINI_MODEL},GOOGLE_GENAI_USE_VERTEXAI=true,EXTERNAL_SIGNAL_PROVIDER=FCS,SUPABASE_TARGET=hosted,DASHBOARD_SNAPSHOT_BUCKET=${DASHBOARD_SNAPSHOT_BUCKET}" \
-            --set-secrets "EXTERNAL_SIGNAL_API_KEY=external-signal-api-key:latest,SUPABASE_HOSTED_KEY=supabase-key:latest,SUPABASE_PUBLISHABLE_KEY=supabase-publishable-key:latest,SUPABASE_HOSTED_URL=supabase-url:latest,SUPABASE_POOLER_URL=supabase-pooler-url:latest"
+            --set-secrets "EXTERNAL_SIGNAL_API_KEY=external-signal-api-key:latest,TWELVE_DATA_API_KEY=twelve-data-api-key:latest,MASSIVE_API_KEY=massive-api-key:latest,SUPABASE_HOSTED_KEY=supabase-key:latest,SUPABASE_PUBLISHABLE_KEY=supabase-publishable-key:latest,SUPABASE_HOSTED_URL=supabase-url:latest,SUPABASE_POOLER_URL=supabase-pooler-url:latest"
 
   # Stage 1 (frontend) — build + test the dashboard SPA. This mirrors the `web`
   # CI job and gates the deploy below, so a broken SPA never reaches production.

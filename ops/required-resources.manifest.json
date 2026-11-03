@@ -86,9 +86,19 @@
       "name": "external-signal-api-key",
       "role": "The External_Reference_Signal provider (FCS) key the retained external-signal adapter reads at runtime (R6.3).",
       "keep": true
+    },
+    {
+      "name": "twelve-data-api-key",
+      "role": "OHLC range provider (Twelve Data) — FIRST range-capable fallback in the daily Candle_Freshness_Stage Provider_Fallback_Chain (FCS -> Twelve Data -> Massive). REQUIRED: FCS is latest-only, so without a range provider a multi-day candle Gap_Backfill can never self-heal (root cause of the 2026-10-08 stuck-candle incident). Injected as TWELVE_DATA_API_KEY via deploy.yml --set-secrets. NOT an orphan.",
+      "keep": true
+    },
+    {
+      "name": "massive-api-key",
+      "role": "OHLC range provider (Massive) — SECOND range-capable fallback in the chain (host https://api.massive.com, Polygon-style aggregates). REQUIRED alongside twelve-data-api-key for Gap_Backfill self-healing. Injected as MASSIVE_API_KEY via deploy.yml --set-secrets. NOT an orphan.",
+      "keep": true
     }
   ],
-  "secretManagerSecretsNote": "The Gemini/Vertex AI path does NOT use a Secret Manager API-key secret: the Job calls Vertex AI with GOOGLE_GENAI_USE_VERTEXAI=true, authorized by the runtime SA's roles/aiplatform.user (R11 glossary 'the Gemini/Vertex path'). Any Secret Manager secret NOT listed above — in particular the obsolete scoped-JWT provider secrets superseded after the yields/news removals (alpha-vantage-api-key, finnhub-api-key, massive-api-key, news-api-key, news-calendar-api-key, twelve-data-api-key) — is an Orphaned_GCP_Resource (R11.8), subject to operator-approved deletion in task 7.2 only after confirming no retained --set-secrets entry references it.",
+  "secretManagerSecretsNote": "The Gemini/Vertex AI path does NOT use a Secret Manager API-key secret: the Job calls Vertex AI with GOOGLE_GENAI_USE_VERTEXAI=true, authorized by the runtime SA's roles/aiplatform.user (R11 glossary 'the Gemini/Vertex path'). twelve-data-api-key and massive-api-key were RE-ADDED on 2026-11-03 (daily-candle-freshness-and-cleanup) as the two range-capable OHLC fallbacks the daily Candle_Freshness_Stage needs — they are REQUIRED keep-list secrets, NOT orphans. Any Secret Manager secret NOT listed above — in particular the obsolete scoped-JWT provider secrets superseded after the yields/news removals (alpha-vantage-api-key, finnhub-api-key, news-api-key, news-calendar-api-key) — is an Orphaned_GCP_Resource (R11.8), subject to operator-approved deletion in task 7.2 only after confirming no retained --set-secrets entry references it.",
   "artifactRegistry": {
     "repositories": [
       {
@@ -122,10 +132,8 @@
     "secrets": [
       "alpha-vantage-api-key",
       "finnhub-api-key",
-      "massive-api-key",
       "news-api-key",
       "news-calendar-api-key",
-      "twelve-data-api-key",
       "supabase-direct-connection",
       "supabase-read-key",
       "supabase-secret-key",
