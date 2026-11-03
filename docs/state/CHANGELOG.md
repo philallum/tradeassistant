@@ -10,6 +10,42 @@
 ---
 
 
+### 2026-11-07 — Triaged the live-shakedown findings: 1 fixed (log-field rename), 1 false alarm, 1 accepted
+
+Followed up on the two findings the operator chose to address from the 2026-11-07 live run. Read the actual code first rather than assuming.
+
+- FINDING 1 (snapshot `generatedAt` looked ~11h stale) — FALSE ALARM, NO BUG. Traced the provenance: `buildDashboardSnapshot` stamps `generatedAt: now.toISOString()` with `now = new Date()` defaulted at build time, and `main.ts` passes no `now` override — and the deployed commit `fb79fd0` is byte-identical to `HEAD` on this path. A cache-busted GET of `dashboard.json` returned `generatedAt: 2026-11-03T21:28:50.586Z`, matching the GCS object's real `updated` time exactly. The `10:13Z` value I saw while monitoring was a CDN-cached copy (the object is served `cache-control: public, max-age=3600`). So finding #1 was finding #3 biting my own read; no code change.
+- FINDING 2 (ambiguous `firingCards` log field) — FIXED (backend-only, on `dev`, NOT deployed). Two log lines used the same key for different quantities. Renamed both for accuracy, each with a cross-referencing comment:
+  - `src/scheduled-run/snapshot.ts` `scheduled_run.snapshot_written`: `firingCards: snapshot.firingSetups.length` -> `surfacedSetupsTotal` (the rolling count of ALL surfaced setups carried in the written snapshot — today's view merged on top of the historical `firing_setups`, across dates).
+  - `src/scheduled-run/main.ts` `scheduled_run.complete`: `firingCards: result.view.cards.length` -> `firedToday` (setups that FIRED on this run's Decision_Date, i.e. the rendered firing cards).
+  Observability-only; no behaviour change, no production decision touched. A grep confirmed the old `firingCards` key is gone from `src/` and no test asserted on either field. `npm run check` green — lint + tsc clean, vitest 204 files passed / 1 skipped, 1178 passed / 7 skipped, exit 0. (Did not re-run the web half; the change is backend-only.)
+- FINDING 3 (`dashboard.json` cache-control max-age=3600) — ACCEPTED as-is. Appropriate for a once-daily product; left unchanged. Documented in RISKS so a cached read is not mistaken for a failed/stale publish.
+
+These edits are on `dev` and go live only when the operator merges dev->main and the Job redeploys.
+
+
+### 2026-11-07 — LIVE full-cycle shakedown run (Cloud Run Job `scheduled-daily-run-4gzgb`) — exit 0, clean; confluence v5 confirmed DEPLOYED; 3 minor findings
+
+Operator-approved live-cloud action: executed the production daily Job end to end against hosted Supabase (`bffzhjnpzxxuqvmnmylk`) + GCP project `trade-assistant-508806` (region `europe-west1`) to hunt for issues, then monitored the execution logs and inspected the published `dashboard.json`. Pre-run baseline captured first (published snapshot was schemaVersion 4 / decisionDate 2026-11-03 / no confluence key); deployed image `scheduled-run:fb79fd005b2956537ff430e83cd56b443b670cc5`, env targets hosted, `GEMINI_MODEL=gemini-2.5-flash`, bucket `trade-assistant-508806-dashboard`.
+
+RESULT: `gcloud run jobs execute ... --wait` finished with `succeededCount: 1`, `Container called exit(0)`, and ZERO warn/error log lines across the 12 structured log entries (`scheduled_run.start` → `candle_freshness.*` → `scheduled_run.snapshot_written` → `scheduled_run.complete persisted:true`). The GCS object `dashboard.json` was genuinely rewritten at 21:28:50Z (object `last-modified` matches the `snapshot_written` log; generation `1793741330685917`), moving the published snapshot 4→5 with a populated `confluence` key.
+
+IMPORTANT CORRECTION to the living docs: the deployed Job image ALREADY serves schema v5 + the confluence slice, so `multi-strategy-confluence-engine` IS deployed in production — the earlier "COMPLETE locally, NOT deployed" framing was wrong for the backend producer. (The dev->main merge state of this session's most recent local work — the Property 19 oracle fix, the `make check` web wiring — is separate and still operator-gated; those are test/tooling-only and not visible in the live snapshot.)
+
+VERIFIED HEALTHY IN PROD:
+- Candle freshness — all 5 pairs `gap: up_to_date`, `latestDate: 2026-11-02`, `target: 2026-11-02`, `residualGap: false`, 0 fetched/accepted/rejected. The `daily-candle-freshness-and-cleanup` fix is working live; no gap, no backfill.
+- Confluence v5 slice — populated for all 5 pairs, 6/6 cells `available`, weights `{trend,breakout,range,reversal,custom_pattern}=1, third_party=0` (display-only), conflictThreshold 0.6 / alignmentThreshold 0.4, `validationLabel: unvalidated`; per-pair statuses all NEUTRAL with finite scores in [-1,1], empty opposingStrategyIds. No `confluence_slice` fail-safe warning ⇒ the real engine ran against live candles. FIRST confirmed live exercise of the feature.
+- AI layer — `aiRationale` carries fresh 2026-11-03 per-pair rationales for the two pairs that fired (EURUSD, USDCAD); `dailyCommentary` is a complete, non-truncated note (`generated: true`). No Vertex 403, no MAX_TOKENS truncation. Both prior AI-layer risks are resolved in production.
+- Firing — today fired 2 (EURUSD UP, USDCAD UP), `persisted: true`.
+
+THREE MINOR, NON-BREAKING FINDINGS (logged in RISKS.md, no fix this turn):
+1. Snapshot `generatedAt` is STALE vs the actual publish time — JSON `generatedAt: 2026-11-03T10:13:41.640Z` but the object was written at 21:28:50Z. The field reflects some earlier build time, not when the snapshot was produced/published; a consumer trusting it would think the data is ~11h old.
+2. Ambiguous `firingCards` log field — `scheduled_run.snapshot_written` logs `firingCards: 6` (the rolling set of surfaced `firing_setups` across dates, oldest row `decision_date 2026-09-14`) while `scheduled_run.complete` logs `firingCards: 2` (actually fired today). Same field name, two different quantities — confusing; rename or document.
+3. `dashboard.json` is served `cache-control: public, max-age=3600` — SPA may serve a snapshot up to 1h stale after a run (expected for once-daily cadence, noted).
+
+No intervention needed; nothing left in a bad state. Candidate follow-up: a small bugfix spec for finding 1 (and possibly the finding-2 log naming).
+
+
 ### 2026-11-07 — multi-strategy-confluence-engine Stage H: task 26 (Final checkpoint) PASSED — SPEC COMPLETE locally, NOT deployed
 
 Completed task 26, the final checkpoint, which closes the whole `multi-strategy-confluence-engine` spec (all 91 tasks `[x]`). The checkpoint did its job rather than rubber-stamp: the first run surfaced the one documented seed-dependent failure, the operator chose to harden it to root cause, and the unified `make check` then went green end to end. Frontend + backend both ship via the operator's dev->main merge; nothing deployed this turn.

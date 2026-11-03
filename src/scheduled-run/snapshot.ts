@@ -697,7 +697,11 @@ export async function writeDashboardSnapshot(
       JSON.stringify({
         event: "scheduled_run.snapshot_written",
         decisionDate: snapshot.decisionDate,
-        firingCards: snapshot.firingSetups.length,
+        // The rolling count of ALL surfaced setups carried in the written
+        // snapshot (today's firing view merged on top of the historical
+        // firing_setups), NOT the number that fired this run — see
+        // `firedToday` on the `scheduled_run.complete` event.
+        surfacedSetupsTotal: snapshot.firingSetups.length,
       }),
     );
     return true;
