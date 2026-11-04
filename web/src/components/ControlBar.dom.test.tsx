@@ -18,7 +18,6 @@ function renderBar(): void {
     <SelectionProvider initialState={{ pair: "EURUSD", date: "2026-09-16" }}>
       <ControlBar
         dates={["2026-09-14", "2026-09-15", "2026-09-16"]}
-        lastUpdated="2026-09-16T00:00:00.000Z"
         isRefreshing={false}
         onRefresh={() => undefined}
       />

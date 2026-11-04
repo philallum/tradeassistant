@@ -8,6 +8,11 @@
 > the satellites where they conflict.
 
 ---
+### 2026-11-04 — Dashboard top bar tidy: date selector + Refresh on one row, "Last updated" removed
+LOCALLY VERIFIED (web build + 263 tests pass). Web-only; backend not re-run. NOT committed, NOT deployed.
+- **Change:** `RefreshControl` is now just the Refresh button — the "Last updated: <time>" indicator and its `formatLastUpdated` helper + `lastUpdated` prop are removed. `ControlBar` drops the `lastUpdated` prop and keeps the date selector (left) and Refresh button (right, `marginLeft:auto`) on one `flex-end`-aligned row. `AppShell` no longer holds/threads `lastUpdated` state (the loader still RETURNS `lastUpdated` in its result envelope; firing-setups/gate/evaluation loaders keep it, so only the on-screen label went away). `ControlBar.dom.test.tsx` updated (dropped the removed prop).
+- **Not touched:** the api client / `ApiResult.lastUpdated` field and the proxy freshness marker remain; this was a presentation-only removal.
+
 ### 2026-11-04 — Daily AI note: show the selected pair's own rationale (USDCAD was showing EURUSD text)
 LOCALLY VERIFIED (`make check` exit 0: backend 1241 passed/7 skipped; web build + 263 tests). NOT committed, NOT deployed.
 - **Cause:** the "Daily AI note" drawer renders `dailyCommentary`, ONE pair-independent whole-day note per run, so it showed the same text for every selected pair. The live 2026-11-03 note only described EURUSD. The per-pair `aiRationale` rows (one per FIRING pair, e.g. EURUSD and USDCAD that day) were published in `dashboard.json` but no longer rendered after the dashboard simplification removed the old AI tab.
