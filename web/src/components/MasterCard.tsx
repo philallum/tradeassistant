@@ -30,7 +30,10 @@ export interface MasterCardProps {
   readonly cards: readonly StrategyCardVM[];
   /** Trading-day window the strategy records cover (0 = none built). */
   readonly lookbackDays: number;
+  /** The whole-day overview across all pairs. */
   readonly note: DailyNoteViewModel;
+  /** The selected pair's own AI rationale (optional; omitted = overview only). */
+  readonly pairNote?: DailyNoteViewModel;
   readonly evidence: EvidenceVM | null;
   readonly systemRecord: SystemRecordVM;
 }
@@ -42,6 +45,7 @@ export function MasterCard({
   cards,
   lookbackDays,
   note,
+  pairNote,
   evidence,
   systemRecord,
 }: MasterCardProps): JSX.Element {
@@ -58,7 +62,12 @@ export function MasterCard({
     >
       <PairSummary pair={pair} conviction={conviction} summary={summary} />
       <StrategyCardGrid pair={pair} cards={cards} lookbackDays={lookbackDays} />
-      <ContextDrawers note={note} evidence={evidence} />
+      <ContextDrawers
+        note={note}
+        pair={pair}
+        {...(pairNote !== undefined ? { pairNote } : {})}
+        evidence={evidence}
+      />
       <SystemRecordFooter record={systemRecord} />
     </article>
   );

@@ -134,6 +134,28 @@ describe("ContextDrawers", () => {
     expect(note.getAttribute("aria-expanded")).toBe("false");
   });
 
+  it("leads with the selected pair's own note and labels the whole-day overview separately", () => {
+    const pairNote: DailyNoteViewModel = {
+      status: "generated",
+      text: "USDCAD follows the uptrend.",
+      decisionDate: "2026-09-16",
+    };
+    render(<ContextDrawers note={GENERATED} pairNote={pairNote} pair="USDCAD" evidence={EVIDENCE} />);
+    fireEvent.click(header(/Daily AI note/));
+    expect(screen.getByTestId("pair-note-label").textContent).toBe("USDCAD");
+    expect(screen.getByTestId("pair-note").textContent).toBe("USDCAD follows the uptrend.");
+    expect(screen.getByTestId("overview-note-label").textContent).toMatch(/All pairs/);
+    // The overview text is still present, but after the pair's own note.
+    expect(screen.getByText("Quiet session; EURUSD leads.")).toBeTruthy();
+  });
+
+  it("says so when the selected pair has no note of its own, and still shows the overview", () => {
+    render(<ContextDrawers note={GENERATED} pairNote={ABSENT} pair="GBPUSD" evidence={EVIDENCE} />);
+    fireEvent.click(header(/Daily AI note/));
+    expect(screen.getByTestId("pair-note").textContent).toMatch(/No AI note for GBPUSD/);
+    expect(screen.getByText("Quiet session; EURUSD leads.")).toBeTruthy();
+  });
+
   it("labels the note advisory and non-scoring when expanded (Req 7.7)", () => {
     render(<ContextDrawers note={GENERATED} evidence={EVIDENCE} />);
     fireEvent.click(header(/Daily AI note/));

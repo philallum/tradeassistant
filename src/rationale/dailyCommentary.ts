@@ -76,7 +76,9 @@ export function toDailyCommentaryInput(input: DailyCommentaryInput): SignalRatio
       "Write a short (2–3 sentence) plain-language note summarising the day's FX pattern " +
       "scan for a single operator. State whether any setups cleared the confidence " +
       "threshold and, if not, briefly why (which pairs were flat, which fell short, how " +
-      "choppy conditions were). Do not give trading advice or invent numbers; describe " +
+      "choppy conditions were). If setups fired, name EVERY pair marked fired=true, not " +
+      "just one. The system works on daily candles, so refer to timing in trading days, " +
+      "never minutes or hours. Do not give trading advice or invent numbers; describe " +
       "only the figures provided.",
     decisionDate: input.decisionDate,
     confidenceThreshold: input.confidenceThreshold,

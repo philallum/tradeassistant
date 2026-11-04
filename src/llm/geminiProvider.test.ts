@@ -80,6 +80,25 @@ describe("GeminiLlmProvider request shaping", () => {
     expect(gen.maxOutputTokens).toBe(1024); // DEFAULT_MAX_OUTPUT_TOKENS
   });
 
+  it("tells the model every horizon is in trading days, never minutes or hours", async () => {
+    for (const role of ["signal_rationale", "pattern_description"] as const) {
+      const captured: Captured[] = [];
+      const provider = new GeminiLlmProvider(
+        CONFIG_BASE,
+        tokens,
+        stubFetch(captured, okBody(role === "pattern_description" ? '["x"]' : "ok")),
+      );
+      await provider.complete(
+        role,
+        role === "pattern_description" ? { analogues: [] } : { selectedHorizon: 1 },
+      );
+      const contents = captured[0]!.body.contents as Array<{ parts: Array<{ text: string }> }>;
+      const prompt = contents[0]!.parts[0]!.text;
+      expect(prompt).toContain("TRADING DAYS");
+      expect(prompt).toContain("Never describe a horizon in minutes or hours");
+    }
+  });
+
   it("returns the model's text for signal_rationale", async () => {
     const provider = new GeminiLlmProvider(
       { ...CONFIG_BASE, thinkingBudget: 0 },
