@@ -9,29 +9,34 @@
 // see the note at the bottom of this file for the toolchain choice).
 //
 // Covered here (the chrome):
-//   - Tabs: the bottom tab bar exposes a `tablist` with `tab` roles, correct `aria-selected`,
-//     and each tab's `aria-controls` names its tabpanel (Req 16.5).
+//   - No tab bar: the rendered tree has no `tablist` / `tab` roles and no bottom-navigation
+//     landmark (Req 1.1, 1.5).
 //   - Selectors + refresh: the Pair_Selector, the Decision_Date (Historical_Browse) selector,
-//     and the refresh control all expose accessible names/labels (Req 16.5, 18.2).
-//   - Semantic document structure: exactly ONE top-level `<h1>`, with the active tab's
-//     section heading rendered at `<h2>` beneath it (Req 18.1), and labeled landmark
-//     regions (header is a `banner`, the tab bar is a labeled `navigation`) (Req 18.2).
-//   - Tap-target sizing: the tab buttons, the selector controls, and the refresh button all
-//     carry an explicit minimum tap-target height (Req 18.5).
+//     and the refresh control all expose accessible names/labels (Req 12.1, 12.6).
+//   - Semantic document structure: exactly ONE top-level `<h1>` inside the `banner` header
+//     (Req 12.1).
+//   - Tap-target sizing: the selector controls, the refresh button and the error-state retry
+//     button carry an explicit minimum tap-target height (Req 12.4).
 //
-// Validates: Requirements 16.5, 18.1, 18.2, 18.5
+// Validates: Requirements 1.1, 1.5, 12.1, 12.4, 12.6
 
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ApiResult } from "../api/snapshot";
 import type { DecisionDateRow } from "../api/types";
-import { TABS } from "../routing/routes";
 import { SelectionProvider, type SelectionState } from "../state/selection";
 import { AppShell, type DecisionDatesLoader } from "./AppShell";
 
+// The single-window body reads the shared snapshot over `fetch`; keep it pending so these
+// chrome tests never touch the network and the shell body stays in its loading state.
+beforeEach(() => {
+  vi.stubGlobal("fetch", () => new Promise<Response>(() => {}));
+});
+
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 /** A `/decision-dates` loader returning a fixed, resolved set of dates (no network). */
@@ -51,9 +56,13 @@ async function renderShell(
       <AppShell loadDecisionDates={datesLoader(dates)} />
     </SelectionProvider>,
   );
-  // Wait past the shell's initial `/decision-dates` fetch so the routed tab (not the
-  // top-level loading state) is mounted.
-  await screen.findByRole("tabpanel");
+  // Wait past the shell's initial dates fetch (the refresh control is disabled while it is
+  // in flight) so the chrome is settled before asserting.
+  await waitFor(() =>
+    expect((screen.getByRole("button", { name: /Refresh data/i }) as HTMLButtonElement).disabled).toBe(
+      false,
+    ),
+  );
 }
 
 /** Parse the numeric pixel value of a style property (e.g. "44px" → 44). */
@@ -62,53 +71,22 @@ function pxValue(el: HTMLElement, prop: "minHeight" | "minWidth"): number {
   return raw === "" ? 0 : Number.parseFloat(raw);
 }
 
-/** The minimum comfortable tap-target edge the components commit to (Req 18.5). */
+/** The minimum comfortable tap-target edge the components commit to (Req 12.4). */
 const MIN_TAP_TARGET_PX = 44;
 
-describe("AppShell a11y — bottom tab bar roles/labels (Req 16.5)", () => {
-  it("exposes a labeled tablist with one tab role per Category_Tab", async () => {
+describe("AppShell a11y — no tab bar (Req 1.1, 1.5)", () => {
+  it("renders no tablist, tab, or bottom-navigation landmark", async () => {
     await renderShell({ pair: "ALL", date: "2026-09-16" });
 
-    const tablist = screen.getByRole("tablist", { name: /Dashboard categories/i });
-    const tabs = within(tablist).getAllByRole("tab");
-    expect(tabs).toHaveLength(TABS.length);
-
-    // Every registered Category_Tab is present by its accessible name.
-    for (const tab of TABS) {
-      expect(screen.getByRole("tab", { name: tab.label })).toBeTruthy();
-    }
-  });
-
-  it("marks exactly one tab aria-selected and links each tab to its tabpanel via aria-controls", async () => {
-    await renderShell({ pair: "ALL", date: "2026-09-16" });
-
-    const tabs = screen.getAllByRole("tab");
-    const selected = tabs.filter((t) => t.getAttribute("aria-selected") === "true");
-    expect(selected).toHaveLength(1);
-
-    // The selected tab's aria-controls names a tabpanel that actually exists and whose
-    // aria-labelledby points back at the tab (the tab/panel ARIA relationship, Req 16.5).
-    const activeTab = selected[0] as HTMLElement;
-    const panelId = activeTab.getAttribute("aria-controls");
-    expect(panelId).toBeTruthy();
-
-    const panel = document.getElementById(panelId as string);
-    expect(panel).not.toBeNull();
-    expect((panel as HTMLElement).getAttribute("role")).toBe("tabpanel");
-    expect((panel as HTMLElement).getAttribute("aria-labelledby")).toBe(activeTab.id);
-  });
-
-  it("gives every tab a non-empty aria-controls (named panel) even when inactive", async () => {
-    await renderShell({ pair: "ALL", date: "2026-09-16" });
-    for (const tab of screen.getAllByRole("tab")) {
-      expect(tab.getAttribute("aria-controls")).toMatch(/^tabpanel-/);
-      // aria-selected is always present (true/false), never missing.
-      expect(["true", "false"]).toContain(tab.getAttribute("aria-selected"));
-    }
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    expect(screen.queryByRole("tabpanel")).toBeNull();
+    expect(screen.queryByRole("navigation", { name: /Dashboard categories/i })).toBeNull();
+    expect(document.querySelector('[role="tablist"], [role="tab"], [role="tabpanel"]')).toBeNull();
   });
 });
 
-describe("AppShell a11y — selectors + refresh accessible names (Req 16.5, 18.2)", () => {
+describe("AppShell a11y — selectors + refresh accessible names (Req 12.1, 12.6)", () => {
   it("labels the Pair_Selector, the Decision_Date selector, and the refresh control", async () => {
     // Narrow viewport is the default jsdom media state → the Pair_Selector renders as a
     // native <select> with the "Currency pair" accessible name.
@@ -125,7 +103,7 @@ describe("AppShell a11y — selectors + refresh accessible names (Req 16.5, 18.2
   });
 });
 
-describe("AppShell a11y — semantic document structure (Req 18.1, 18.2)", () => {
+describe("AppShell a11y — semantic document structure (Req 12.1)", () => {
   it("renders exactly one top-level heading (h1)", async () => {
     await renderShell({ pair: "ALL", date: "2026-09-16" });
 
@@ -134,41 +112,15 @@ describe("AppShell a11y — semantic document structure (Req 18.1, 18.2)", () =>
     expect(h1s[0]?.textContent).toMatch(/Dashboard/i);
   });
 
-  it("renders the active tab's section heading at h2 beneath the single h1", async () => {
-    // Setups is the default route; its panel heading is an <h2>.
+  it("exposes a banner header that contains the single h1", async () => {
     await renderShell({ pair: "ALL", date: "2026-09-16" });
 
-    const h1 = screen.getByRole("heading", { level: 1 });
-    const h2 = await screen.findByRole("heading", { level: 2 });
-    expect(h2).toBeTruthy();
-    // The h2 lives inside the active tabpanel (a labeled section beneath the h1).
-    const panel = screen.getByRole("tabpanel");
-    expect(within(panel).getByRole("heading", { level: 2 })).toBe(h2);
-    // There is no competing h1 inside the panel.
-    expect(within(panel).queryByRole("heading", { level: 1 })).toBeNull();
-    expect(h1).not.toBe(h2);
-  });
-
-  it("exposes labeled landmark regions: a banner header and a labeled navigation", async () => {
-    await renderShell({ pair: "ALL", date: "2026-09-16" });
-
-    // The <header> is the banner landmark; it contains the single h1.
     const banner = screen.getByRole("banner");
     expect(within(banner).getByRole("heading", { level: 1 })).toBeTruthy();
-
-    // The bottom tab bar is a labeled navigation landmark.
-    expect(screen.getByRole("navigation", { name: /Dashboard categories/i })).toBeTruthy();
   });
 });
 
-describe("AppShell a11y — tap-target sizing (Req 18.5)", () => {
-  it("sizes the tab buttons to at least the minimum tap target", async () => {
-    await renderShell({ pair: "ALL", date: "2026-09-16" });
-    for (const tab of screen.getAllByRole("tab")) {
-      expect(pxValue(tab, "minHeight")).toBeGreaterThanOrEqual(MIN_TAP_TARGET_PX);
-    }
-  });
-
+describe("AppShell a11y — tap-target sizing (Req 12.4)", () => {
   it("sizes the selector controls and the refresh button to at least the minimum tap target", async () => {
     await renderShell({ pair: "ALL", date: "2026-09-16" });
 
@@ -183,7 +135,7 @@ describe("AppShell a11y — tap-target sizing (Req 18.5)", () => {
     expect(pxValue(refresh, "minHeight")).toBeGreaterThanOrEqual(MIN_TAP_TARGET_PX);
   });
 
-  it("sizes the error-state retry button to at least the minimum tap target (Req 18.5, 17.5)", async () => {
+  it("sizes the error-state retry button to at least the minimum tap target (Req 12.4)", async () => {
     // Drive the shell into its error state with a rejecting loader, then assert the retry
     // affordance is both accessible and comfortably sized.
     const failing: DecisionDatesLoader = () =>

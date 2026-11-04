@@ -29,7 +29,7 @@ export interface FiringCardProps {
  * A non-color shape glyph for a Direction_Class, so the direction is distinguishable
  * without relying on color (Req 18.3): up triangle, down triangle, square for flat.
  */
-function directionGlyph(direction: Direction): string {
+export function directionGlyph(direction: Direction): string {
   switch (direction) {
     case "UP":
       return "\u25B2"; // ▲

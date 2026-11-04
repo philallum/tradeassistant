@@ -1,10 +1,11 @@
 /**
  * The Dashboard_UI app shell (task 9.1).
  *
- * Composes the persistent header (Pair_Selector + Decision_Date selector + refresh and
- * "last updated"), the routed tab content, and the mobile-native bottom tab bar into one
- * mobile-first layout (Req 1.3, 8.1, 8.6, 16.1, 16.4, 17.1, 17.3). It owns the small amount
- * of shell-level fetch state the header needs:
+ * Composes the sticky {@link ControlBar} (Pair_Selector + Decision_Date selector + refresh
+ * and "last updated"), and the single-window dashboard content, into one mobile-first layout
+ * with no bottom tab bar (Req 1.1, 1.5, 1.6). When the `#/evaluation` hash route is open, it
+ * renders the retained {@link GateTab} detail view with a back link instead (Req 8.3). It owns
+ * the small amount of shell-level fetch state the header needs:
  *
  *   - the list of available Decision_Dates (from `GET /decision-dates`), which populates
  *     the Historical_Browse selector, and
@@ -25,7 +26,8 @@
  *   - empty set  → "No runs have been persisted yet." (Req 14.1)
  *   - fetch error → a non-secret message with retry — never a stack trace / raw payload /
  *                   blank screen; refresh recovers from it (Req 14.2, 17.5)
- *   - otherwise  → the routed tab, which owns its own per-tab/per-pair states (Req 7.4, 8.7)
+ *   - otherwise  → the `SingleWindowShell` (or the `#/evaluation` detail view), which owns
+ *                  its own loading/empty/error states
  *
  * The data client is injected (`fetchDecisionDates`) so the shell renders and is testable
  * without a live network; it defaults to the real api client.
@@ -38,17 +40,15 @@ import { getSnapshot } from "../api/snapshotCache";
 import type { DecisionDateRow } from "../api/types";
 import { selectBrowseDate } from "../pure/selectDates";
 import { useSelection } from "../state/selection";
+import { GateTab } from "../tabs/Gate";
 import { theme } from "../theme/darkTheme";
-import { BottomTabBar } from "./BottomTabBar";
-import { DateSelector } from "./DateSelector";
+import { ControlBar } from "./ControlBar";
 import { EmptyState } from "./EmptyState";
+import { BackLink, EvaluationDetailLink } from "./EvaluationDetailLinks";
 import { ErrorState } from "./ErrorState";
 import { LoadingState } from "./LoadingState";
-import { PairSelector } from "./PairSelector";
-import { RefreshControl } from "./RefreshControl";
-import { TabRouter } from "./TabRouter";
-import { useMediaQuery, WIDE_VIEWPORT_QUERY } from "./useMediaQuery";
-import { useRoute } from "./useRoute";
+import { SingleWindowShell } from "./SingleWindowShell";
+import { useEvaluationDetail } from "./useEvaluationDetail";
 
 /** Loader for the available Decision_Dates. Injected for testability; defaults to the snapshot. */
 export type DecisionDatesLoader = (options?: {
@@ -94,8 +94,7 @@ type DatesState =
   | { readonly kind: "ready"; readonly dates: readonly string[] };
 
 export function AppShell({ loadDecisionDates = defaultLoader }: AppShellProps): JSX.Element {
-  const { tab, setTab } = useRoute();
-  const wide = useMediaQuery(WIDE_VIEWPORT_QUERY);
+  const evaluationOpen = useEvaluationDetail();
   // The browsed Decision_Date selection (null = "use the latest"). Owned by the shared
   // selection store so it survives tab switches; the shell reads it to resolve the
   // effective date it hands to the per-pair single-date tabs.
@@ -183,37 +182,12 @@ export function AppShell({ loadDecisionDates = defaultLoader }: AppShellProps): 
         overflowX: "hidden",
       }}
     >
-      <header
-        style={{
-          padding: theme.spacing.md,
-          borderBottom: `1px solid ${theme.colors.border}`,
-          display: "flex",
-          flexDirection: "column",
-          gap: theme.spacing.md,
-          background: theme.colors.surface,
-        }}
-      >
-        {/* Single top-level heading for the document (Req 18.1). */}
-        <h1 style={{ margin: 0, fontSize: 18 }}>Trading Assistant — Dashboard</h1>
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "flex-end",
-            gap: theme.spacing.md,
-          }}
-        >
-          <PairSelector wide={wide} />
-          <DateSelector dates={dates} />
-          <div style={{ marginLeft: "auto" }}>
-            <RefreshControl
-              lastUpdated={lastUpdated}
-              isRefreshing={isRefreshing}
-              onRefresh={onRefresh}
-            />
-          </div>
-        </div>
-      </header>
+      <ControlBar
+        dates={dates}
+        lastUpdated={lastUpdated}
+        isRefreshing={isRefreshing}
+        onRefresh={onRefresh}
+      />
 
       {/*
         Routed tab content with the shell-level loading / empty / error states layered in
@@ -230,11 +204,26 @@ export function AppShell({ loadDecisionDates = defaultLoader }: AppShellProps): 
         ) : datesState.dates.length === 0 ? (
           <EmptyState message="No runs have been persisted yet." />
         ) : (
-          <TabRouter tab={tab} refreshNonce={refreshNonce} decisionDate={effectiveDate} />
+          <>
+            {evaluationOpen ? (
+              <>
+                <nav aria-label="Evaluation detail" style={{ padding: theme.spacing.md }}>
+                  <BackLink />
+                </nav>
+                {/* GateTab has no refreshNonce prop; remount on refresh to re-fetch. */}
+                <GateTab key={refreshNonce} />
+              </>
+            ) : (
+              <>
+                <SingleWindowShell refreshNonce={refreshNonce} decisionDate={effectiveDate} />
+                <div style={{ padding: theme.spacing.md }}>
+                  <EvaluationDetailLink />
+                </div>
+              </>
+            )}
+          </>
         )}
       </main>
-
-      <BottomTabBar active={tab} onSelect={setTab} />
     </div>
   );
 }

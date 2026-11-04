@@ -10,6 +10,75 @@
 ---
 
 
+### 2026-11-04 — Completed mobile-dashboard-single-window (all 48 tasks, final checkpoint passed)
+
+Executed the rest of the spec: DOM tests for components (2.3/2.6/2.8/2.10/2.12/2.14), `withTimeout` tests, `SingleWindowShell` (load state machine, shaper composition, last-good-card retention on failed refresh) with its DOM tests, null-aware `VerdictBanner`/`MasterCard` for a pair that did not fire (copy only in `pure/noSignalCopy.ts`, wording still OPEN), `#/evaluation` route (`routing/evaluationDetail.ts`, `useEvaluationDetail`, `EvaluationDetailLinks`), sha256 data-invariance guard (`web/src/guards/`), and Property 6 render-fidelity test. `AppShell` now renders `ControlBar` + `SingleWindowShell`; `BottomTabBar.tsx` and `TabRouter.tsx` deleted; old tab-bar a11y tests rewritten with a no-tablist regression test. Side edits: `GateTab` panel role `tabpanel`->`region` with valid `aria-labelledby`; `ErrorState` gained optional `retryDisabled`. Verified locally: web build + 394 tests, root `npm run check` clean; protected shapers unmodified; no backend change. Not deployed. Working tree also shows four other specs deleted under `.kiro/specs/` (not from this work); operator should confirm before committing.
+
+
+### 2026-11-04 — Executed task 4.1 (timeout-race helper) of mobile-dashboard-single-window
+
+Added `web/src/api/withTimeout.ts`: `withTimeout(promise, ms = 10_000)` races the promise against a timer, rejects with the non-secret `Error("The dashboard data could not be loaded in time.")`, and clears the timer on settle. It deliberately never aborts the underlying promise, because `snapshotCache.getSnapshot` shares one in-flight fetch per generation (first caller's signal wins) and a timeout-owned abort would cancel it for every consumer; this is documented in the file. `npm run build` passed; no tests run (4.2 owns them). 4.2-4.7 were queued but not scheduled as ready (only 6.1 and 7.1 ready); stopped and asked the operator whether to run 6.1/7.1 first. Protected shapers unmodified; nothing wired or deployed.
+
+### 2026-11-04 — Executed task 2 implementation subtasks (presentational components, unwired) of mobile-dashboard-single-window
+
+Added unwired components under `web/src/components/`: `Accordion`, `ContextDrawers`, `BacktestEdgePill`, `VerdictBanner`, `PairConfluenceMatrix` (extra optional `validated` prop; MasterCard passes it through), `AllPairsStrip` (with a 3-test `AllPairsStrip.dom.test.tsx`), `ControlBar` (sticky, owns the single h1), `MasterCard`. `directionGlyph` in `tabs/Setups/FiringCard.tsx` is now exported for reuse. Removed an unused `rawParamArb` from `resolveWindowSelection.property.test.ts` that broke `tsc`; build and full vitest (37 files, 313 tests) passed at that point. Task 2 DOM test subtasks (2.3, 2.6, 2.8, 2.10, 2.12, 2.14) not run (not queued). Note: `PairSelector` offers "All pairs" too, relevant to 2.12's five-pair check. Protected shapers unmodified; nothing wired or deployed.
+
+### 2026-11-04 — Executed task 1 (pure helpers) of mobile-dashboard-single-window
+
+Added unwired pure modules under `web/src/pure/`: `noSignalCopy.ts` (`NO_SIGNAL_TEXT`, `PAIR_DID_NOT_FIRE_LABEL`; placeholder wording, operator to confirm), `shapeAllPairsStrip.ts`, `selectPairConfluenceRow.ts`, `shapeBacktestEdge.ts` (reuses `tabs/Gate/format` `formatDeltaPp`), `resolveWindowSelection.ts` (ALL/invalid pair -> EURUSD, invalid date -> latest; `state/selection.ts` untouched). Added fast-check property tests for Properties 1-4 plus `resolveWindowSelection` (200 runs each, passing); `purity.structural.test.ts` still passes. Protected shapers unmodified. Tasks 2-8 not started; nothing wired or deployed.
+
+### 2026-11-03 — Authored tasks.md for mobile-dashboard-single-window (spec fully authored; nothing executed)
+
+Created `tasks.md` (format-valid): 8 top-level tasks across 10 dependency waves, all in `web/src/`, no backend/schema/cloud work. Ordering is deploy-safe: pure helpers (`shapeAllPairsStrip`, `selectPairConfluenceRow`, `shapeBacktestEdge`, `resolveWindowSelection`, `noSignalCopy`) and presentational components first (unwired), then `SingleWindowShell`, then wiring into `AppShell`, then deleting `BottomTabBar`/`TabRouter` last, with an explicit read-first-and-retire step for the two tab-bar accessibility test files.
+
+Notable choices: the 10s timeout is a promise race (`withTimeout`) rather than an abort signal, because `snapshotCache.getSnapshot` shares one in-flight promise per generation and the first caller's signal wins; the evaluation detail stays reachable via an `#/evaluation` hash without touching `routing/routes.ts`; Property 5 (data invariance) is a required sha256 hash-fixture test over the eight protected files; Properties 1-4 are required fast-check tests; Property 6 render-fidelity and most DOM tests are optional. The no-fire-pair wording stays OPEN in one constant. Spec-authoring only: no tasks run, no code, config, or cloud changes.
+
+
+### 2026-11-03 — Authored design.md for mobile-dashboard-single-window; amended Requirement 10
+
+Created `design.md` (format-valid) grounded in the real `web/src` code: 3 new pure helpers (`shapeAllPairsStrip`, `selectPairConfluenceRow`, `shapeBacktestEdge`), new components for the four zones plus the all-pairs strip, 6 correctness properties (Property 5 data invariance enforced by a CI file-untouched check, not a generated-input test). Existing shapers, `confluenceNav`, `format.ts`, `selection.ts` unmodified; `BottomTabBar` deleted; Gate kept as a separate evaluation detail view.
+
+The design surfaced a selection-store gap (default `ALL` vs Req 2.6 EURUSD; rejected URL values discarded). Operator chose to keep the store unchanged: Requirement 10 criterion 3 split into a mandatory fallback and a best-effort message (criterion 4); later criteria renumbered 5-8 and design cross-references fixed. Still open: copy for a pair that did not fire, plus the smaller items logged in RISKS.md. Spec-authoring only; no code, config, or cloud changes.
+
+
+### 2026-11-03 — Folded the brief-vs-code findings into the mobile-redesign requirements (now 12 EARS requirements)
+
+Operator approved the four evaluation findings and chose, for cross-pair comparison, to add a compact all-pairs strip at the top (over per-pair-only or a collapsible drawer). Updated `requirements.md` accordingly; Introduction + Glossary preserved and extended; `.config.kiro` untouched; `validate_spec_format` clean.
+
+- NEW Requirement 4 "All-Pairs Comparison Strip" (All_Pairs_Strip): compact top-of-window row, one entry per pair with Direction (non-colour cue) + net Confluence_Score, keyboard focusable/activatable, display-only (verbatim-from-shapers correctness property), explicit no-data marker per pair, selecting drills into that pair's Master_Card. Requirements renumbered 4–11 → 5–12.
+- Verdict_Banner (Req 3): added criteria so the un-validated Validation_Status badge is at least as prominent as SL/TP and the banner carries NO affordance implying Entry/SL/TP/Expectancy are live executable order levels — upholds the trader-edge-validation honesty rule.
+- Confluence_Matrix (now Req 5): made explicit it renders the SELECTED-pair slice of the existing all-pairs shaper data, and preserved the validation-gated colour behaviour (neutral while unvalidated; colour MAY reinforce when validated).
+- Tap-to-Reveal (now Req 6): required the EXISTING tested interaction model — arrow/Home/End move focus without selecting, single Tab stop via roving tabindex, Escape dismisses — rather than a new one. Confirmed the model is real/tested in `web/src/pure/confluenceNav`.
+- Density Reduction (now Req 8): reframed so the win is consolidation keeping the separate evaluation/edge detail view off the default single-window path (reachable only on explicit demand), rather than stripping tables from the Setups view where they already aren't.
+
+Spec-authoring only; no code, config, or cloud changes. Captured the cross-pair-strip decision in DECISIONS.md and marked the RISKS evaluation entry resolved. Design phase still pending.
+
+
+### 2026-11-03 — Evaluated the mobile-redesign brief against the real `web/` code (read-only; no changes)
+
+The operator asked for an evaluation of the Mobile-First Single-Window Pair Dashboard brief. Read the actual frontend first (`AppShell`, `BottomTabBar`, `SetupsTab`, `FiringCard`, `ConfluencePanel`, `EvidencePanel`) rather than taking the brief's "before" at face value.
+
+Verdict: the DIRECTION is right (kill the 5-tab ping-pong, one scannable per-pair card, progressive-disclosure for the AI note + evidence, sticky control bar). But three of the brief's premises don't match the code, and the design phase must account for them:
+- The app is ALREADY mobile-first single-column with compact cards and non-colour direction cues — so this is a consolidation + per-pair re-slice, not a greenfield rebuild.
+- The "year-long table / N=28470 on mobile" noise isn't on the Setups default view (`EvidencePanel` already shows compact summaries; the heavy stats live in a separate evaluation/edge tab). Consolidating removes that tab from the default path for free.
+- Highest risk: the brief's Zone 2 Trade-Parameters banner collides with the `trader-edge-validation` honesty rule — SL/TP are rendered as un-validated/not-actionable markers on purpose and must stay visually dominant; the banner must not read as a live trade ticket.
+- The confluence re-slice (5-pair × 6-strategy grid → 6-cell single-pair) drops cross-pair comparison and risks re-implementing the existing tested roving-tabindex a11y model; reuse it and decide whether to keep an all-pairs strip.
+
+Captured these four as a RISKS entry for the pending design phase. No code, spec docs, or cloud state changed this turn; offered to fold the findings into requirements.md (cross-pair question + un-validated-banner emphasis) or discuss the cross-pair decision first — awaiting the operator.
+
+
+### 2026-11-03 — New spec: mobile-first single-window pair dashboard redesign (requirements phase)
+
+Started a new feature spec `mobile-dashboard-single-window` — a mobile-first Information-Architecture / visual-layout REFACTOR of the `web/` SPA. Chose requirements-first. Scope is presentation-only: no data source, scoring math, decision threshold, confidence, trade-parameter, AI, or third-party output changes; every displayed value stays sourced verbatim from the existing pure shapers (`shapeDashboard`, `shapeConfluence`, `shapeSetupTrades`, `shapeEvidence`, `shapeDailyNote`).
+
+- Grounded the requirements in the real frontend (confirmed the current `BottomTabBar` + 5 tabs Setups/PatternOutcomes/Gate/Ai/ThirdParty, the `web/src/pure/` shapers, `state/selection.ts`, `routing/routes.ts`).
+- Target: one unified "Master_Card" per pair across four zones — sticky Control_Bar (pair/date/refresh), Verdict_Banner (direction/confidence/validation/trade params), compact 6-cell Confluence_Matrix with tap-to-reveal rationale, and default-collapsed Context_Drawers (Daily AI note + Historical evidence). Year-long backtest tables/wide multi-pair tables replaced by a single Backtest_Edge_Pill.
+- Wrote `requirements.md`: 11 requirements in EARS, then ran the detailing pass to sharpen every requirement (added error/empty/timeout paths, quantified timings and viewport bounds, enumerated the `shapeConfluence` status/strength formats, keyboard/ARIA accessibility). Requirement 8 (Data Invariance) carries the core correctness properties: rendered value == shaper output string, and each shaper's output is byte-identical before/after the refactor for identical Snapshot input.
+- `validate_spec_format` clean. Created `.config.kiro` (specType=feature, workflowType=requirements-first).
+
+Spec-authoring only; NO code, config, or cloud changes this turn. Design/tasks phases still pending.
+
+
 ### 2026-11-07 — Triaged the live-shakedown findings: 1 fixed (log-field rename), 1 false alarm, 1 accepted
 
 Followed up on the two findings the operator chose to address from the 2026-11-07 live run. Read the actual code first rather than assuming.

@@ -28,12 +28,14 @@ export interface ErrorStateProps {
   readonly message: string;
   /** Optional retry handler; when provided an inline "Try again" button is shown. */
   readonly onRetry?: () => void;
+  /** When true the retry button is rendered but disabled (a retry is in flight). */
+  readonly retryDisabled?: boolean;
 }
 
 /** The fixed fallback shown if an empty message is ever passed, so the screen is never blank. */
 const FALLBACK_MESSAGE = "Something went wrong while loading the data.";
 
-export function ErrorState({ message, onRetry }: ErrorStateProps): JSX.Element {
+export function ErrorState({ message, onRetry, retryDisabled = false }: ErrorStateProps): JSX.Element {
   const text = message.length > 0 ? message : FALLBACK_MESSAGE;
   return (
     <div
@@ -52,9 +54,11 @@ export function ErrorState({ message, onRetry }: ErrorStateProps): JSX.Element {
         <button
           type="button"
           onClick={onRetry}
+          disabled={retryDisabled}
           style={{
             appearance: "none",
-            cursor: "pointer",
+            cursor: retryDisabled ? "not-allowed" : "pointer",
+            opacity: retryDisabled ? 0.6 : 1,
             background: theme.colors.surfaceRaised,
             color: theme.colors.textPrimary,
             border: `1px solid ${theme.colors.border}`,
