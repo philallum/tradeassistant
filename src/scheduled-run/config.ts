@@ -15,11 +15,14 @@
 import type { EnvSource, SupabaseConfig } from "../storage/supabaseConfig.js";
 import { loadSupabaseConfig } from "../storage/supabaseConfig.js";
 import type { TradingDate } from "../guard/types.js";
-import { formatTradingDate, isValidTradingDateFormat } from "../guard/tradingDate.js";
+import { addTradingDays, isTradingDay, isValidTradingDateFormat } from "../guard/tradingDate.js";
 
 /** Environment variable names read by the scheduled run (non-secret unless noted). */
 export const SCHEDULED_RUN_ENV = {
-  /** Optional explicit Decision_Date (YYYY-MM-DD). Defaults to today (UTC). */
+  /**
+   * Optional explicit Decision_Date (YYYY-MM-DD). Defaults to the NY-clock
+   * date, or the next trading day once the 17:00 NY session close has passed.
+   */
   decisionDate: "RUN_DECISION_DATE",
   /** GCP project id (non-secret). */
   gcpProject: "GCP_PROJECT_ID",
@@ -101,11 +104,43 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+/** IANA zone whose 17:00 close defines the FX daily candle. */
+const SESSION_TIME_ZONE = "America/New_York";
+/** Session-close hour (24h clock) in {@link SESSION_TIME_ZONE}. */
+const SESSION_CLOSE_HOUR = 17;
+
+/** The America/New_York calendar date and hour (0-23) of an instant. */
+function newYorkDateAndHour(now: Date): { date: TradingDate; hour: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: SESSION_TIME_ZONE,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+  }).formatToParts(now);
+  const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? "";
+  return {
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    hour: Number.parseInt(get("hour"), 10),
+  };
+}
+
 /**
  * Resolve the Decision_Date for this run. An explicit `RUN_DECISION_DATE`
  * (YYYY-MM-DD) is validated and used verbatim so an unattended run is exactly
- * reproducible; otherwise the current UTC date is used (Cloud Scheduler fires
- * the run on the daily cadence).
+ * reproducible.
+ *
+ * Otherwise the date is derived from the America/New_York clock:
+ *   - Before the 17:00 NY session close, or on a Saturday/Sunday: the current
+ *     NY calendar date (a weekend date is skipped by the caller's weekday gate).
+ *   - At/after 17:00 NY on a weekday: the NEXT trading day (Friday -> Monday).
+ *
+ * Rationale: the daily candle dated D closes at 17:00 NY on D, the same instant
+ * the scheduled run fires. The look-ahead rule (candles strictly BEFORE the
+ * Decision_Date) is unchanged, so a run that has just seen D's close is the
+ * decision for the NEXT session, D+1, and then uses D's candle. Stored history
+ * keeps its meaning: a row labelled X always used candles strictly before X.
  */
 export function resolveDecisionDate(
   env: EnvSource,
@@ -120,7 +155,11 @@ export function resolveDecisionDate(
     }
     return explicit;
   }
-  return formatTradingDate(now);
+  const ny = newYorkDateAndHour(now);
+  if (isTradingDay(ny.date) && ny.hour >= SESSION_CLOSE_HOUR) {
+    return addTradingDays(ny.date, 1);
+  }
+  return ny.date;
 }
 
 /**

@@ -161,6 +161,7 @@ describe("freshenCandles daily-entry wiring", () => {
         env: { EXTERNAL_SIGNAL_API_KEY: "fcs-key-not-logged" },
         runStage,
         buildStores: vi.fn(() => stores),
+        sleep: () => Promise.resolve(),
       };
 
       await freshenCandles(makeConfig(), deps);
@@ -174,6 +175,96 @@ describe("freshenCandles daily-entry wiring", () => {
     } finally {
       console_.restore();
     }
+  });
+
+  describe("retry while a pair is still behind", () => {
+    const summary = (behind: boolean): CandleFreshnessPairSummary => ({
+      pair: "EURUSD",
+      gap: behind ? "top_up" : "up_to_date",
+      provider: null,
+      fetched: 0,
+      accepted: 0,
+      rejected: 0,
+      latestDate: behind ? "2026-09-15" : "2026-09-16",
+      target: "2026-09-16",
+      residualGap: behind,
+      degraded: false,
+    });
+
+    it("retries until the candle appears, waiting between attempts, then logs no degradation", async () => {
+      const console_ = captureConsole();
+      try {
+        const results = [[summary(true)], [summary(true)], [summary(false)]];
+        const runStage = vi.fn(
+          (): Promise<readonly CandleFreshnessPairSummary[]> =>
+            Promise.resolve(results.shift() ?? [summary(false)]),
+        );
+        const sleep = vi.fn(() => Promise.resolve());
+        await freshenCandles(makeConfig(), {
+          env: { EXTERNAL_SIGNAL_API_KEY: "k", CANDLE_FRESHNESS_RETRY_DELAY_SECONDS: "7" },
+          runStage,
+          buildStores: vi.fn(() => makeStores()),
+          sleep,
+        });
+        expect(runStage).toHaveBeenCalledTimes(3);
+        expect(sleep).toHaveBeenCalledTimes(2);
+        expect(sleep).toHaveBeenCalledWith(7000);
+        expect(console_.logs()).toContain("candle_freshness.retry");
+        expect(console_.logs()).not.toContain("candle_freshness.degraded");
+      } finally {
+        console_.restore();
+      }
+    });
+
+    it("gives up after the bounded number of retries and still logs the degradation", async () => {
+      const console_ = captureConsole();
+      try {
+        const runStage = vi.fn(
+          (): Promise<readonly CandleFreshnessPairSummary[]> => Promise.resolve([summary(true)]),
+        );
+        await freshenCandles(makeConfig(), {
+          env: { EXTERNAL_SIGNAL_API_KEY: "k", CANDLE_FRESHNESS_RETRY_ATTEMPTS: "2" },
+          runStage,
+          buildStores: vi.fn(() => makeStores()),
+          sleep: () => Promise.resolve(),
+        });
+        expect(runStage).toHaveBeenCalledTimes(3); // 1 + 2 retries
+        expect(console_.logs()).toContain("candle_freshness.degraded");
+      } finally {
+        console_.restore();
+      }
+    });
+
+    it("does not retry when retries are disabled or nothing is behind", async () => {
+      const console_ = captureConsole();
+      try {
+        const behind = vi.fn(
+          (): Promise<readonly CandleFreshnessPairSummary[]> => Promise.resolve([summary(true)]),
+        );
+        const sleep = vi.fn(() => Promise.resolve());
+        await freshenCandles(makeConfig(), {
+          env: { EXTERNAL_SIGNAL_API_KEY: "k", CANDLE_FRESHNESS_RETRY_ATTEMPTS: "0" },
+          runStage: behind,
+          buildStores: vi.fn(() => makeStores()),
+          sleep,
+        });
+        expect(behind).toHaveBeenCalledTimes(1);
+
+        const fresh = vi.fn(
+          (): Promise<readonly CandleFreshnessPairSummary[]> => Promise.resolve([summary(false)]),
+        );
+        await freshenCandles(makeConfig(), {
+          env: { EXTERNAL_SIGNAL_API_KEY: "k" },
+          runStage: fresh,
+          buildStores: vi.fn(() => makeStores()),
+          sleep,
+        });
+        expect(fresh).toHaveBeenCalledTimes(1);
+        expect(sleep).not.toHaveBeenCalled();
+      } finally {
+        console_.restore();
+      }
+    });
   });
 
   it("(c) catches a thrown stage error and resolves (fail-safe)", async () => {

@@ -107,7 +107,7 @@ export async function runCandleFreshnessStage(
   // provider's per-minute request budget (FCS serves all five in one call).
   const topUpOutcomes =
     topUpPairs.length > 0
-      ? await deps.chain.resolveLatest(topUpPairs, deps.decisionDate)
+      ? await deps.chain.resolveLatest(topUpPairs, deps.decisionDate, target)
       : new Map<Pair, ResolveOutcome>();
 
   // --- 3. Per pair: resolve (backfill if needed), ingest, encode, log. -----

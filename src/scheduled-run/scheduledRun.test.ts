@@ -122,9 +122,33 @@ describe("resolveDecisionDate", () => {
     expect(date).toBe("2024-03-15");
   });
 
-  it("defaults to the current UTC date when unset", () => {
-    const now = new Date(Date.UTC(2024, 2, 15, 21, 0, 0));
-    expect(resolveDecisionDate({}, now)).toBe("2024-03-15");
+  it("uses the NY date before the 17:00 NY close", () => {
+    // Fri 2024-03-15 16:59 EDT = 20:59Z
+    expect(resolveDecisionDate({}, new Date(Date.UTC(2024, 2, 15, 20, 59, 0)))).toBe("2024-03-15");
+    // Morning in the UK is still the same NY day
+    expect(resolveDecisionDate({}, new Date(Date.UTC(2024, 2, 15, 8, 0, 0)))).toBe("2024-03-15");
+  });
+
+  it("labels a run at/after the 17:00 NY close with the NEXT trading day", () => {
+    // Thu 2024-03-14 17:00 EDT = 21:00Z -> Fri 2024-03-15
+    expect(resolveDecisionDate({}, new Date(Date.UTC(2024, 2, 14, 21, 0, 0)))).toBe("2024-03-15");
+    // Fri 2024-03-15 17:00 EDT = 21:00Z -> Mon 2024-03-18
+    expect(resolveDecisionDate({}, new Date(Date.UTC(2024, 2, 15, 21, 0, 0)))).toBe("2024-03-18");
+    // 17:30 NY, and 23:30 NY after the UTC date rolls over, stay on the same label
+    expect(resolveDecisionDate({}, new Date(Date.UTC(2024, 2, 14, 21, 30, 0)))).toBe("2024-03-15");
+    expect(resolveDecisionDate({}, new Date(Date.UTC(2024, 2, 15, 3, 30, 0)))).toBe("2024-03-15");
+  });
+
+  it("follows the NY clock across DST (winter close is 22:00Z)", () => {
+    // Thu 2024-01-11 16:59 EST = 21:59Z (before) vs 17:00 EST = 22:00Z (after)
+    expect(resolveDecisionDate({}, new Date(Date.UTC(2024, 0, 11, 21, 59, 0)))).toBe("2024-01-11");
+    expect(resolveDecisionDate({}, new Date(Date.UTC(2024, 0, 11, 22, 0, 0)))).toBe("2024-01-12");
+  });
+
+  it("leaves a weekend NY date as-is so the weekday gate skips it", () => {
+    // Sat 2024-03-16 and Sun 2024-03-17, after 17:00 NY
+    expect(resolveDecisionDate({}, new Date(Date.UTC(2024, 2, 16, 22, 0, 0)))).toBe("2024-03-16");
+    expect(resolveDecisionDate({}, new Date(Date.UTC(2024, 2, 17, 22, 0, 0)))).toBe("2024-03-17");
   });
 
   it("rejects an invalid RUN_DECISION_DATE", () => {

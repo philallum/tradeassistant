@@ -44,9 +44,16 @@ export function isResolved(outcome: ResolveOutcome): outcome is ResolvedCandles 
 export interface ProviderChain {
   /** Ordered provider names (provenance; never secrets). */
   readonly providerNames: readonly string[];
+  /**
+   * Top-up. Candles dated at/after `asOf` are discarded. When `required` (the
+   * target Completed_Trading_Day) is given, a provider only wins a pair if its
+   * response includes a candle dated at/after `required`; otherwise the chain
+   * advances to the next provider.
+   */
   resolveLatest(
     pairs: readonly Pair[],
     asOf: TradingDate,
+    required?: TradingDate,
   ): Promise<ReadonlyMap<Pair, ResolveOutcome>>;
   resolveRange(
     pair: Pair,
@@ -58,6 +65,33 @@ export interface ProviderChain {
 /** A pair's candles are "usable" only when the array is non-empty. */
 function usable(candles: readonly RawCandle[]): boolean {
   return candles.length > 0;
+}
+
+/**
+ * Date-aware screening of a "latest" response.
+ *
+ * "Latest" endpoints can return the still-forming candle for the decision day
+ * (dated `asOf` or later), or an old candle the store already holds. Neither is
+ * a usable top-up. Candles dated at/after `asOf` are dropped (they would also
+ * trip the ingestion look-ahead guard for the whole batch), and when a
+ * `required` target date is supplied the response is only usable if it still
+ * contains a candle dated at/after it, so the chain advances to the next
+ * provider instead of accepting a stale win. ISO `YYYY-MM-DD` strings compare
+ * lexicographically.
+ */
+function screenLatest(
+  candles: readonly RawCandle[],
+  asOf: TradingDate,
+  required: TradingDate | undefined,
+): readonly RawCandle[] | undefined {
+  // A candle with no `date` cannot be verified as past-only, so it is not usable
+  // here (every real adapter sets `date`).
+  const past = candles.filter((c) => c.date !== undefined && c.date < asOf);
+  if (past.length === 0) return undefined;
+  if (required !== undefined && !past.some((c) => c.date !== undefined && c.date >= required)) {
+    return undefined;
+  }
+  return past;
 }
 
 /**
@@ -108,6 +142,7 @@ class ProviderChainImpl implements ProviderChain {
   async resolveLatest(
     pairs: readonly Pair[],
     asOf: TradingDate,
+    required?: TradingDate,
   ): Promise<ReadonlyMap<Pair, ResolveOutcome>> {
     const won = new Map<Pair, ResolvedCandles>();
     const lastError = new Map<Pair, OhlcFeedError>();
@@ -126,10 +161,14 @@ class ProviderChainImpl implements ProviderChain {
           lastError.set(pair, this.#missing(provider.name, pair));
           continue;
         }
-        if (result.ok && usable(result.value)) {
+        const screened =
+          result.ok && usable(result.value)
+            ? screenLatest(result.value, asOf, required)
+            : undefined;
+        if (result.ok && screened !== undefined) {
           // First-usable-wins: record the win and remove the pair from the
           // outstanding set so no later provider can overwrite it.
-          won.set(pair, { candles: result.value, provider: provider.name });
+          won.set(pair, { candles: screened, provider: provider.name });
           outstanding.delete(pair);
         } else {
           lastError.set(
