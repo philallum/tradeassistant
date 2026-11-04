@@ -1,16 +1,15 @@
 /**
  * The Dashboard_UI app shell (task 9.1).
  *
- * Composes the sticky {@link ControlBar} (Pair_Selector + Decision_Date selector + refresh
- * and "last updated"), and the single-window dashboard content, into one mobile-first layout
+ * Composes the sticky {@link ControlBar} (Decision_Date selector + refresh button, aligned
+ * on one row), and the single-window dashboard content, into one mobile-first layout
  * with no bottom tab bar (Req 1.1, 1.5, 1.6). When the `#/evaluation` hash route is open, it
  * renders the retained {@link GateTab} detail view with a back link instead (Req 8.3). It owns
  * the small amount of shell-level fetch state the header needs:
  *
  *   - the list of available Decision_Dates (from `GET /decision-dates`), which populates
  *     the Historical_Browse selector, and
- *   - the proxy's `lastUpdated` freshness marker + an in-flight flag for the refresh
- *     control.
+ *   - an in-flight flag for the refresh control.
  *
  * Refresh re-issues the shell fetch through the api client's cache-bust transform
  * (`{ bustCache: true }`), which appends `_r=<nonce>` and sends `Cache-Control: no-cache`
@@ -101,7 +100,6 @@ export function AppShell({ loadDecisionDates = defaultLoader }: AppShellProps): 
   const { date: browsedDate } = useSelection();
 
   const [datesState, setDatesState] = useState<DatesState>({ kind: "loading" });
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   // Bumped on each refresh so the routed tabs re-fetch with a cache-busting request
   // (Req 17.1, 17.2); the shell's own `/decision-dates` fetch busts cache on the same bump.
@@ -129,7 +127,6 @@ export function AppShell({ loadDecisionDates = defaultLoader }: AppShellProps): 
         );
         if (!mounted.current) return;
         setDatesState({ kind: "ready", dates: result.rows.map((r) => r.decision_date) });
-        setLastUpdated(result.lastUpdated);
       } catch (cause) {
         if (!mounted.current) return;
         // Non-secret message only (Req 14.2, 17.5): the api client already sanitizes its
@@ -182,12 +179,7 @@ export function AppShell({ loadDecisionDates = defaultLoader }: AppShellProps): 
         overflowX: "hidden",
       }}
     >
-      <ControlBar
-        dates={dates}
-        lastUpdated={lastUpdated}
-        isRefreshing={isRefreshing}
-        onRefresh={onRefresh}
-      />
+      <ControlBar dates={dates} isRefreshing={isRefreshing} onRefresh={onRefresh} />
 
       {/*
         Routed tab content with the shell-level loading / empty / error states layered in

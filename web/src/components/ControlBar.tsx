@@ -2,12 +2,13 @@
  * Zone 1 control bar for the single-window dashboard.
  *
  * Composes the {@link DateSelector} and {@link RefreshControl} under the document's single
- * `<h1>`. There is deliberately NO pair selector here: the All_Pairs_Strip below is the only
- * pair navigator, so the same choice is never offered twice. The bar is sticky
+ * `<h1>`, aligned on one horizontal row (the date selector on the left, the refresh button
+ * on the right). There is deliberately NO pair selector here: the All_Pairs_Strip below is
+ * the only pair navigator, so the same choice is never offered twice. The bar is sticky
  * (`position: sticky; top: 0`) so the controls stay reachable while the window scrolls.
  *
- * This is a thin, controlled view: the shell owns the dates, freshness marker, in-flight
- * flag and refresh callback and passes them down. Nothing is fetched or recomputed here.
+ * This is a thin, controlled view: the shell owns the dates, in-flight flag and refresh
+ * callback and passes them down. Nothing is fetched or recomputed here.
  */
 
 import { theme } from "../theme/darkTheme";
@@ -17,20 +18,13 @@ import { RefreshControl } from "./RefreshControl";
 export interface ControlBarProps {
   /** Available Decision_Dates for the date selector (may be empty). */
   readonly dates: readonly string[];
-  /** The proxy's freshness marker (ISO string) or `null` when nothing has loaded. */
-  readonly lastUpdated: string | null;
   /** True while a refresh (or initial load) is in flight. */
   readonly isRefreshing: boolean;
   /** Invoked when the viewer activates refresh. */
   readonly onRefresh: () => void;
 }
 
-export function ControlBar({
-  dates,
-  lastUpdated,
-  isRefreshing,
-  onRefresh,
-}: ControlBarProps): JSX.Element {
+export function ControlBar({ dates, isRefreshing, onRefresh }: ControlBarProps): JSX.Element {
   return (
     <header
       style={{
@@ -51,17 +45,16 @@ export function ControlBar({
         style={{
           display: "flex",
           flexWrap: "wrap",
+          // Align the date selector and the refresh button on their control row. The date
+          // selector carries a label above its <select>, so aligning to the end keeps both
+          // controls' boxes level along the bottom.
           alignItems: "flex-end",
           gap: theme.spacing.md,
         }}
       >
         <DateSelector dates={dates} />
         <div style={{ marginLeft: "auto" }}>
-          <RefreshControl
-            lastUpdated={lastUpdated}
-            isRefreshing={isRefreshing}
-            onRefresh={onRefresh}
-          />
+          <RefreshControl isRefreshing={isRefreshing} onRefresh={onRefresh} />
         </div>
       </div>
     </header>
