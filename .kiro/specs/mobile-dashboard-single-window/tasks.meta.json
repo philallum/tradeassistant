@@ -1,0 +1,766 @@
+{
+  "pbtResults": {
+    "1.8 Write property test for the backtest-edge pill": {
+      "status": "passed",
+      "lastRunTimestamp": 1793778864542
+    },
+    "1.6 Write property test for single-pair row selection": {
+      "status": "passed",
+      "lastRunTimestamp": 1793778924650
+    },
+    "1.3 Write property test for strip projection fidelity": {
+      "status": "passed",
+      "lastRunTimestamp": 1793778976442
+    },
+    "1.4 Write property test for strip ordering and cardinality": {
+      "status": "passed",
+      "lastRunTimestamp": 1793779039224
+    }
+  },
+  "executionHistory": {
+    "1.1 Create the single-source \"no signal\" copy constant": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778620488
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778638830
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778796785
+      }
+    ],
+    "1.2 Implement `shapeAllPairsStrip`": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778621168
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778818845
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778935555
+      }
+    ],
+    "1.3 Write property test for strip projection fidelity": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778622110
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778940874
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778997508
+      }
+    ],
+    "1.4 Write property test for strip ordering and cardinality": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778622627
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793779002377
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793779047988
+      }
+    ],
+    "1.5 Implement `selectPairConfluenceRow`": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778622987
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778639569
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778798262
+      }
+    ],
+    "1.6 Write property test for single-pair row selection": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778623357
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778823886
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778934779
+      }
+    ],
+    "1.7 Implement `shapeBacktestEdge`": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778623726
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778640717
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778797707
+      }
+    ],
+    "1.8 Write property test for the backtest-edge pill": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778624044
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778824218
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778934088
+      }
+    ],
+    "1.9 Implement `resolveWindowSelection`": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778624491
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778641172
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778796264
+      }
+    ],
+    "2.1 Implement `Accordion`": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778624859
+      },
+      {
+        "executionId": "03de3beb-d285-43da-ae06-78da85a03b58",
+        "chatSessionId": "sess_8208d31a-be9d-426c-9b96-5328ff86a419",
+        "timestamp": 1793779203525
+      },
+      {
+        "executionId": "03de3beb-d285-43da-ae06-78da85a03b58",
+        "chatSessionId": "sess_8208d31a-be9d-426c-9b96-5328ff86a419",
+        "timestamp": 1793779344514
+      }
+    ],
+    "2.2 Implement `ContextDrawers`": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778625255
+      },
+      {
+        "executionId": "03de3beb-d285-43da-ae06-78da85a03b58",
+        "chatSessionId": "sess_8208d31a-be9d-426c-9b96-5328ff86a419",
+        "timestamp": 1793779365596
+      },
+      {
+        "executionId": "03de3beb-d285-43da-ae06-78da85a03b58",
+        "chatSessionId": "sess_8208d31a-be9d-426c-9b96-5328ff86a419",
+        "timestamp": 1793779571038
+      }
+    ],
+    "2.4 Implement `BacktestEdgePill`": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778625563
+      },
+      {
+        "executionId": "03de3beb-d285-43da-ae06-78da85a03b58",
+        "chatSessionId": "sess_8208d31a-be9d-426c-9b96-5328ff86a419",
+        "timestamp": 1793779366736
+      },
+      {
+        "executionId": "03de3beb-d285-43da-ae06-78da85a03b58",
+        "chatSessionId": "sess_8208d31a-be9d-426c-9b96-5328ff86a419",
+        "timestamp": 1793779570748
+      }
+    ],
+    "2.5 Implement `VerdictBanner`": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778625947
+      },
+      {
+        "executionId": "03de3beb-d285-43da-ae06-78da85a03b58",
+        "chatSessionId": "sess_8208d31a-be9d-426c-9b96-5328ff86a419",
+        "timestamp": 1793779203182
+      },
+      {
+        "executionId": "03de3beb-d285-43da-ae06-78da85a03b58",
+        "chatSessionId": "sess_8208d31a-be9d-426c-9b96-5328ff86a419",
+        "timestamp": 1793779345039
+      }
+    ],
+    "2.7 Implement `PairConfluenceMatrix`": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778626327
+      },
+      {
+        "executionId": "03de3beb-d285-43da-ae06-78da85a03b58",
+        "chatSessionId": "sess_8208d31a-be9d-426c-9b96-5328ff86a419",
+        "timestamp": 1793779367281
+      },
+      {
+        "executionId": "03de3beb-d285-43da-ae06-78da85a03b58",
+        "chatSessionId": "sess_8208d31a-be9d-426c-9b96-5328ff86a419",
+        "timestamp": 1793779571588
+      }
+    ],
+    "2.9 Implement `AllPairsStrip`": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778626725
+      },
+      {
+        "executionId": "03de3beb-d285-43da-ae06-78da85a03b58",
+        "chatSessionId": "sess_8208d31a-be9d-426c-9b96-5328ff86a419",
+        "timestamp": 1793779571951
+      },
+      {
+        "executionId": "03de3beb-d285-43da-ae06-78da85a03b58",
+        "chatSessionId": "sess_8208d31a-be9d-426c-9b96-5328ff86a419",
+        "timestamp": 1793780410156
+      }
+    ],
+    "2.11 Implement `ControlBar`": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778627104
+      },
+      {
+        "executionId": "03de3beb-d285-43da-ae06-78da85a03b58",
+        "chatSessionId": "sess_8208d31a-be9d-426c-9b96-5328ff86a419",
+        "timestamp": 1793779203810
+      },
+      {
+        "executionId": "03de3beb-d285-43da-ae06-78da85a03b58",
+        "chatSessionId": "sess_8208d31a-be9d-426c-9b96-5328ff86a419",
+        "timestamp": 1793779345424
+      }
+    ],
+    "2.13 Implement `MasterCard`": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778627479
+      },
+      {
+        "executionId": "03de3beb-d285-43da-ae06-78da85a03b58",
+        "chatSessionId": "sess_8208d31a-be9d-426c-9b96-5328ff86a419",
+        "timestamp": 1793779572376
+      },
+      {
+        "executionId": "03de3beb-d285-43da-ae06-78da85a03b58",
+        "chatSessionId": "sess_8208d31a-be9d-426c-9b96-5328ff86a419",
+        "timestamp": 1793780410782
+      }
+    ],
+    "3. Checkpoint - Components and helpers green": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778627733
+      },
+      {
+        "executionId": "1359d19b-0dc9-4a43-bdd4-417035def5d7",
+        "chatSessionId": "sess_8208d31a-be9d-426c-9b96-5328ff86a419",
+        "timestamp": 1793780555342
+      },
+      {
+        "executionId": "1359d19b-0dc9-4a43-bdd4-417035def5d7",
+        "chatSessionId": "sess_8208d31a-be9d-426c-9b96-5328ff86a419",
+        "timestamp": 1793780635897
+      }
+    ],
+    "4.1 Implement a timeout-race helper": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778628075
+      },
+      {
+        "executionId": "7f163ee3-9ddd-41ad-b994-507d72f85a82",
+        "chatSessionId": "sess_92ccdbac-1839-4bba-b52b-2f4d6a7376d0",
+        "timestamp": 1793780681982
+      },
+      {
+        "executionId": "7f163ee3-9ddd-41ad-b994-507d72f85a82",
+        "chatSessionId": "sess_92ccdbac-1839-4bba-b52b-2f4d6a7376d0",
+        "timestamp": 1793780750780
+      }
+    ],
+    "4.3 Implement the `SingleWindowShell` load state machine": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778628375
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781827903
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793782388509
+      }
+    ],
+    "4.4 Compose the ready state from the existing shapers": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778628934
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793782392777
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793782522805
+      }
+    ],
+    "4.5 Keep the last good card during refresh and failed refresh": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778629501
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793782526638
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793782627809
+      }
+    ],
+    "5.1 Render the explicit no-signal state in the banner and strip": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778629981
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793782633856
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793782844236
+      }
+    ],
+    "6.1 Add the evaluation-detail route": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778630327
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781032925
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781110097
+      }
+    ],
+    "6.3 Wire `SingleWindowShell` into `AppShell` and remove the tab bar from the render tree": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778630764
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793782848589
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793783060209
+      }
+    ],
+    "6.4 Update and retire tests that assert the old tab bar": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778631334
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793783065152
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793783536915
+      }
+    ],
+    "6.5 Delete `BottomTabBar.tsx` and the `TabRouter` five-way switch": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778631833
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793783546687
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793783641493
+      }
+    ],
+    "7.1 Write the data-invariance guard test": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778632336
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781182599
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781413605
+      }
+    ],
+    "8. Final checkpoint - Full verification": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778632694
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793783679647
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793783941604
+      }
+    ],
+    "1.10 Write property tests for `resolveWindowSelection`": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778941228
+      },
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793778998115
+      }
+    ],
+    "1. Pure helpers (unwired)": [
+      {
+        "executionId": "59f0a09b-eedc-47c6-926f-55195ce9f3eb",
+        "chatSessionId": "sess_388ae985-a196-4f10-ada8-ab511092073e",
+        "timestamp": 1793779048388
+      }
+    ],
+    "2.3 Write DOM tests for `Accordion` and `ContextDrawers`": [
+      {
+        "executionId": "7f163ee3-9ddd-41ad-b994-507d72f85a82",
+        "chatSessionId": "sess_92ccdbac-1839-4bba-b52b-2f4d6a7376d0",
+        "timestamp": 1793780762403
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781466399
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781821706
+      }
+    ],
+    "2.6 Write DOM tests for `BacktestEdgePill` and `VerdictBanner`": [
+      {
+        "executionId": "7f163ee3-9ddd-41ad-b994-507d72f85a82",
+        "chatSessionId": "sess_92ccdbac-1839-4bba-b52b-2f4d6a7376d0",
+        "timestamp": 1793780762924
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781466880
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781821033
+      }
+    ],
+    "2.8 Write DOM tests for `PairConfluenceMatrix`": [
+      {
+        "executionId": "7f163ee3-9ddd-41ad-b994-507d72f85a82",
+        "chatSessionId": "sess_92ccdbac-1839-4bba-b52b-2f4d6a7376d0",
+        "timestamp": 1793780763390
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781467442
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781819998
+      }
+    ],
+    "2.10 Write DOM tests for `AllPairsStrip`": [
+      {
+        "executionId": "7f163ee3-9ddd-41ad-b994-507d72f85a82",
+        "chatSessionId": "sess_92ccdbac-1839-4bba-b52b-2f4d6a7376d0",
+        "timestamp": 1793780764222
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781826456
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793782385681
+      }
+    ],
+    "2.12 Write DOM tests for `ControlBar`": [
+      {
+        "executionId": "7f163ee3-9ddd-41ad-b994-507d72f85a82",
+        "chatSessionId": "sess_92ccdbac-1839-4bba-b52b-2f4d6a7376d0",
+        "timestamp": 1793780764970
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781418213
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781457865
+      }
+    ],
+    "2.14 Write DOM tests for `MasterCard`": [
+      {
+        "executionId": "7f163ee3-9ddd-41ad-b994-507d72f85a82",
+        "chatSessionId": "sess_92ccdbac-1839-4bba-b52b-2f4d6a7376d0",
+        "timestamp": 1793780765396
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781827146
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793782384940
+      }
+    ],
+    "4.2 Write unit tests for `withTimeout`": [
+      {
+        "executionId": "7f163ee3-9ddd-41ad-b994-507d72f85a82",
+        "chatSessionId": "sess_92ccdbac-1839-4bba-b52b-2f4d6a7376d0",
+        "timestamp": 1793780765891
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781419059
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781459291
+      }
+    ],
+    "4.6 Write DOM tests for the shell load state machine": [
+      {
+        "executionId": "7f163ee3-9ddd-41ad-b994-507d72f85a82",
+        "chatSessionId": "sess_92ccdbac-1839-4bba-b52b-2f4d6a7376d0",
+        "timestamp": 1793780766340
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793782634077
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793782843256
+      }
+    ],
+    "4.7 Write DOM tests for selection defaulting and last-good-card retention": [
+      {
+        "executionId": "7f163ee3-9ddd-41ad-b994-507d72f85a82",
+        "chatSessionId": "sess_92ccdbac-1839-4bba-b52b-2f4d6a7376d0",
+        "timestamp": 1793780766876
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793782634414
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793782843474
+      }
+    ],
+    "5.2 Write DOM tests for the no-signal state": [
+      {
+        "executionId": "7f163ee3-9ddd-41ad-b994-507d72f85a82",
+        "chatSessionId": "sess_92ccdbac-1839-4bba-b52b-2f4d6a7376d0",
+        "timestamp": 1793780767249
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793782849354
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793783061717
+      }
+    ],
+    "6.2 Write tests for the evaluation-detail route helper": [
+      {
+        "executionId": "7f163ee3-9ddd-41ad-b994-507d72f85a82",
+        "chatSessionId": "sess_92ccdbac-1839-4bba-b52b-2f4d6a7376d0",
+        "timestamp": 1793780767634
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781419810
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793781458661
+      }
+    ],
+    "7.2 Write the render-fidelity property test": [
+      {
+        "executionId": "7f163ee3-9ddd-41ad-b994-507d72f85a82",
+        "chatSessionId": "sess_92ccdbac-1839-4bba-b52b-2f4d6a7376d0",
+        "timestamp": 1793780768095
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793782850804
+      },
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793783060596
+      }
+    ],
+    "2. Presentational components (unwired)": [
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793782386805
+      }
+    ],
+    "4. SingleWindowShell (unwired)": [
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793782843656
+      }
+    ],
+    "7. Data-invariance guards": [
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793783062030
+      }
+    ],
+    "6. Wire in and retire the old tab shell": [
+      {
+        "executionId": "16c436ce-ca5a-4048-9cb2-8947b75d0695",
+        "chatSessionId": "sess_b5587488-ebfc-430d-a5aa-1449053510ca",
+        "timestamp": 1793783641956
+      }
+    ]
+  }
+}

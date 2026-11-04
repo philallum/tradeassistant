@@ -4,6 +4,8 @@
 
 ## 8. Immediate next steps
 
+0. `mobile-dashboard-single-window` — COMPLETE locally (all 48 tasks; web build + 394 tests + root `npm run check` green). NEXT: operator confirms the OPEN no-fire-pair wording (`pure/noSignalCopy.ts`), checks why four other `.kiro/specs/` dirs show as deleted in the working tree, then merges dev->main to deploy (web/ only).
+
 1. DONE + LIVE-VERIFIED — `multi-strategy-confluence-engine` is COMPLETE
    locally (all 91 tasks `[x]`; task 26 unified `make check` exit 0) AND the
    backend confluence v5 producer is CONFIRMED DEPLOYED: the 2026-11-07 live

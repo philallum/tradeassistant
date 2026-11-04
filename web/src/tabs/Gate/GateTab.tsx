@@ -12,8 +12,8 @@
  * a persisted report row (R1.2, 20.1); the pure helpers in `./format` and `./selectReport`
  * only format and SELECT, never derive.
  *
- * ARIA: the panel keeps `role="tabpanel"`, is associated with its tab button via
- * `aria-labelledby="tab-gate"`, and renders a single `<h2>` under the app's single `<h1>`.
+ * ARIA: the panel is a `role="region"` landmark (there is no tab bar), is named by its own heading via
+ * `aria-labelledby="gate-heading"` (the tab bar is gone), and renders a single `<h2>` under the app's single `<h1>`.
  *
  * The report loader is injected so the tab renders and is testable without a live network;
  * it defaults to reading the shared snapshot.
@@ -119,9 +119,9 @@ export function GateTab({
 
   return (
     <section
-      role="tabpanel"
-      id="tabpanel-gate"
-      aria-labelledby="tab-gate"
+      role="region"
+      id="gate-panel"
+      aria-labelledby="gate-heading"
       tabIndex={0}
       style={{
         padding: theme.spacing.lg,
@@ -131,7 +131,9 @@ export function GateTab({
         color: theme.colors.textSecondary,
       }}
     >
-      <h2 style={{ color: theme.colors.textPrimary, marginTop: 0 }}>Evaluation</h2>
+      <h2 id="gate-heading" style={{ color: theme.colors.textPrimary, marginTop: 0 }}>
+        Evaluation
+      </h2>
 
       {state.kind === "loading" && (
         <p role="status" aria-live="polite" style={{ margin: 0 }}>
