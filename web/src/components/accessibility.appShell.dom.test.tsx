@@ -11,8 +11,9 @@
 // Covered here (the chrome):
 //   - No tab bar: the rendered tree has no `tablist` / `tab` roles and no bottom-navigation
 //     landmark (Req 1.1, 1.5).
-//   - Selectors + refresh: the Pair_Selector, the Decision_Date (Historical_Browse) selector,
-//     and the refresh control all expose accessible names/labels (Req 12.1, 12.6).
+//   - Selectors + refresh: the Decision_Date (Historical_Browse) selector and the refresh
+//     control expose accessible names/labels; there is NO pair selector (the All_Pairs_Strip is
+//     the only pair navigator) (Req 12.1, 12.6).
 //   - Semantic document structure: exactly ONE top-level `<h1>` inside the `banner` header
 //     (Req 12.1).
 //   - Tap-target sizing: the selector controls, the refresh button and the error-state retry
@@ -76,7 +77,7 @@ const MIN_TAP_TARGET_PX = 44;
 
 describe("AppShell a11y — no tab bar (Req 1.1, 1.5)", () => {
   it("renders no tablist, tab, or bottom-navigation landmark", async () => {
-    await renderShell({ pair: "ALL", date: "2026-09-16" });
+    await renderShell({ pair: "EURUSD", date: "2026-09-16" });
 
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(screen.queryAllByRole("tab")).toHaveLength(0);
@@ -87,13 +88,12 @@ describe("AppShell a11y — no tab bar (Req 1.1, 1.5)", () => {
 });
 
 describe("AppShell a11y — selectors + refresh accessible names (Req 12.1, 12.6)", () => {
-  it("labels the Pair_Selector, the Decision_Date selector, and the refresh control", async () => {
-    // Narrow viewport is the default jsdom media state → the Pair_Selector renders as a
-    // native <select> with the "Currency pair" accessible name.
-    await renderShell({ pair: "ALL", date: "2026-09-16" });
+  it("labels the Decision_Date selector and the refresh control, and offers no pair selector", async () => {
+    await renderShell({ pair: "EURUSD", date: "2026-09-16" });
 
-    // Pair selector (combobox on narrow viewports) carries an accessible name.
-    expect(screen.getByRole("combobox", { name: /Currency pair/i })).toBeTruthy();
+    // The pair dropdown / segmented control is gone: the strip is the only pair navigator.
+    expect(screen.queryByRole("combobox", { name: /Currency pair/i })).toBeNull();
+    expect(screen.queryByRole("radiogroup", { name: /Currency pair/i })).toBeNull();
     // Decision_Date (Historical_Browse) selector carries an accessible name.
     expect(
       screen.getByRole("combobox", { name: /Decision date \(historical browse\)/i }),
@@ -105,7 +105,7 @@ describe("AppShell a11y — selectors + refresh accessible names (Req 12.1, 12.6
 
 describe("AppShell a11y — semantic document structure (Req 12.1)", () => {
   it("renders exactly one top-level heading (h1)", async () => {
-    await renderShell({ pair: "ALL", date: "2026-09-16" });
+    await renderShell({ pair: "EURUSD", date: "2026-09-16" });
 
     const h1s = screen.getAllByRole("heading", { level: 1 });
     expect(h1s).toHaveLength(1);
@@ -113,7 +113,7 @@ describe("AppShell a11y — semantic document structure (Req 12.1)", () => {
   });
 
   it("exposes a banner header that contains the single h1", async () => {
-    await renderShell({ pair: "ALL", date: "2026-09-16" });
+    await renderShell({ pair: "EURUSD", date: "2026-09-16" });
 
     const banner = screen.getByRole("banner");
     expect(within(banner).getByRole("heading", { level: 1 })).toBeTruthy();
@@ -121,16 +121,14 @@ describe("AppShell a11y — semantic document structure (Req 12.1)", () => {
 });
 
 describe("AppShell a11y — tap-target sizing (Req 12.4)", () => {
-  it("sizes the selector controls and the refresh button to at least the minimum tap target", async () => {
-    await renderShell({ pair: "ALL", date: "2026-09-16" });
+  it("sizes the date selector and the refresh button to at least the minimum tap target", async () => {
+    await renderShell({ pair: "EURUSD", date: "2026-09-16" });
 
-    const pair = screen.getByRole("combobox", { name: /Currency pair/i });
     const date = screen.getByRole("combobox", {
       name: /Decision date \(historical browse\)/i,
     });
     const refresh = screen.getByRole("button", { name: /Refresh data/i });
 
-    expect(pxValue(pair as HTMLElement, "minHeight")).toBeGreaterThanOrEqual(MIN_TAP_TARGET_PX);
     expect(pxValue(date as HTMLElement, "minHeight")).toBeGreaterThanOrEqual(MIN_TAP_TARGET_PX);
     expect(pxValue(refresh, "minHeight")).toBeGreaterThanOrEqual(MIN_TAP_TARGET_PX);
   });
@@ -141,7 +139,7 @@ describe("AppShell a11y — tap-target sizing (Req 12.4)", () => {
     const failing: DecisionDatesLoader = () =>
       Promise.reject(new Error("The dashboard data could not be loaded."));
     render(
-      <SelectionProvider initialState={{ pair: "ALL", date: "2026-09-16" }}>
+      <SelectionProvider initialState={{ pair: "EURUSD", date: "2026-09-16" }}>
         <AppShell loadDecisionDates={failing} />
       </SelectionProvider>,
     );

@@ -8,11 +8,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { EMPTY_CONFLUENCE } from "../api/snapshot";
+import { EMPTY_CONFLUENCE, EMPTY_TRACK_RECORD } from "../api/snapshot";
 import type { FiringSetupRow, Pair } from "../api/types";
 import { SelectionProvider, type SelectionState } from "../state/selection";
-import type { SetupsEvidence } from "../tabs/Setups/SetupsTab";
-import { SingleWindowShell } from "./SingleWindowShell";
+import { SingleWindowShell, type WindowEvidence } from "./SingleWindowShell";
 
 const DATE = "2026-02-01";
 
@@ -32,11 +31,10 @@ function firing(pair: Pair): FiringSetupRow {
 }
 
 const ROWS = [firing("EURUSD"), firing("GBPUSD")];
-const EVIDENCE: SetupsEvidence = {
+const EVIDENCE: WindowEvidence = {
   analogueOutcomes: [],
-  tradeLedgerSummary: { window: null, strategies: [] },
-  provenance: [],
-  validationStatus: [],
+  pairEvaluations: [],
+  trackRecord: EMPTY_TRACK_RECORD,
 };
 
 interface Loaders {
@@ -107,11 +105,19 @@ afterEach(() => {
 });
 
 describe("SingleWindowShell selection defaulting (Req 2.6, 10.3)", () => {
-  it("maps the ALL sentinel to EURUSD", async () => {
-    render(wrap(shell(makeLoaders(), 0), { pair: "ALL", date: DATE }));
+  it("resolves a legacy ?pair=ALL deep link to EURUSD and says so", async () => {
+    setUrl(`?pair=ALL&date=${DATE}`);
+    render(wrap(shell(makeLoaders(), 0)));
     await waitReady();
     expect(selectedPair()).toBe("EURUSD");
     expect(screen.getByTestId("master-card").getAttribute("aria-label")).toContain("EURUSD");
+    expect(screen.getByText(/requested selection was unavailable/i)).toBeTruthy();
+  });
+
+  it("defaults to EURUSD when no pair is selected at all", async () => {
+    render(wrap(shell(makeLoaders(), 0)));
+    await waitReady();
+    expect(selectedPair()).toBe("EURUSD");
   });
 
   it("defaults an invalid pair to EURUSD while retaining the valid date", async () => {

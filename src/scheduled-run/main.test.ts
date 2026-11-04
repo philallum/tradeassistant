@@ -32,6 +32,7 @@ import type { SupabaseConfig } from "../storage/supabaseConfig.js";
 import { makePersistView } from "./main.js";
 import {
   EMPTY_CONFLUENCE,
+  EMPTY_TRACK_RECORD,
   type DashboardSnapshot,
   type SnapshotConfluenceSlice,
 } from "./snapshot.js";
@@ -219,6 +220,7 @@ describe("makePersistView — confluence wiring is fail-safe and firing-neutral 
         }
         return Promise.resolve(NON_EMPTY_SLICE);
       },
+      buildTrackRecord: () => Promise.resolve(EMPTY_TRACK_RECORD),
       // Capture the assembled snapshot without writing anywhere.
       writeSnapshot: (snap) => {
         snapshot = snap;
@@ -267,5 +269,85 @@ describe("makePersistView — confluence wiring is fail-safe and firing-neutral 
     expect(ok.snapshot?.confluence).toEqual(NON_EMPTY_SLICE);
     // The success path emits no confluence warning.
     expect(ok.warnings.some((w) => w.startsWith("confluence_slice:"))).toBe(false);
+  });
+});
+
+// --- v6 track-record step is fail-safe and firing-neutral ---------------------------------
+
+describe("makePersistView — track-record wiring is fail-safe and firing-neutral", () => {
+  const DECISION_DATE = "2024-03-15";
+  const SUPABASE: SupabaseConfig = { target: "local", url: "http://unused", key: "unused" };
+
+  function firingEvaluation(pair: PairEvaluation["pair"]): PairEvaluation {
+    return {
+      pair,
+      direction: "UP",
+      earnedConfidence: 0.9 as Confidence,
+      horizon: 2,
+      excursionProfile: { favorablePips: 40, adversePips: 15 },
+      stopLossPips: 15,
+      takeProfitPips: 40,
+      choppiness: 0.8,
+      rationale: "r",
+      analogueLabels: ["a"],
+    };
+  }
+
+  async function run(behaviour: "succeed" | "throw") {
+    const evaluations = [firingEvaluation("EURUSD")];
+    const view = dailyRun(DECISION_DATE, evaluations);
+    let persistedView: DashboardView | undefined;
+    let snapshot: DashboardSnapshot | undefined;
+    const warnings: string[] = [];
+    const record = {
+      lookbackDays: 60,
+      strategies: [{ pair: "EURUSD", strategyId: "trend" as const, calls: 10, correct: 6 }],
+      rangeForecast: [{ pair: "EURUSD", forecasts: 5, correct: 3 }],
+    };
+    const persist = makePersistView({
+      cached: { get: () => evaluations },
+      displayDeps: {},
+      snapshotSink: undefined,
+      persist: (v) => {
+        persistedView = v;
+        return Promise.resolve();
+      },
+      buildDisplay: () => Promise.resolve(undefined),
+      loadHistory: () => Promise.resolve({}),
+      buildEdge: () => Promise.resolve({}),
+      buildConfluence: () => Promise.resolve(EMPTY_CONFLUENCE),
+      buildTrackRecord: () => {
+        if (behaviour === "throw") throw new Error("track boom");
+        return Promise.resolve(record);
+      },
+      writeSnapshot: (snap) => {
+        snapshot = snap;
+        return Promise.resolve(true);
+      },
+      warn: (collaborator, err) => {
+        warnings.push(`${collaborator}:${err instanceof Error ? err.message : String(err)}`);
+      },
+    });
+    await persist(view, SUPABASE);
+    return { persistedView, snapshot, warnings, record };
+  }
+
+  it("persists the identical firing view whether the track record succeeds or throws", async () => {
+    const ok = await run("succeed");
+    const boom = await run("throw");
+    expect(boom.persistedView).toEqual(ok.persistedView);
+    expect(boom.snapshot?.firingSetups).toEqual(ok.snapshot?.firingSetups);
+  });
+
+  it("degrades to EMPTY_TRACK_RECORD, still publishes, and warns secret-free when it throws", async () => {
+    const boom = await run("throw");
+    expect(boom.snapshot).toBeDefined();
+    expect(boom.snapshot?.trackRecord).toEqual(EMPTY_TRACK_RECORD);
+    expect(boom.warnings.some((w) => w.startsWith("track_record:"))).toBe(true);
+  });
+
+  it("carries the real track-record slice through when the step succeeds", async () => {
+    const ok = await run("succeed");
+    expect(ok.snapshot?.trackRecord).toEqual(ok.record);
   });
 });

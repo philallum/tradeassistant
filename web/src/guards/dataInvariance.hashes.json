@@ -1,11 +1,5 @@
 {
-  "_comment": "sha256 of each protected file's byte content at the base commit of the mobile-dashboard-single-window refactor. If a FUTURE, DELIBERATE change ever touches one of these files, this fixture MUST be regenerated and committed in the SAME commit as that change, with an explicit justification in the commit message/PR description. Do not update this file to silence a failing test without that justification.",
-  "pure/shapeDashboard.ts": "6f11d4e4401ef40c7001385e13e3773f6a5814ebc0d7c22781394fa0dcd6a37e",
-  "pure/shapeConfluence.ts": "0552e22fffa8949c951c07242d5c4c26a13100d8080c23e3b52f34dccc8a44ff",
-  "pure/shapeSetupTrades.ts": "c45dd4af1f271533aa4d8c2d44c7286779b0fd8bb5769bd451e4e9264415af29",
-  "pure/shapeEvidence.ts": "95d917e0dec1593fc9a4eb5101a0e94f51e157b76c9fb3548215f10aa70ce0ca",
+  "_comment": "sha256 of each protected file's byte content at the base commit of the mobile-dashboard-single-window refactor. If a FUTURE, DELIBERATE change ever touches one of these files, this fixture MUST be regenerated and committed in the SAME commit as that change, with an explicit justification in the commit message/PR description. Do not update this file to silence a failing test without that justification. dashboard-simplification (2026-11) DELIBERATELY removed or rewrote shapeDashboard, shapeConfluence, shapeSetupTrades, shapeEvidence, confluenceNav and state/selection (stop-loss/take-profit/expectancy removal, the All-pairs selection removal, conviction tiers) and dropped them from this guard; format.ts and shapeDailyNote.ts are unchanged and remain pinned.",
   "pure/shapeDailyNote.ts": "122ea2f09d478eefab7c275145d234c5d204c02dabac67813e86c6f45afc1004",
-  "pure/confluenceNav.ts": "3e2c60e99ec0f1cfd99830693178639a49d694df02df8f34a6734cf368f3c8df",
-  "pure/format.ts": "b3b5c2ecbee1efb9b6216b51750442d49f5fa36166d0cbed40c9b74a735ea400",
-  "state/selection.ts": "bfb43d4a73a904f0d2ec554b2e95696b2c65047c2c93765552f78c6c9dfd508f"
+  "pure/format.ts": "b3b5c2ecbee1efb9b6216b51750442d49f5fa36166d0cbed40c9b74a735ea400"
 }

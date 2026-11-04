@@ -96,6 +96,17 @@ describe("edge-eval operator entry (task 20)", () => {
     expect(await docStore.read(LIVING_DOCS.state)).toBe("STATE-ORIGINAL");
   });
 
+  it("records the after-cost figures in RESEARCH-LOG (they are no longer shown in the UI)", async () => {
+    // dashboard-simplification: net expectancy, drawdown and the comparator table were removed
+    // from every UI surface, so each evaluation run must keep them readable here.
+    const { deps, docStore } = await setup();
+    await runEdgeEval(deps);
+    const log = (await docStore.read(LIVING_DOCS.researchLog)) ?? "";
+    expect(log).toMatch(/Pooled independent OOS \(net of costs\):.*netExpectancyPips=-?\d/);
+    expect(log).toMatch(/maxDrawdownPips=/);
+    expect(log).toMatch(/Comparators: .*system/);
+  });
+
   it("does not fabricate a result when no candles are stored", async () => {
     const { deps, docStore, frozen } = await setup(false);
     const result = await runEdgeEval(deps);

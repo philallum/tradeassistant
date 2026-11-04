@@ -3,6 +3,7 @@
 > Satellite of PROJECT-STATE.md (§8). The live to-do / what-comes-next list.
 
 ## 8. Immediate next steps
+0a. `dashboard-simplification` — IMPLEMENTED locally (see CHANGELOG 2026-11-04); not committed/deployed. NEXT: operator reviews the diff (127 changed/deleted files incl. the legacy-tab deletions), then dev->main to deploy backend (schema v6, `trackRecord`, `expectedRange`, conflict 0.5) and web together; first run after deploy should be watched for Job duration (RISKS: track-record cost). Then decide on the analogue FLAT dead-band units fix (RISKS finding 1; ☁️ re-resolve needed) and remove the unused `recharts` dependency. Re-run `node dist/ops/confluence-calibration/main.js` (after `npm run build`) once the pattern signal can be replayed, to re-check thresholds.
 
 0. `mobile-dashboard-single-window` — COMPLETE locally (all 48 tasks; web build + 394 tests + root `npm run check` green). NEXT: operator confirms the OPEN no-fire-pair wording (`pure/noSignalCopy.ts`), checks why four other `.kiro/specs/` dirs show as deleted in the working tree, then merges dev->main to deploy (web/ only).
 

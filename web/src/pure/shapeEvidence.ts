@@ -1,78 +1,40 @@
 /**
- * Pure shaper for the "historical evidence" block shown BEFORE any AI commentary
- * (trader-edge-validation R10.4, R10.7).
+ * Pure shaper for the collapsed "historical evidence" drawer: the pair's own recent matured
+ * outcomes at the pattern engine's horizon, as a plain base rate (how often it went up, how
+ * often down). It is the coin-flip reference a trader should hold any reading against.
  *
- * Per firing card it tallies the matured analogues for the pair+horizon and classifies each
- * by what its excursion profile reached relative to the card's own SL/TP: target only, stop
- * only, both (order not resolvable from MFE/MAE alone, reported honestly as ambiguous),
- * or neither. It also carries the system's measured, path-resolved ledger line (win rate,
- * ambiguous/expired share, trade count) when the v4 ledger summary exists.
- *
- * Pure and presentation-only: no fetch, DOM, clock, or core import; recomputes no firing or
- * scoring — simple tallies of snapshot rows.
+ * Pure and presentation-only: no fetch, DOM, clock, or core import; simple tallies of the
+ * snapshot's analogue-outcome rows. It shows no stop-loss, take-profit or expectancy figure.
  */
-import type { AnalogueOutcomeRow, PerformanceSummaryRow, TradeLedgerSummary } from "../api/types";
-import type { CardVM } from "./shapeDashboard";
+import type { AnalogueOutcomeRow, Horizon } from "../api/types";
 
 export interface EvidenceVM {
   readonly pair: string;
-  readonly horizon: number;
-  readonly analogueCount: number;
-  /** Analogues whose excursion reached the take-profit distance but not the stop. */
-  readonly targetOnly: number;
-  /** Analogues whose excursion reached the stop distance but not the target. */
-  readonly stopOnly: number;
-  /** Reached both levels; the order is unresolved from MFE/MAE, so reported as ambiguous. */
-  readonly ambiguous: number;
-  /** Reached neither level within the horizon. */
-  readonly neither: number;
-  /** False when the card has no SL/TP, so outcomes cannot be classified. */
-  readonly classifiable: boolean;
-  /** The system's path-resolved ledger line, or null when not measured. */
-  readonly ledger: PerformanceSummaryRow | null;
+  readonly horizon: Horizon;
+  /** Matured outcomes counted for this pair at this horizon. */
+  readonly sampleCount: number;
+  /** Share (0..1) that went up / down; null when there are no matured outcomes. */
+  readonly upShare: number | null;
+  readonly downShare: number | null;
 }
 
 export interface EvidenceInput {
-  readonly cards: readonly CardVM[];
+  readonly pair: string;
+  readonly horizon: Horizon;
   readonly analogueOutcomes: readonly AnalogueOutcomeRow[];
-  readonly tradeLedgerSummary: TradeLedgerSummary;
 }
 
-export function shapeEvidence(input: EvidenceInput): readonly EvidenceVM[] {
-  const system = input.tradeLedgerSummary.strategies.find((s) => s.role === "system");
-  const ledger = system !== undefined && system.summary.tradeCount > 0 ? system.summary : null;
-
-  return input.cards.map((card) => {
-    const analogues = input.analogueOutcomes.filter(
-      (a) => a.asset === card.pair && a.horizon === card.horizon && a.matured,
-    );
-    const sl = card.stopLossPips;
-    const tp = card.takeProfitPips;
-    const classifiable = sl !== null && tp !== null;
-    let targetOnly = 0;
-    let stopOnly = 0;
-    let ambiguous = 0;
-    let neither = 0;
-    if (classifiable) {
-      for (const a of analogues) {
-        const hitTp = a.mfe_pips >= tp;
-        const hitSl = a.mae_pips >= sl;
-        if (hitTp && hitSl) ambiguous += 1;
-        else if (hitTp) targetOnly += 1;
-        else if (hitSl) stopOnly += 1;
-        else neither += 1;
-      }
-    }
-    return {
-      pair: card.pair,
-      horizon: card.horizon,
-      analogueCount: analogues.length,
-      targetOnly,
-      stopOnly,
-      ambiguous,
-      neither,
-      classifiable,
-      ledger,
-    };
-  });
+export function shapeEvidence(input: EvidenceInput): EvidenceVM {
+  const rows = input.analogueOutcomes.filter(
+    (a) => a.asset === input.pair && a.horizon === input.horizon && a.matured,
+  );
+  const up = rows.filter((a) => a.direction === "UP").length;
+  const down = rows.filter((a) => a.direction === "DOWN").length;
+  return {
+    pair: input.pair,
+    horizon: input.horizon,
+    sampleCount: rows.length,
+    upShare: rows.length === 0 ? null : up / rows.length,
+    downShare: rows.length === 0 ? null : down / rows.length,
+  };
 }

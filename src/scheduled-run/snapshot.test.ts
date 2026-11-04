@@ -344,6 +344,45 @@ describe("buildDashboardSnapshot — serialises the view + display-only + histor
     expect(rows[0]!.fired).toBe(false);
   });
 
+  it("pairEvaluationRows: carries the expected candle size when present and omits the key when absent", () => {
+    const base: PairEvaluation = {
+      pair: "EURUSD",
+      direction: "UP",
+      earnedConfidence: 0.9 as Confidence,
+      horizon: 1,
+      excursionProfile: { favorablePips: 40, adversePips: 15 },
+      stopLossPips: 15,
+      takeProfitPips: 40,
+      choppiness: 0.8,
+      rationale: "",
+      analogueLabels: [],
+    };
+    const withRange: PairEvaluation = {
+      ...base,
+      expectedRange: {
+        bucket: "LARGE",
+        horizon: 1,
+        lowPips: 70.2,
+        highPips: 110.4,
+        sampleSize: 44,
+        cutoffs: { smallMax: 0.8, mediumMax: 1.4 },
+        atrPips: 65,
+      },
+    };
+    const [with1] = pairEvaluationRows("2024-03-15", [withRange]);
+    expect(with1!.expected_range).toEqual({
+      bucket: "LARGE",
+      horizon: 1,
+      low_pips: 70.2,
+      high_pips: 110.4,
+      sample_size: 44,
+    });
+    // The internal cut-offs / ATR are not shipped.
+    expect(Object.keys(with1!.expected_range!)).not.toContain("cutoffs");
+    const [without] = pairEvaluationRows("2024-03-15", [base]);
+    expect("expected_range" in without!).toBe(false);
+  });
+
   it("pairEvaluationRows: respects a custom confidence threshold for the fired flag", () => {
     const ev: PairEvaluation = {
       pair: "USDCHF",

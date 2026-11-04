@@ -72,6 +72,22 @@ export interface PairEvaluationRow {
   readonly earned_confidence: number;
   readonly fired: boolean;
   readonly choppiness: number;
+  /**
+   * Schema v6: the analogue-based, pair-relative expected candle size. Absent when the pair
+   * could not be forecast (too few analogues or too little history). Says nothing about
+   * direction; display-only.
+   */
+  readonly expected_range?: ExpectedRangeRow;
+}
+
+/** Schema v6: expected candle size — a Small / Medium / Large bucket plus a pips range. */
+export interface ExpectedRangeRow {
+  readonly bucket: "SMALL" | "MEDIUM" | "LARGE";
+  readonly horizon: Horizon;
+  readonly low_pips: number;
+  readonly high_pips: number;
+  /** Analogues behind the forecast. */
+  readonly sample_size: number;
 }
 
 /** A matured analogue-outcome row — excursion profile. */
@@ -343,4 +359,33 @@ export interface Confluence {
   readonly conflictThreshold: number;
   readonly alignmentThreshold: number;
   readonly pairs: readonly ConfluencePair[];
+}
+
+// ---------------------------------------------------------------------------------------
+// v6 track-record slice. Independent structural copy of the writer's wire shapes in
+// `src/scheduled-run/snapshot.ts` (`SnapshotTrackRecordSlice`); kept in lockstep by hand.
+// Plain counts of recent directional calls and how many were right, built by look-ahead-safe
+// replay. Display-only; never re-enters scoring.
+// ---------------------------------------------------------------------------------------
+
+/** Recent directional calls (UP/DOWN) of one strategy on one pair, and how many were right. */
+export interface StrategyRecordRow {
+  readonly pair: string;
+  readonly strategyId: ConfluenceStrategyId;
+  readonly calls: number;
+  readonly correct: number;
+}
+
+/** Recent expected-candle-size forecasts on one pair, and how many landed in the right bucket. */
+export interface RangeRecordRow {
+  readonly pair: string;
+  readonly forecasts: number;
+  readonly correct: number;
+}
+
+/** The v6 `trackRecord` slice; `lookbackDays` is the trading-day replay window. */
+export interface TrackRecord {
+  readonly lookbackDays: number;
+  readonly strategies: readonly StrategyRecordRow[];
+  readonly rangeForecast: readonly RangeRecordRow[];
 }

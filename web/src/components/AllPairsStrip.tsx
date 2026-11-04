@@ -1,14 +1,20 @@
 /**
- * All_Pairs_Strip (Req 4.1–4.5, 4.7, 4.8, 12.6).
+ * All_Pairs_Strip — the dashboard's ONLY pair navigator.
  *
  * Renders the {@link shapeAllPairsStrip} view model as five native `<button>` controls
- * (keyboard-focusable and Enter/Space-activatable for free). Every displayed value comes
- * verbatim from the view model; nothing is recomputed. The direction/status is conveyed by
- * a text label plus a glyph (never colour alone), the selected entry by `aria-pressed`, a
- * "Selected" text cue and a thicker border, and the focus indicator is an explicit outline.
- * Layout is a wrapping grid so five entries fit at 320 px with no horizontal scroll.
+ * (keyboard-focusable and Enter/Space-activatable for free). Each shows the pair, its
+ * conviction tier ("Aligned up", "Lean down", "Split", "No view") with a glyph, and the vote
+ * tally behind it. Every value comes verbatim from the view model; nothing is recomputed.
+ *
+ * Honest presentation: the system is un-validated, so no direction colour is applied. The tier
+ * is carried by its word plus a glyph, never by colour, and a Split gets a heavier border so it
+ * stands out without implying a trade. The selected entry is shown by `aria-pressed`, a
+ * "Selected" text cue and a thicker border; the focus indicator is an explicit outline. Layout
+ * is a wrapping grid so five entries fit at 320 px with no horizontal scroll.
  */
 import { useState } from "react";
+import type { JSX } from "react";
+
 import type { Pair } from "../api/types";
 import { theme } from "../theme/darkTheme";
 import type { AllPairsStripVM, StripEntryVM } from "../pure/shapeAllPairsStrip";
@@ -19,28 +25,6 @@ export interface AllPairsStripProps {
   readonly onSelectPair: (pair: Pair) => void;
 }
 
-/** Non-colour cue per marker class (presentation only). */
-const MARKER_GLYPH: Record<StripEntryVM["marker"], string> = {
-  green: "\u25B2", // ▲
-  red: "\u25BC", // ▼
-  neutral: "\u25C6", // ◆
-  conflict: "\u26A0", // ⚠
-  none: "\u2205", // ∅
-};
-
-function markerColor(marker: StripEntryVM["marker"]): string {
-  switch (marker) {
-    case "green":
-      return theme.semantic.success;
-    case "red":
-      return theme.semantic.danger;
-    case "conflict":
-      return theme.semantic.warning;
-    default:
-      return theme.semantic.neutral;
-  }
-}
-
 function StripButton(props: {
   readonly entry: StripEntryVM;
   readonly selected: boolean;
@@ -48,9 +32,9 @@ function StripButton(props: {
 }): JSX.Element {
   const { entry, selected, onSelectPair } = props;
   const [focused, setFocused] = useState(false);
-  const glyph = MARKER_GLYPH[entry.marker];
-  // For a no-data entry, `scoreText` already holds the no-signal marker text.
-  const summary = entry.hasData ? `${entry.statusLabel}, score ${entry.scoreText}` : entry.scoreText;
+  // For a no-data entry, `tallyText` already holds the no-signal marker text.
+  const summary = entry.hasData ? `${entry.label}, ${entry.tallyText}` : entry.tallyText;
+  const split = entry.tier === "SPLIT";
 
   return (
     <button
@@ -61,6 +45,7 @@ function StripButton(props: {
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       data-pair={entry.pair}
+      data-tier={entry.tier}
       data-has-data={entry.hasData ? "true" : "false"}
       style={{
         appearance: "none",
@@ -75,8 +60,8 @@ function StripButton(props: {
         textAlign: "left",
         background: selected ? theme.colors.surfaceRaised : theme.colors.surface,
         color: theme.colors.textPrimary,
-        border: `${selected ? 3 : 1}px ${selected ? "double" : "solid"} ${
-          selected ? theme.colors.accent : theme.colors.border
+        border: `${selected ? 3 : split ? 2 : 1}px ${selected ? "double" : "solid"} ${
+          selected ? theme.colors.accent : split ? theme.colors.textMuted : theme.colors.border
         }`,
         borderRadius: theme.radius.sm,
         outline: focused ? `3px solid ${theme.colors.accent}` : "none",
@@ -89,11 +74,11 @@ function StripButton(props: {
         {entry.pair}
         {selected ? " \u2713 Selected" : ""}
       </span>
-      <span style={{ color: entry.hasData ? markerColor(entry.marker) : theme.colors.textMuted }}>
-        <span aria-hidden="true">{glyph} </span>
-        {entry.hasData ? entry.statusLabel : null}
+      <span style={{ color: entry.hasData ? theme.colors.textPrimary : theme.colors.textMuted }}>
+        <span aria-hidden="true">{entry.glyph} </span>
+        {entry.hasData ? entry.label : null}
       </span>
-      <span style={{ color: theme.colors.textSecondary }}>{entry.scoreText}</span>
+      <span style={{ color: theme.colors.textSecondary, fontSize: 12 }}>{entry.tallyText}</span>
     </button>
   );
 }
@@ -105,7 +90,7 @@ export function AllPairsStrip({ strip, selectedPair, onSelectPair }: AllPairsStr
       aria-label="All pairs"
       style={{
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))",
+        gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
         gap: theme.spacing.sm,
         width: "100%",
         boxSizing: "border-box",

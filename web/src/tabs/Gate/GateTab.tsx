@@ -12,6 +12,9 @@
  * a persisted report row (R1.2, 20.1); the pure helpers in `./format` and `./selectReport`
  * only format and SELECT, never derive.
  *
+ * The tab shows no stop-loss, take-profit or net-expectancy figure: after-cost results are
+ * not displayed in the UI (they are recorded in RESEARCH-LOG.md by the evaluation run).
+ *
  * ARIA: the panel is a `role="region"` landmark (there is no tab bar), is named by its own heading via
  * `aria-labelledby="gate-heading"` (the tab bar is gone), and renders a single `<h2>` under the app's single `<h1>`.
  *
@@ -23,11 +26,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ApiResult } from "../../api/snapshot";
 import { getSnapshot } from "../../api/snapshotCache";
-import type { Calibration, EvaluationReportRow, TradeLedgerSummary } from "../../api/types";
-import { shapeEvaluationNet, type EvaluationNetShape } from "../../pure/shapeEvaluationNet";
+import type { EvaluationReportRow } from "../../api/types";
 import { theme } from "../../theme/darkTheme";
 import { EvaluationReportCard } from "./EvaluationReportCard";
-import { NetEvaluationSection } from "./NetEvaluationSection";
 import { selectLatestReport } from "./selectReport";
 
 /** Loader for the evaluation reports. Injected for testability; defaults to the snapshot. */
@@ -45,29 +46,9 @@ const defaultReportsLoader: EvaluationReportsLoader = async (options) => {
   };
 };
 
-/** The v4 net-of-cost slices (empty on a v3 snapshot). */
-export interface NetEvaluationSlices {
-  readonly tradeLedgerSummary: TradeLedgerSummary;
-  readonly calibration: Calibration;
-}
-
-/** Loader for the net-of-cost slices. Injected for testability; defaults to the snapshot. */
-export type NetEvaluationLoader = (options?: {
-  readonly signal?: AbortSignal;
-}) => Promise<NetEvaluationSlices>;
-
-const defaultNetLoader: NetEvaluationLoader = async (options) => {
-  const snapshot = await getSnapshot(0, {
-    ...(options?.signal !== undefined ? { signal: options.signal } : {}),
-  });
-  return { tradeLedgerSummary: snapshot.tradeLedgerSummary, calibration: snapshot.calibration };
-};
-
 export interface GateTabProps {
   /** Evaluation-reports loader; defaults to reading the shared snapshot. */
   readonly loadEvaluationReports?: EvaluationReportsLoader;
-  /** Net-of-cost slices loader; defaults to reading the shared snapshot. */
-  readonly loadNetEvaluation?: NetEvaluationLoader;
 }
 
 /** Discriminated load state so the view renders loading / error / empty / ready distinctly. */
@@ -75,15 +56,10 @@ type LoadState =
   | { readonly kind: "loading" }
   | { readonly kind: "error" }
   | { readonly kind: "empty" }
-  | {
-      readonly kind: "ready";
-      readonly report: EvaluationReportRow | null;
-      readonly net: EvaluationNetShape;
-    };
+  | { readonly kind: "ready"; readonly report: EvaluationReportRow };
 
 export function GateTab({
   loadEvaluationReports = defaultReportsLoader,
-  loadNetEvaluation = defaultNetLoader,
 }: GateTabProps): JSX.Element {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
 
@@ -98,20 +74,15 @@ export function GateTab({
   const load = useCallback(async () => {
     setState({ kind: "loading" });
     try {
-      const [reports, slices] = await Promise.all([loadEvaluationReports(), loadNetEvaluation()]);
+      const reports = await loadEvaluationReports();
       const report = selectLatestReport(reports.rows);
-      const net = shapeEvaluationNet(slices);
       if (!mounted.current) return;
-      setState(
-        report === null && net.kind === "empty"
-          ? { kind: "empty" }
-          : { kind: "ready", report, net },
-      );
+      setState(report === null ? { kind: "empty" } : { kind: "ready", report });
     } catch {
       // Non-secret failure surface only — no raw payload / stack trace.
       if (mounted.current) setState({ kind: "error" });
     }
-  }, [loadEvaluationReports, loadNetEvaluation]);
+  }, [loadEvaluationReports]);
 
   useEffect(() => {
     void load();
@@ -152,15 +123,13 @@ export function GateTab({
       )}
 
       {state.kind === "ready" && (
-        <section aria-label="Net-of-cost out-of-sample results" style={sectionStyle}>
-          <h3 style={subheadingStyle}>Out-of-sample results after costs</h3>
-          <NetEvaluationSection shape={state.net} />
-        </section>
-      )}
-      {state.kind === "ready" && state.report !== null && (
         <section aria-label="Model versus baseline evaluation report" style={sectionStyle}>
-          <h3 style={subheadingStyle}>Directional accuracy (secondary, un-validated as a trade result)</h3>
+          <h3 style={subheadingStyle}>Directional accuracy against the naive baseline</h3>
           <EvaluationReportCard row={state.report} />
+          <p style={{ margin: 0, fontSize: 12, color: theme.colors.textMuted }}>
+            This is a measure of how often the direction was right, not a trading result. A lead of
+            under three points over the baseline is within noise.
+          </p>
         </section>
       )}
     </section>

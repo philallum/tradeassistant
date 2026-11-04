@@ -169,7 +169,7 @@ export function toSnapshotConfluence(matrix: ConfluenceMatrix): SnapshotConfluen
  * to the fail-safe wrapper in {@link buildConfluenceSlice} and degrades to the
  * empty slice. Returns `null` if any factory rejects.
  */
-function buildStrategyBundle(): StrategyBundle | null {
+export function buildStrategyBundle(): StrategyBundle | null {
   const trend = createTrendStrategy();
   const breakout = createBreakoutStrategy();
   const range = createRangeStrategy();

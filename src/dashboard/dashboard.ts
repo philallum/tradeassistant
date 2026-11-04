@@ -30,6 +30,7 @@
 import type { Pair } from "../ingestion/types.js";
 import { PAIRS } from "../ingestion/types.js";
 import type { TradingDate } from "../guard/types.js";
+import type { ExpectedRange } from "../range-forecast/types.js";
 import {
   DEFAULT_DASHBOARD_CONFIG,
   type DashboardConfig,
@@ -77,6 +78,14 @@ export interface PairEvaluation {
    * decision.
    */
   readonly choppiness: number;
+  /**
+   * The analogue-based, pair-relative expected candle size (Small / Medium / Large
+   * plus a pips range). DISPLAY-ONLY: it describes how big the move envelope is
+   * expected to be, never its direction, and feeds no firing / confidence /
+   * scoring decision. Absent when the neighbourhood or the pair's history is too
+   * small to forecast (never fabricated).
+   */
+  readonly expectedRange?: ExpectedRange;
   /** Outward-only plain-language AI rationale for the card (Requirement 15.1). */
   readonly rationale: string;
   /** Outward-only qualitative analogue labels for the card (Requirement 15.3). */
