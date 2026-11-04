@@ -242,7 +242,25 @@ export interface FreshenCandlesDeps {
   ) => Promise<readonly CandleFreshnessPairSummary[]>;
   /** Env map the OHLC-feed config + lookback are read from. Defaults to `process.env`. */
   readonly env?: Readonly<Record<string, string | undefined>>;
+  /** Wait between freshness attempts. Defaults to a real timer; tests inject a no-op. */
+  readonly sleep?: (ms: number) => Promise<void>;
 }
+
+/** Extra freshness attempts after the first when a pair is still behind. */
+const DEFAULT_FRESHNESS_RETRY_ATTEMPTS = 3;
+/** Seconds to wait between freshness attempts (> FCS's 60s batch memo). */
+const DEFAULT_FRESHNESS_RETRY_DELAY_SECONDS = 120;
+
+function nonNegativeInt(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 ? n : fallback;
+}
+
+const realSleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 /**
  * Candle_Freshness_Stage wiring (design Component 6, R2.1): bring each pair's
@@ -288,14 +306,48 @@ export async function freshenCandles(
     );
 
     const stores = buildStores(config);
-    const summaries = await runStage({
-      decisionDate: config.decisionDate,
-      ingestion: new OhlcIngestion(stores.candleStore),
-      candleStore: stores.candleStore,
-      vectorStore: stores.vectorStore,
-      chain: buildProviderChain(chainConfig),
-      maxLookbackTradingDays: resolveMaxLookback(env),
-    });
+
+    // The scheduled run fires at the same instant the target candle closes
+    // (17:00 NY), so a provider may not have published it yet. Re-run the
+    // (idempotent) stage a bounded number of times, waiting between attempts,
+    // while any pair is still behind. The total wait stays well inside the
+    // Job's task timeout. Env overrides: CANDLE_FRESHNESS_RETRY_ATTEMPTS,
+    // CANDLE_FRESHNESS_RETRY_DELAY_SECONDS (0 attempts disables the retry).
+    const retryAttempts = nonNegativeInt(
+      env.CANDLE_FRESHNESS_RETRY_ATTEMPTS,
+      DEFAULT_FRESHNESS_RETRY_ATTEMPTS,
+    );
+    const retryDelayMs =
+      nonNegativeInt(
+        env.CANDLE_FRESHNESS_RETRY_DELAY_SECONDS,
+        DEFAULT_FRESHNESS_RETRY_DELAY_SECONDS,
+      ) * 1000;
+    const sleep = deps.sleep ?? realSleep;
+
+    let summaries: readonly CandleFreshnessPairSummary[] = [];
+    for (let attempt = 0; ; attempt += 1) {
+      summaries = await runStage({
+        decisionDate: config.decisionDate,
+        ingestion: new OhlcIngestion(stores.candleStore),
+        candleStore: stores.candleStore,
+        vectorStore: stores.vectorStore,
+        chain: buildProviderChain(chainConfig),
+        maxLookbackTradingDays: resolveMaxLookback(env),
+      });
+      const pairsBehind = summaries.filter((s) => s.degraded || s.residualGap).length;
+      if (pairsBehind === 0 || attempt >= retryAttempts) break;
+      console.log(
+        JSON.stringify({
+          event: "candle_freshness.retry",
+          decisionDate: config.decisionDate,
+          attempt: attempt + 1,
+          maxRetries: retryAttempts,
+          pairsBehind,
+          waitSeconds: retryDelayMs / 1000,
+        }),
+      );
+      await sleep(retryDelayMs);
+    }
 
     // Phase 2a (daily-candle-freshness-and-cleanup): the stage is fail-safe and
     // never throws for a provider failure, so a day where NO provider could

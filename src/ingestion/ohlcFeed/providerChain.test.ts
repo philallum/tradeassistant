@@ -17,6 +17,10 @@ function candle(pair: Pair, source: string): RawCandle {
   return { asset: pair, pair, date: "2026-09-15", open: 1, high: 2, low: 0.5, close: 1.5, source };
 }
 
+function datedCandle(pair: Pair, date: TradingDate, source: string): RawCandle {
+  return { ...candle(pair, source), date };
+}
+
 function feedError(provider: string, pair: Pair, mode: OhlcFeedError["mode"]): OhlcFeedError {
   return { reason: "ohlc_feed_error", mode, provider, pair, message: `${provider} ${mode} ${pair}` };
 }
@@ -128,6 +132,76 @@ describe("ProviderChain.resolveLatest", () => {
     const result = await chain.resolveLatest(["EURUSD"], "2026-09-16");
     const eur = result.get("EURUSD")!;
     expect(isResolved(eur) && eur.provider).toBe("Massive");
+  });
+
+  it("drops a forming candle dated at/after asOf and advances to the next provider", async () => {
+    // Twelve Data-style "latest" returning only the in-progress decision-day bar.
+    const forming = new StubProvider("TwelveData", true, true, {
+      latest: new Map([["EURUSD", ok([datedCandle("EURUSD", "2026-09-16", "TwelveData")])]]),
+    });
+    const prev = new StubProvider("Massive", true, true, {
+      latest: new Map([["EURUSD", ok([datedCandle("EURUSD", "2026-09-15", "Massive")])]]),
+    });
+    const chain = chainFromProviders([forming, prev]);
+    const result = await chain.resolveLatest(["EURUSD"], "2026-09-16", "2026-09-15");
+    const eur = result.get("EURUSD")!;
+    expect(isResolved(eur) && eur.provider).toBe("Massive");
+    if (isResolved(eur)) {
+      expect(eur.candles.map((c) => c.date)).toEqual(["2026-09-15"]);
+    }
+  });
+
+  it("strips a forming candle from a mixed response but keeps the completed one", async () => {
+    const p = new StubProvider("TwelveData", true, true, {
+      latest: new Map([
+        [
+          "EURUSD",
+          ok([
+            datedCandle("EURUSD", "2026-09-16", "TwelveData"),
+            datedCandle("EURUSD", "2026-09-15", "TwelveData"),
+          ]),
+        ],
+      ]),
+    });
+    const chain = chainFromProviders([p]);
+    const eur = (await chain.resolveLatest(["EURUSD"], "2026-09-16", "2026-09-15")).get("EURUSD")!;
+    expect(isResolved(eur)).toBe(true);
+    if (isResolved(eur)) {
+      expect(eur.candles.map((c) => c.date)).toEqual(["2026-09-15"]);
+    }
+  });
+
+  it("rejects a stale candle older than the required target and advances", async () => {
+    const stale = new StubProvider("FCS", true, false, {
+      latest: new Map([["EURUSD", ok([datedCandle("EURUSD", "2026-09-14", "FCS")])]]),
+    });
+    const fresh = new StubProvider("TwelveData", true, true, {
+      latest: new Map([["EURUSD", ok([datedCandle("EURUSD", "2026-09-15", "TwelveData")])]]),
+    });
+    const chain = chainFromProviders([stale, fresh]);
+    const eur = (await chain.resolveLatest(["EURUSD"], "2026-09-16", "2026-09-15")).get("EURUSD")!;
+    expect(isResolved(eur) && eur.provider).toBe("TwelveData");
+  });
+
+  it("resolves to an error when every provider is stale or forming-only", async () => {
+    const stale = new StubProvider("FCS", true, false, {
+      latest: new Map([["EURUSD", ok([datedCandle("EURUSD", "2026-09-14", "FCS")])]]),
+    });
+    const forming = new StubProvider("TwelveData", true, true, {
+      latest: new Map([["EURUSD", ok([datedCandle("EURUSD", "2026-09-16", "TwelveData")])]]),
+    });
+    const chain = chainFromProviders([stale, forming]);
+    const eur = (await chain.resolveLatest(["EURUSD"], "2026-09-16", "2026-09-15")).get("EURUSD")!;
+    expect(isResolved(eur)).toBe(false);
+  });
+
+  it("without a required target, still drops candles dated at/after asOf only", async () => {
+    const p = new StubProvider("FCS", true, false, {
+      latest: new Map([["EURUSD", ok([datedCandle("EURUSD", "2026-09-10", "FCS")])]]),
+    });
+    const chain = chainFromProviders([p]);
+    const eur = (await chain.resolveLatest(["EURUSD"], "2026-09-16")).get("EURUSD")!;
+    expect(isResolved(eur)).toBe(true);
   });
 
   it("resolves to a typed secret-free error when every provider fails", async () => {
