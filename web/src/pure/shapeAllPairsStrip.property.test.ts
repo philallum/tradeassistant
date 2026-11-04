@@ -1,124 +1,55 @@
-// Feature: mobile-dashboard-single-window, Property 1: All_Pairs_Strip is a verbatim projection
-// of the confluence rows. For any ConfluenceViewModel (including ones with missing pairs) and
-// every pair, the strip entry's statusLabel/scoreText/marker equal the matching RowVM when a
-// row exists (hasData true); otherwise hasData is false, marker is "none" and scoreText is the
-// shared NO_SIGNAL_TEXT constant.
-//
-// **Validates: Requirements 4.6, 4.8**
-
+// All_Pairs_Strip is a verbatim projection of the conviction shaper, always lists exactly the
+// five pairs in canonical order, and never shows the retired bare "Neutral" label.
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { shapeAllPairsStrip } from "./shapeAllPairsStrip.ts";
-import { NO_SIGNAL_TEXT } from "./noSignalCopy.ts";
-import type { ConfluenceViewModel, RowVM } from "./shapeConfluence.ts";
+
 import { PAIRS } from "../api/types.ts";
-import type { Pair } from "../api/types.ts";
+import type { Confluence, ConfluenceCell, ConfluencePair, ConfluenceStatus, Direction } from "../api/types.ts";
+import { EMPTY_CONFLUENCE } from "../api/snapshot.ts";
+import { NO_SIGNAL_TEXT } from "./noSignalCopy.ts";
+import { shapeAllPairsStrip } from "./shapeAllPairsStrip.ts";
+import { shapeConviction, tierGlyph } from "./shapeConviction.ts";
 
-const NUM_RUNS = 200; // >= 100 iterations required by the task.
+const NUM_RUNS = 200;
+const IDS = ["trend", "breakout", "range", "reversal", "custom_pattern", "third_party"] as const;
+const STATUSES: ConfluenceStatus[] = ["ALIGNED_UP", "ALIGNED_DOWN", "NEUTRAL", "CONFLICT_FLAT", "INSUFFICIENT_DATA"];
 
-/** A RowVM for the given pair with arbitrary (distinguishing) presentation fields. */
-function rowArb(pair: Pair): fc.Arbitrary<RowVM> {
-  return fc
-    .record({
-      scoreText: fc.string({ maxLength: 8 }),
-      score: fc.double({ min: -1, max: 1, noNaN: true }),
-      markerText: fc.string({ maxLength: 12 }),
-      statusLabel: fc.string({ maxLength: 12 }),
-      stayFlat: fc.boolean(),
-      conflictSummary: fc.option(fc.string({ maxLength: 16 }), { nil: null }),
-      status: fc.constantFrom(
-        "ALIGNED_UP",
-        "ALIGNED_DOWN",
-        "NEUTRAL",
-        "CONFLICT_FLAT",
-        "INSUFFICIENT_DATA",
-      ) as fc.Arbitrary<RowVM["status"]>,
-      marker: fc.constantFrom("green", "red", "neutral", "conflict") as fc.Arbitrary<
-        RowVM["marker"]
-      >,
-    })
-    .map(
-      (r) =>
-        ({
-          pair,
-          scoreText: r.scoreText,
-          score: r.score,
-          gauge: { min: -1, max: 1, value: r.score, posThreshold: 0.5, negThreshold: -0.5 },
-          status: r.status,
-          statusLabel: r.statusLabel,
-          marker: r.marker,
-          markerText: r.markerText,
-          stayFlat: r.stayFlat,
-          conflictSummary: r.conflictSummary,
-          cells: [],
-        }) satisfies RowVM,
-    );
-}
+const cellArb = (id: (typeof IDS)[number]): fc.Arbitrary<ConfluenceCell> =>
+  fc.oneof(
+    fc
+      .tuple(fc.constantFrom<Direction>("UP", "DOWN", "FLAT"), fc.double({ min: 0, max: 1, noNaN: true }))
+      .map(([direction, strength]): ConfluenceCell => ({
+        strategyId: id,
+        available: true,
+        direction,
+        strength: direction === "FLAT" ? 0 : strength,
+        rationale: "r",
+      })),
+    fc.constant<ConfluenceCell>({ strategyId: id, available: false, reason: "insufficient_data" }),
+  );
 
-/** A view model whose rows cover an arbitrary subset of the pairs (one row per pair, any order). */
-const viewModelArb: fc.Arbitrary<ConfluenceViewModel> = fc
+const pairArb = (pair: string): fc.Arbitrary<ConfluencePair> =>
+  fc
+    .tuple(fc.constantFrom(...STATUSES), fc.double({ min: -1, max: 1, noNaN: true }), ...IDS.map(cellArb))
+    .map(([status, score, ...cells]) => ({
+      pair,
+      score,
+      status,
+      opposingStrategyIds: status === "CONFLICT_FLAT" ? (["trend", "custom_pattern"] as const) : [],
+      cells,
+    }));
+
+/** A slice covering an arbitrary subset of the pairs in arbitrary order. */
+const sliceArb: fc.Arbitrary<Confluence> = fc
   .shuffledSubarray([...PAIRS])
-  .chain((pairs) => fc.tuple(...pairs.map((p) => rowArb(p))))
-  .map((rows) => ({
-    empty: rows.length === 0,
-    emptyText: "",
-    validationLabel: "",
-    validated: false,
-    strengthNote: "",
-    summary: { aligned: 0, conflict: 0, neutral: 0, text: "" },
-    columns: [],
-    rows,
-  }));
+  .chain((pairs) => fc.tuple(...pairs.map((p) => pairArb(p))))
+  .map((rows) => ({ ...EMPTY_CONFLUENCE, pairs: rows }));
 
-describe("Property 1: All_Pairs_Strip is a verbatim projection of the confluence rows", () => {
-  it("copies row fields verbatim when a row exists, else an explicit no-data entry", () => {
+describe("shapeAllPairsStrip", () => {
+  it("always lists exactly the five pairs in canonical order (including the empty slice)", () => {
     fc.assert(
-      fc.property(viewModelArb, (vm) => {
-        const { entries } = shapeAllPairsStrip(vm);
-        for (const pair of PAIRS) {
-          const entry = entries.find((e) => e.pair === pair);
-          expect(entry).toBeDefined();
-          const row = vm.rows.find((r) => r.pair === pair);
-          if (row !== undefined) {
-            expect(entry?.hasData).toBe(true);
-            expect(entry?.statusLabel).toBe(row.statusLabel);
-            expect(entry?.scoreText).toBe(row.scoreText);
-            expect(entry?.marker).toBe(row.marker);
-          } else {
-            expect(entry?.hasData).toBe(false);
-            expect(entry?.marker).toBe("none");
-            expect(entry?.scoreText).toBe(NO_SIGNAL_TEXT);
-          }
-        }
-      }),
-      { numRuns: NUM_RUNS },
-    );
-  });
-});
-
-// Feature: mobile-dashboard-single-window, Property 2: All_Pairs_Strip always lists exactly the
-// five pairs, in canonical order. For any ConfluenceViewModel (including the empty one with no
-// rows), entries has length 5 and entries.map(e => e.pair) equals PAIRS.
-//
-// **Validates: Requirements 4.1**
-
-/** The empty view model (no rows), explicitly part of the input space. */
-const emptyViewModel: ConfluenceViewModel = {
-  empty: true,
-  emptyText: "",
-  validationLabel: "",
-  validated: false,
-  strengthNote: "",
-  summary: { aligned: 0, conflict: 0, neutral: 0, text: "" },
-  columns: [],
-  rows: [],
-};
-
-describe("Property 2: All_Pairs_Strip always lists exactly the five pairs, in canonical order", () => {
-  it("has five entries in PAIRS order for any view model, including the empty one", () => {
-    fc.assert(
-      fc.property(fc.oneof(fc.constant(emptyViewModel), viewModelArb), (vm) => {
-        const { entries } = shapeAllPairsStrip(vm);
+      fc.property(fc.oneof(fc.constant(EMPTY_CONFLUENCE), sliceArb), (slice) => {
+        const { entries } = shapeAllPairsStrip(slice);
         expect(entries).toHaveLength(5);
         expect(entries.map((e) => e.pair)).toEqual([...PAIRS]);
       }),
@@ -126,9 +57,37 @@ describe("Property 2: All_Pairs_Strip always lists exactly the five pairs, in ca
     );
   });
 
-  it("handles the empty view model explicitly", () => {
-    const { entries } = shapeAllPairsStrip(emptyViewModel);
-    expect(entries).toHaveLength(5);
-    expect(entries.map((e) => e.pair)).toEqual([...PAIRS]);
+  it("projects the conviction shaper verbatim when a row exists, else an explicit no-data entry", () => {
+    fc.assert(
+      fc.property(sliceArb, (slice) => {
+        for (const entry of shapeAllPairsStrip(slice).entries) {
+          const row = slice.pairs.find((p) => p.pair === entry.pair);
+          if (row !== undefined) {
+            const vm = shapeConviction(row, slice.weights);
+            expect(entry).toMatchObject({
+              hasData: true,
+              label: vm.label,
+              tier: vm.tier,
+              glyph: tierGlyph(vm),
+              tallyText: vm.tallyText,
+            });
+          } else {
+            expect(entry).toMatchObject({ hasData: false, tier: "none", label: "", tallyText: NO_SIGNAL_TEXT });
+          }
+        }
+      }),
+      { numRuns: NUM_RUNS },
+    );
+  });
+
+  it("never shows the retired bare 'Neutral' label", () => {
+    fc.assert(
+      fc.property(sliceArb, (slice) => {
+        for (const entry of shapeAllPairsStrip(slice).entries) {
+          expect(entry.label).not.toMatch(/neutral/i);
+        }
+      }),
+      { numRuns: NUM_RUNS },
+    );
   });
 });

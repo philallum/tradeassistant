@@ -1,10 +1,10 @@
 /**
- * Zone 1 control bar for the single-window dashboard (Req 2.1, 2.2, 2.5, 12.1, 12.6).
+ * Zone 1 control bar for the single-window dashboard.
  *
- * Composes the existing, unchanged {@link PairSelector}, {@link DateSelector} and
- * {@link RefreshControl} under the document's single `<h1>`. The header layout and h1 text
- * are carried over from `AppShell`. The bar is sticky (`position: sticky; top: 0`) so the
- * selectors stay reachable while the single window scrolls.
+ * Composes the {@link DateSelector} and {@link RefreshControl} under the document's single
+ * `<h1>`. There is deliberately NO pair selector here: the All_Pairs_Strip below is the only
+ * pair navigator, so the same choice is never offered twice. The bar is sticky
+ * (`position: sticky; top: 0`) so the controls stay reachable while the window scrolls.
  *
  * This is a thin, controlled view: the shell owns the dates, freshness marker, in-flight
  * flag and refresh callback and passes them down. Nothing is fetched or recomputed here.
@@ -12,9 +12,7 @@
 
 import { theme } from "../theme/darkTheme";
 import { DateSelector } from "./DateSelector";
-import { PairSelector } from "./PairSelector";
 import { RefreshControl } from "./RefreshControl";
-import { useMediaQuery, WIDE_VIEWPORT_QUERY } from "./useMediaQuery";
 
 export interface ControlBarProps {
   /** Available Decision_Dates for the date selector (may be empty). */
@@ -33,8 +31,6 @@ export function ControlBar({
   isRefreshing,
   onRefresh,
 }: ControlBarProps): JSX.Element {
-  const wide = useMediaQuery(WIDE_VIEWPORT_QUERY);
-
   return (
     <header
       style={{
@@ -59,7 +55,6 @@ export function ControlBar({
           gap: theme.spacing.md,
         }}
       >
-        <PairSelector wide={wide} />
         <DateSelector dates={dates} />
         <div style={{ marginLeft: "auto" }}>
           <RefreshControl

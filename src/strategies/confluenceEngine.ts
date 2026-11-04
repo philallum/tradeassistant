@@ -60,7 +60,7 @@ export type ConfluenceWeights = Readonly<Record<StrategyId, number>>;
  *
  *   - `weights` — a finite, non-negative weight per Strategy_Id.
  *   - `conflictThreshold` — the strength at or above which an opposing UP and
- *     DOWN pair counts as "strong" (default 0.6). Finite, within `[0, 1]`.
+ *     DOWN pair counts as "strong" (default 0.5). Finite, within `[0, 1]`.
  *   - `alignmentThreshold` — the absolute score required to classify alignment
  *     (default 0.4). Finite, within `[0, 1]`.
  */
@@ -73,8 +73,20 @@ export interface ConfluenceConfig {
 /**
  * The default configuration: every classical and custom-pattern strategy
  * carries weight 1, `third_party` carries weight 0 (display-only until
- * validated), the conflict threshold is 0.6, and the alignment threshold is 0.4
+ * validated), the conflict threshold is 0.5, and the alignment threshold is 0.4
  * (Requirements 8.4, 8.5, 9.6).
+ *
+ * CALIBRATION (dashboard-simplification, measured by
+ * `src/ops/confluence-calibration`): the conflict threshold was 0.6 and is now
+ * 0.5. The pattern matcher's strength is its shrunk Earned_Confidence, which for
+ * a firing pair (confidence >= 0.55) sits in roughly 0.55-0.65, so a 0.6 bar
+ * excluded the project's core signal from conflict detection on almost every day
+ * it fired. 0.5 makes any firing pattern call "strong" while still excluding the
+ * weak readings of range/reversal (median strength 0.12 / 0.28). The alignment
+ * threshold stays 0.4 so ALIGNED keeps meaning a clear consensus; the middle
+ * ground is shown as "Lean" by the dashboard. No threshold pair improved the
+ * measured hit-rate of aligned calls (45-48% vs a ~51% base rate), so this is a
+ * clarity change, not an accuracy claim.
  */
 export const DEFAULT_CONFLUENCE_CONFIG: ConfluenceConfig = {
   weights: {
@@ -85,7 +97,7 @@ export const DEFAULT_CONFLUENCE_CONFIG: ConfluenceConfig = {
     custom_pattern: 1,
     third_party: 0,
   },
-  conflictThreshold: 0.6,
+  conflictThreshold: 0.5,
   alignmentThreshold: 0.4,
 };
 

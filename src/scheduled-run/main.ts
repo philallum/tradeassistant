@@ -66,6 +66,29 @@ import { SupabaseRestClient } from "../storage/supabase/index.js";
 import { SupabaseTradeLedgerStore } from "../storage/supabase/tradeLedgerStore.js";
 import { buildEdgeSlices } from "./edgeSlices.js";
 import { buildConfluenceSlice } from "./confluenceSlice.js";
+import { evaluatePair } from "../pipeline/dailyPipeline.js";
+import { DEFAULT_PIPELINE_CONFIG } from "../pipeline/types.js";
+import {
+  DEFAULT_RANGE_RECORD_LOOKBACK_DAYS,
+  DEFAULT_TRACK_RECORD_LOOKBACK_DAYS,
+  buildTrackRecordSlice,
+  memoizeMaturedOutcomes,
+} from "../track-record/index.js";
+
+/** Env var: trading-day replay window for the per-strategy track record. */
+export const TRACK_RECORD_LOOKBACK_ENV = "TRACK_RECORD_LOOKBACK_DAYS" as const;
+/** Env var: trading-day replay window for the expected-candle-size record (0 disables). */
+export const RANGE_RECORD_LOOKBACK_ENV = "RANGE_RECORD_LOOKBACK_DAYS" as const;
+
+/** Parse a non-negative integer env value, falling back to `fallback` on anything else. */
+export function nonNegativeIntFromEnv(
+  raw: string | undefined,
+  fallback: number,
+): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 ? n : fallback;
+}
 
 /**
  * Load the deterministic per-pair evaluations for the Decision_Date by running
@@ -381,6 +404,12 @@ export interface PersistViewDeps {
     evaluations: readonly PairEvaluation[],
     displayOnly: DisplayOnlyWrite | undefined,
   ) => Promise<Awaited<ReturnType<typeof buildConfluenceSlice>>>;
+  /** Build the v6 track-record slice. Defaults to {@link buildTrackRecordSlice} over Supabase. */
+  readonly buildTrackRecord?: (
+    supabase: SupabaseConfigArg,
+    view: DashboardView,
+    history: Awaited<ReturnType<typeof loadSnapshotHistory>>,
+  ) => Promise<Awaited<ReturnType<typeof buildTrackRecordSlice>>>;
   /** Assemble the snapshot envelope. Defaults to {@link buildDashboardSnapshot}. */
   readonly buildSnapshot?: typeof buildDashboardSnapshot;
   /** Write the assembled snapshot. Defaults to {@link writeDashboardSnapshot}. */
@@ -437,6 +466,31 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
         displayOnly,
         candleStore: buildSupabaseStores(supabase).candleStore,
       }));
+  const buildTrackRecord =
+    deps.buildTrackRecord ??
+    (async (supabase, view, history) => {
+      const stores = buildSupabaseStores(supabase);
+      // One pair-wide read of matured outcomes serves every replayed date.
+      const analogueStore = memoizeMaturedOutcomes(stores.analogueStore, view.decisionDate);
+      const pipelineDeps = { ...stores, analogueStore };
+      return buildTrackRecordSlice({
+        decisionDate: view.decisionDate,
+        candleStore: stores.candleStore,
+        realizedOutcomes: history.realizedOutcomes ?? [],
+        lookbackDays: nonNegativeIntFromEnv(
+          process.env[TRACK_RECORD_LOOKBACK_ENV],
+          DEFAULT_TRACK_RECORD_LOOKBACK_DAYS,
+        ),
+        rangeLookbackDays: nonNegativeIntFromEnv(
+          process.env[RANGE_RECORD_LOOKBACK_ENV],
+          DEFAULT_RANGE_RECORD_LOOKBACK_DAYS,
+        ),
+        // The SAME as-of-date pipeline the live run uses, replayed for a past date.
+        forecast: async (pair, date) =>
+          (await evaluatePair(pair, date, pipelineDeps, DEFAULT_PIPELINE_CONFIG)).expectedRange ??
+          null,
+      });
+    });
   const buildSnapshot = deps.buildSnapshot ?? buildDashboardSnapshot;
   const writeSnapshot = deps.writeSnapshot ?? writeDashboardSnapshot;
 
@@ -500,6 +554,16 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
     } catch (err) {
       warn("confluence_slice", err);
     }
+    // v6 track-record slice (dashboard-simplification): per-strategy hit counts and
+    // expected-candle-size hit counts by look-ahead-safe replay. Read-only and
+    // display-only; a defect degrades the slice to its empty default and can never
+    // fail the run or disturb the persisted rows.
+    let trackRecord: Awaited<ReturnType<typeof buildTrackRecordSlice>> | undefined;
+    try {
+      trackRecord = await buildTrackRecord(supabase, view, history);
+    } catch (err) {
+      warn("track_record", err);
+    }
     const snapshot = buildSnapshot(
       view,
       displayOnly,
@@ -508,6 +572,7 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
       pairEvaluations,
       edge,
       confluence,
+      trackRecord,
     );
     await writeSnapshot(snapshot, deps.snapshotSink);
   };

@@ -65,14 +65,14 @@ describe("DEFAULT_CONFLUENCE_CONFIG", () => {
       custom_pattern: 1,
       third_party: 0,
     });
-    expect(DEFAULT_CONFLUENCE_CONFIG.conflictThreshold).toBe(0.6);
+    expect(DEFAULT_CONFLUENCE_CONFIG.conflictThreshold).toBe(0.5);
     expect(DEFAULT_CONFLUENCE_CONFIG.alignmentThreshold).toBe(0.4);
   });
 
   it("is reflected in a default engine's frozen config", () => {
     const engine = makeEngine();
     expect(engine.config.weights).toEqual(DEFAULT_CONFLUENCE_CONFIG.weights);
-    expect(engine.config.conflictThreshold).toBe(0.6);
+    expect(engine.config.conflictThreshold).toBe(0.5);
     expect(engine.config.alignmentThreshold).toBe(0.4);
     expect(Object.isFrozen(engine.config)).toBe(true);
     expect(Object.isFrozen(engine.config.weights)).toBe(true);
@@ -111,7 +111,7 @@ describe("aggregate - hand-checked scores and status", () => {
   it("classifies a weak disagreement below the alignment threshold as NEUTRAL", () => {
     // trend UP 0.5, breakout DOWN 0.3; W = 2.
     // weightedSum = 0.5 - 0.3 = 0.2; score = 0.2 / 2 = 0.1; |0.1| < 0.4 => NEUTRAL.
-    // Neither strength reaches 0.6, so no conflict.
+    // Only the 0.5 trend reaches the 0.5 conflict bar; the 0.3 breakout does not, so no conflict.
     const engine = makeEngine();
     const result = aggregate(engine, [
       signal("trend", "UP", 0.5, "trend up weak"),
@@ -123,7 +123,7 @@ describe("aggregate - hand-checked scores and status", () => {
   });
 
   it("forces CONFLICT_FLAT when a strong UP opposes a strong DOWN", () => {
-    // trend UP 0.9 and breakout DOWN 0.8 both clear the 0.6 conflict threshold.
+    // trend UP 0.9 and breakout DOWN 0.8 both clear the 0.5 conflict threshold.
     // weightedSum = 0.9 - 0.8 = 0.1; score = 0.05; status CONFLICT_FLAT overrides.
     // opposing ids in canonical order: trend before breakout.
     const engine = makeEngine();

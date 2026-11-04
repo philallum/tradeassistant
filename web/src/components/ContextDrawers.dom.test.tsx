@@ -7,7 +7,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { PerformanceSummaryRow } from "../api/types";
 import type { DailyNoteViewModel } from "../pure/shapeDailyNote";
 import type { EvidenceVM } from "../pure/shapeEvidence";
 import { Accordion } from "./Accordion";
@@ -26,14 +25,10 @@ const ABSENT: DailyNoteViewModel = { status: "absent", text: null, decisionDate:
 
 const EVIDENCE: EvidenceVM = {
   pair: "EURUSD",
-  horizon: 5,
-  analogueCount: 12,
-  targetOnly: 5,
-  stopOnly: 3,
-  ambiguous: 1,
-  neither: 3,
-  classifiable: true,
-  ledger: null,
+  horizon: 1,
+  sampleCount: 12,
+  upShare: 0.5,
+  downShare: 0.4167,
 };
 
 function header(name: RegExp): HTMLElement {
@@ -167,19 +162,25 @@ describe("ContextDrawers", () => {
     expect(screen.getByText("No historical evidence is available for this pair.")).toBeTruthy();
   });
 
-  it("renders evidence fields only inside the expanded drawer", () => {
-    const ledger = {
-      tradeCount: 20,
-      winRate: 0.55,
-      ambiguousShare: 0.1,
-      expiredShare: 0.05,
-    } as unknown as PerformanceSummaryRow;
-    render(<ContextDrawers note={GENERATED} evidence={{ ...EVIDENCE, ledger }} />);
-    expect(screen.queryByText(/matured analogue/)).toBeNull();
+  it("renders the evidence base rate only inside the expanded drawer", () => {
+    render(<ContextDrawers note={GENERATED} evidence={EVIDENCE} />);
+    expect(screen.queryByText(/matured/)).toBeNull();
     fireEvent.click(header(/Historical evidence/));
     const body = screen.getByTestId("evidence-body");
-    expect(body.textContent).toMatch(/12 matured analogues \(5d horizon\)/);
-    expect(body.textContent).toMatch(/Simulated trades: 20/);
-    expect(body.textContent).toMatch(/win rate 55%/);
+    expect(body.textContent).toMatch(/12 matured 1-day outcomes: 50% went up, 42% went down/);
+  });
+
+  it("shows no stop-loss, take-profit, expectancy or simulated-trade wording", () => {
+    render(<ContextDrawers note={GENERATED} evidence={EVIDENCE} />);
+    fireEvent.click(header(/Historical evidence/));
+    const text = screen.getByTestId("evidence-body").textContent ?? "";
+    expect(text).not.toMatch(/stop|target|take.?profit|expectancy|simulated|win rate/i);
+  });
+
+  it("treats evidence with no matured outcomes as no evidence (never a made-up 0%)", () => {
+    const empty: EvidenceVM = { pair: "EURUSD", horizon: 1, sampleCount: 0, upShare: null, downShare: null };
+    render(<ContextDrawers note={GENERATED} evidence={empty} />);
+    fireEvent.click(header(/Historical evidence/));
+    expect(screen.getByText("No historical evidence is available for this pair.")).toBeTruthy();
   });
 });

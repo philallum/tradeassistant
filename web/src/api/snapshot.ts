@@ -40,6 +40,7 @@ import type {
   ProvenanceRow,
   RealizedOutcomeRow,
   SignalRationaleRow,
+  TrackRecord,
   TradeLedgerSummary,
   ValidationStatusRow,
 } from "./types";
@@ -80,9 +81,12 @@ export function resolveSnapshotPath(): string {
  * stay lenient (`[]` for arrays, an explicit not-generated record for `dailyCommentary`). A
  * document that DECLARES v5 or newer, by contrast, must carry a well-formed `confluence` slice:
  * `parseSnapshot` validates it strictly and throws a {@link SnapshotError} on a missing or
- * defective slice rather than returning a partial snapshot (Requirements 11.11, 11.12).
+ * defective slice rather than returning a partial snapshot (Requirements 11.11, 11.12). v6
+ * added the optional per-pair `expected_range` on `pairEvaluations` rows and the `trackRecord`
+ * slice; both are parsed leniently (an absent or malformed `trackRecord` becomes the empty
+ * record, an absent `expected_range` means "not forecast").
  */
-export const SNAPSHOT_SCHEMA_VERSION = 5;
+export const SNAPSHOT_SCHEMA_VERSION = 6;
 
 /**
  * The complete `dashboard.json` envelope. Mirrors the writer's wire shape in
@@ -124,7 +128,15 @@ export interface DashboardSnapshot {
    * missing key.
    */
   readonly confluence: Confluence;
+  /**
+   * v6: recent per-strategy hit counts and expected-candle-size hit counts, by look-ahead-safe
+   * replay. `EMPTY_TRACK_RECORD` for older snapshots. Always present.
+   */
+  readonly trackRecord: TrackRecord;
 }
+
+/** The fail-safe empty track record (pre-v6 snapshots, or a slice that failed to build). */
+export const EMPTY_TRACK_RECORD: TrackRecord = { lookbackDays: 0, strategies: [], rangeForecast: [] };
 
 const EMPTY_TRADE_LEDGER_SUMMARY: TradeLedgerSummary = { window: null, strategies: [] };
 const EMPTY_CALIBRATION: Calibration = { bands: [], monotonic: null, wellCalibrated: null };
@@ -140,7 +152,7 @@ const EMPTY_EXPOSURE: Exposure = { perCurrency: [], concentrated: false, stronge
 export const EMPTY_CONFLUENCE: Confluence = {
   validationLabel: "unvalidated",
   weights: { trend: 1, breakout: 1, range: 1, reversal: 1, custom_pattern: 1, third_party: 0 },
-  conflictThreshold: 0.6,
+  conflictThreshold: 0.5,
   alignmentThreshold: 0.4,
   pairs: [],
 };
@@ -219,6 +231,7 @@ export const EMPTY_SNAPSHOT: DashboardSnapshot = {
   provenance: [],
   validationStatus: [],
   confluence: EMPTY_CONFLUENCE,
+  trackRecord: EMPTY_TRACK_RECORD,
 };
 
 /** Narrow an untrusted `dailyCommentary` object, defaulting a missing/malformed one. */
@@ -245,6 +258,39 @@ function parseTradeLedgerSummary(value: unknown): TradeLedgerSummary {
   return {
     window,
     strategies: Array.isArray(value.strategies) ? (value.strategies as TradeLedgerSummary["strategies"]) : [],
+  };
+}
+
+/**
+ * Narrow an untrusted `trackRecord`, defaulting a missing/malformed one. Lenient by design: it
+ * is display-only, so a defective row is dropped (never fabricated) and a defective slice
+ * becomes the empty record rather than failing the whole snapshot.
+ */
+export function parseTrackRecord(value: unknown): TrackRecord {
+  if (!isObj(value)) return EMPTY_TRACK_RECORD;
+  const count = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0;
+  const strategies = (Array.isArray(value.strategies) ? value.strategies : []).filter(
+    (r): r is TrackRecord["strategies"][number] =>
+      isObj(r) &&
+      typeof r.pair === "string" &&
+      typeof r.strategyId === "string" &&
+      CONFLUENCE_STRATEGY_ID_SET.has(r.strategyId) &&
+      count(r.calls) &&
+      count(r.correct) &&
+      r.correct <= r.calls,
+  );
+  const rangeForecast = (Array.isArray(value.rangeForecast) ? value.rangeForecast : []).filter(
+    (r): r is TrackRecord["rangeForecast"][number] =>
+      isObj(r) &&
+      typeof r.pair === "string" &&
+      count(r.forecasts) &&
+      count(r.correct) &&
+      r.correct <= r.forecasts,
+  );
+  return {
+    lookbackDays: count(value.lookbackDays) ? value.lookbackDays : 0,
+    strategies,
+    rangeForecast,
   };
 }
 
@@ -419,6 +465,7 @@ export function parseSnapshot(body: unknown): DashboardSnapshot {
     provenance: arr<ProvenanceRow>(b.provenance),
     validationStatus: arr<ValidationStatusRow>(b.validationStatus),
     confluence,
+    trackRecord: parseTrackRecord(b.trackRecord),
   };
 }
 

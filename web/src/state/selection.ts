@@ -1,27 +1,26 @@
 /**
- * Selection store — the single source of truth for the two cross-tab selections.
+ * Selection store — the single source of truth for the two cross-view selections.
  *
- * The dashboard has exactly two selections that must survive Category_Tab navigation: the
- * active Pair_Selector (the five {@link PAIRS} plus the cross-pair "All pairs" option,
- * default "All pairs") and the Historical_Browse Decision_Date. This module holds both in
- * ONE plain React context so that moving between tabs never resets either selection
- * (Req 8.6, 16.4), and mirrors them into the URL query string so a direct load of a deep
- * link restores the same view (Req 1.6, 8.1, 8.4).
+ * The dashboard has exactly two selections: the active {@link Pair} (one of the five
+ * supported pairs, default EURUSD) and the Historical_Browse Decision_Date. Both live in ONE
+ * plain React context and are mirrored into the URL query string so a direct load of a deep
+ * link restores the same view (Req 1.6).
+ *
+ * There is no cross-pair "All pairs" selection: the single-window view always shows exactly
+ * one pair, and the All_Pairs_Strip is the only pair navigator. A legacy `?pair=ALL` (or any
+ * unsupported value) in an old bookmark simply parses to the default pair.
  *
  * It is deliberately NOT a pure module (it reads `window.location`, pushes history, and
  * owns React state), so it lives under `src/state/` rather than `src/pure/`. It imports
  * only the wire-format pair constants from `../api/types` and nothing from the core
  * `src/` tree (Req 20.2).
  *
- * URL contract (query string, both keys optional):
- *   ?pair=EURUSD|GBPUSD|USDJPY|USDCHF|USDCAD   a specific pair; absent/invalid => "All pairs"
+ * URL contract (query string, both keys optional on read):
+ *   ?pair=EURUSD|GBPUSD|USDJPY|USDCHF|USDCAD   a specific pair; absent/invalid => EURUSD
  *   ?date=YYYY-MM-DD                           the browsed Decision_Date; absent => latest (null)
  *
- * The "All pairs" option is represented by the sentinel {@link ALL_PAIRS} (`"ALL"`),
- * matching the `Pair | "ALL"` scope argument the Setups shaper already consumes. Because
- * "All pairs" is the default it is NOT written to the URL (an absent `pair` key means
- * "All pairs"), which keeps deep links clean and makes "All pairs" the natural default on
- * a fresh load (Req 8.4).
+ * On write the pair is always included (a concrete pair is always selected); a `null` date
+ * is omitted, which keeps deep links clean.
  */
 
 import {
@@ -34,25 +33,19 @@ import {
   useState,
 } from "react";
 import type { PropsWithChildren } from "react";
-import { PAIRS, isPair, type Pair } from "../api/types";
+import { isPair, type Pair } from "../api/types";
+import { DEFAULT_WINDOW_PAIR } from "../pure/resolveWindowSelection";
 
-/** Sentinel for the cross-pair "All pairs" Pair_Selector option (Req 8.1, 8.4). */
-export const ALL_PAIRS = "ALL" as const;
-
-/**
- * The Pair_Selector value: one of the five {@link Pair}s or the "All pairs" sentinel. This
- * is exactly the scope type `shapeDashboardView` accepts, so a selection flows straight
- * into the Setups shaper with no translation.
- */
-export type PairSelection = Pair | typeof ALL_PAIRS;
+/** The pair shown when none (or an unsupported one) is selected. */
+export const DEFAULT_PAIR: Pair = DEFAULT_WINDOW_PAIR;
 
 /** A Decision_Date selection, or `null` meaning "no explicit choice — use the latest". */
 export type DateSelection = string | null;
 
 /** The immutable snapshot of both selections carried on the context. */
 export interface SelectionState {
-  /** The active Pair_Selector value; defaults to {@link ALL_PAIRS} (Req 8.4). */
-  readonly pair: PairSelection;
+  /** The active pair; defaults to {@link DEFAULT_PAIR}. */
+  readonly pair: Pair;
   /**
    * The browsed Decision_Date (`YYYY-MM-DD`), or `null` when no explicit date is chosen.
    * `null` is the signal for consumers to fall back to the Latest_Decision_Date.
@@ -62,8 +55,8 @@ export interface SelectionState {
 
 /** The full context value: the current selection plus the two update functions. */
 export interface SelectionContextValue extends SelectionState {
-  /** Set the active pair (pass {@link ALL_PAIRS} for the cross-pair overview). */
-  readonly setPair: (pair: PairSelection) => void;
+  /** Set the active pair. */
+  readonly setPair: (pair: Pair) => void;
   /** Set the browsed Decision_Date, or `null` to fall back to the latest. */
   readonly setDate: (date: DateSelection) => void;
 }
@@ -78,7 +71,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Parse a selection out of a raw query string (the leading `?` is optional). Invalid or
- * absent values fall back to the defaults: an unknown/missing pair becomes "All pairs" and
+ * absent values fall back to the defaults: an unknown/missing pair becomes the default pair and
  * a missing/malformed date becomes `null`. Pure and side-effect free so it is unit-testable
  * without a DOM.
  */
@@ -88,8 +81,7 @@ export function parseSelectionFromSearch(search: string): SelectionState {
   );
 
   const rawPair = params.get(PAIR_PARAM);
-  const pair: PairSelection =
-    rawPair !== null && isPair(rawPair) ? rawPair : ALL_PAIRS;
+  const pair: Pair = rawPair !== null && isPair(rawPair) ? rawPair : DEFAULT_PAIR;
 
   const rawDate = params.get(DATE_PARAM);
   const date: DateSelection =
@@ -99,15 +91,12 @@ export function parseSelectionFromSearch(search: string): SelectionState {
 }
 
 /**
- * Serialize a selection into a query string (no leading `?`). Defaults are OMITTED so the
- * URL stays clean: "All pairs" writes no `pair` key and a `null` date writes no `date` key.
- * Pure and side-effect free.
+ * Serialize a selection into a query string (no leading `?`). The pair is always written; a
+ * `null` date writes no `date` key so the URL stays clean. Pure and side-effect free.
  */
 export function selectionToSearch(state: SelectionState): string {
   const params = new URLSearchParams();
-  if (state.pair !== ALL_PAIRS) {
-    params.set(PAIR_PARAM, state.pair);
-  }
+  params.set(PAIR_PARAM, state.pair);
   if (state.date !== null) {
     params.set(DATE_PARAM, state.date);
   }
@@ -159,7 +148,7 @@ export function SelectionProvider({
     writeSearch(selectionToSearch(state));
   }, [state]);
 
-  const setPair = useCallback((pair: PairSelection) => {
+  const setPair = useCallback((pair: Pair) => {
     setState((prev) => (prev.pair === pair ? prev : { ...prev, pair }));
   }, []);
 

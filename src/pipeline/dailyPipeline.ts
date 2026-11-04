@@ -20,7 +20,11 @@
 // re-implemented, and no LLM type reaches the firing decision (Requirement 2.1).
 
 import { PAIRS, type Pair } from "../ingestion/types.js";
-import type { TradingDate } from "../guard/types.js";
+import type { Candle, TradingDate } from "../guard/types.js";
+import { isMatured } from "../guard/lookAheadGuard.js";
+import { computeAtr14 } from "../confidence/atr.js";
+import { deriveExpectedRange } from "../range-forecast/expectedRange.js";
+import type { ExpectedRange } from "../range-forecast/types.js";
 import { encodePatternVector } from "../encoder/patternEncoder.js";
 import { retrieve } from "../retrieval/retrieve.js";
 import type { AnalogueRecord, DirectionClass } from "../retrieval/types.js";
@@ -153,6 +157,7 @@ export async function evaluatePair(
     profile: ExcursionProfile,
     stopLossPips: number | null,
     takeProfitPips: number | null,
+    expectedRange?: ExpectedRange | null,
   ): PairEvaluation => ({
     pair,
     earnedConfidence: confidence,
@@ -162,6 +167,8 @@ export async function evaluatePair(
     stopLossPips,
     takeProfitPips,
     choppiness,
+    // Display-only: attached only when a forecast exists (absent = not forecast).
+    ...(expectedRange ? { expectedRange } : {}),
     rationale: narrative.rationale,
     analogueLabels: narrative.analogueLabels,
   });
@@ -199,7 +206,42 @@ export async function evaluatePair(
   const stopLossPips = boundaries?.stopLossPips ?? null;
   const takeProfitPips = boundaries?.takeProfitPips ?? null;
 
-  return nonFiring(direction, horizon, confidence, profile, stopLossPips, takeProfitPips);
+  // Step 5 (display-only): expected candle size. Never gates or alters the
+  // firing decision above; any failure degrades to "no forecast".
+  const expectedRange = await forecastExpectedRange(
+    pair,
+    decisionDate,
+    neighborhood,
+    horizon,
+    window,
+    deps,
+  );
+
+  return nonFiring(direction, horizon, confidence, profile, stopLossPips, takeProfitPips, expectedRange);
+}
+
+/**
+ * Derive the analogue-based, pair-relative expected candle size. The pair's own
+ * history (for the terciles) is every matured analogue row dated strictly before
+ * the Decision_Date whose horizon window had ALREADY closed as of the
+ * Decision_Date, so a replay at a past date never sees outcomes from after it.
+ * Fail-safe: any store error yields `null` (no forecast), never a throw.
+ */
+async function forecastExpectedRange(
+  pair: Pair,
+  decisionDate: TradingDate,
+  neighborhood: readonly AnalogueRecord[],
+  horizon: Horizon,
+  window: readonly Candle[],
+  deps: PipelineDeps,
+): Promise<ExpectedRange | null> {
+  try {
+    const stored = await deps.analogueStore.getMaturedOutcomes(pair, decisionDate);
+    const history = stored.filter((a) => isMatured(a.decisionDate, a.horizon, decisionDate));
+    return deriveExpectedRange(neighborhood, history, horizon, pair, computeAtr14(window));
+  } catch {
+    return null;
+  }
 }
 
 /**

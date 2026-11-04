@@ -1,148 +1,225 @@
 // @vitest-environment jsdom
 //
-// Single-window dashboard — MasterCard DOM tests (task 2.14).
+// MasterCard / StrategyCardGrid / PairSummary / SystemRecordFooter DOM tests.
 //
-// Validates: Requirements 1.2, 1.3, 8.1, 8.2, 8.4, 7.2, 12.1
+// The Master_Card is: PairSummary -> 2 x 3 StrategyCardGrid -> ContextDrawers -> System record.
+// It must show six clean cards (each with its own assessment), the conviction tier with its vote
+// tally, the expected candle size, and the system record, and it must show NO stop-loss,
+// take-profit, net expectancy, "Backtest edge" pill or "Neutral" label anywhere.
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { Confluence, ConfluenceCell } from "../api/types";
-import { PAIRS } from "../api/types";
-import { shapeConfluence, STRATEGY_IDS } from "../pure/shapeConfluence";
-import type { DailyNoteViewModel } from "../pure/shapeDailyNote";
-import type { EvidenceVM } from "../pure/shapeEvidence";
-import type { SetupTradeVM } from "../pure/shapeSetupTrades";
+import { EMPTY_CONFLUENCE, EMPTY_TRACK_RECORD } from "../api/snapshot";
+import type { Confluence, ConfluenceCell, FiringSetupRow, PairEvaluationRow, TrackRecord } from "../api/types";
+import { shapeConviction } from "../pure/shapeConviction";
+import { shapeDailyNote } from "../pure/shapeDailyNote";
+import { shapePairSummary } from "../pure/shapePairSummary";
+import { shapeStrategyCards } from "../pure/shapeStrategyCards";
+import { shapeSystemRecord } from "../pure/shapeSystemRecord";
 import { MasterCard } from "./MasterCard";
 
 afterEach(() => {
   cleanup();
 });
 
-const SETUP: SetupTradeVM = {
-  pair: "EURUSD",
-  strategyId: "s1",
-  forecast: {
-    label: "FORECAST",
-    direction: "UP",
-    horizon: 1,
-    confidence: { value: 0.64, validated: true },
-    analogueCount: 10,
-    historicalAgreement: 0.6,
-  },
-  trade: {
-    label: "TRADE",
-    entryAssumption: "Next open",
-    stopLossPips: { value: 25, validated: true },
-    takeProfitPips: { value: 40, validated: true },
-    horizonExpiry: "2026-09-17",
-    netExpectancyPips: { value: 3, validated: true },
-  },
-  anyUnvalidated: false,
-};
+const DATE = "2026-09-16";
+const ids = ["trend", "breakout", "range", "reversal", "custom_pattern", "third_party"] as const;
+const cell = (id: (typeof ids)[number], d: "UP" | "DOWN" | "FLAT", s = 0.7): ConfluenceCell => ({
+  strategyId: id,
+  available: true,
+  direction: d,
+  strength: d === "FLAT" ? 0 : s,
+  rationale: `${id} rationale`,
+});
 
-const NOTE: DailyNoteViewModel = {
-  status: "generated",
-  text: "Quiet session.",
-  decisionDate: "2026-09-16",
-};
-
-const EVIDENCE: EvidenceVM = {
-  pair: "EURUSD",
-  horizon: 5,
-  analogueCount: 12,
-  targetOnly: 5,
-  stopOnly: 3,
-  ambiguous: 1,
-  neither: 3,
-  classifiable: true,
-  ledger: null,
-};
-
-function renderCard(): HTMLElement {
-  const cells: ConfluenceCell[] = STRATEGY_IDS.map((id) => ({
-    strategyId: id,
-    available: true,
-    direction: "UP",
-    strength: 0.5,
-    rationale: `${id} rationale`,
-  }));
-  const slice: Confluence = {
-    validationLabel: "unvalidated" as "unvalidated",
-    weights: {
-      trend: 1,
-      breakout: 1,
-      range: 1,
-      reversal: 1,
-      custom_pattern: 1,
-      third_party: 0,
+/** The EURUSD case from the audit: pattern UP (0.57) vs trend DOWN (0.9), the rest flat. */
+const SPLIT_CONFLUENCE: Confluence = {
+  ...EMPTY_CONFLUENCE,
+  pairs: [
+    {
+      pair: "EURUSD",
+      score: -0.07,
+      status: "CONFLICT_FLAT",
+      opposingStrategyIds: ["trend", "custom_pattern"],
+      cells: ids.map((id) =>
+        id === "trend" ? cell(id, "DOWN", 0.9) : id === "custom_pattern" ? cell(id, "UP", 0.57) : cell(id, "FLAT"),
+      ),
     },
-    conflictThreshold: 0.6,
-    alignmentThreshold: 0.4,
-    pairs: [{ pair: "EURUSD", score: 0.7, status: "ALIGNED_UP", opposingStrategyIds: [], cells }],
-  };
-  const vm = shapeConfluence(slice);
-  const { container } = render(
+  ],
+};
+
+const EVAL: PairEvaluationRow = {
+  decision_date: DATE,
+  pair: "EURUSD",
+  direction: "UP",
+  horizon: 1,
+  earned_confidence: 0.571,
+  fired: true,
+  choppiness: 0.4,
+  expected_range: { bucket: "LARGE", horizon: 1, low_pips: 70.2, high_pips: 110.4, sample_size: 44 },
+};
+const FIRING: FiringSetupRow = {
+  decision_date: DATE,
+  pair: "EURUSD",
+  strategy_id: "system",
+  direction: "UP",
+  horizon: 1,
+  earned_confidence: 0.571,
+  // The snapshot still carries these (backend research data); the UI must never show them.
+  stop_loss_pips: 31.5,
+  take_profit_pips: 47.5,
+  surfaced: true,
+  suppression_reason: null,
+};
+const TRACK: TrackRecord = {
+  lookbackDays: 60,
+  strategies: [
+    { pair: "EURUSD", strategyId: "trend", calls: 31, correct: 12 },
+    { pair: "EURUSD", strategyId: "custom_pattern", calls: 8, correct: 5 },
+  ],
+  rangeForecast: [{ pair: "EURUSD", forecasts: 18, correct: 11 }],
+};
+const REPORT = {
+  config_id: "c",
+  split_test_start: "2020-01-01",
+  split_test_end: "2024-01-01",
+  sample_size: 30000,
+  predictions_count: 28470,
+  model_accuracy: 0.4996,
+  baseline_accuracy: 0.4871,
+  delta_vs_baseline: 0.0125,
+};
+
+function renderCard(over: { confluence?: Confluence; firing?: FiringSetupRow[]; track?: TrackRecord } = {}): void {
+  const confluence = over.confluence ?? SPLIT_CONFLUENCE;
+  const track = over.track ?? TRACK;
+  const row = confluence.pairs.find((p) => p.pair === "EURUSD") ?? null;
+  render(
     <MasterCard
-      setup={SETUP}
-      edge={{ available: true, edgeText: "+3.2 pp" }}
-      row={vm.rows[0] ?? null}
-      columns={vm.columns}
-      validated={vm.validated}
-      note={NOTE}
-      evidence={EVIDENCE}
+      pair="EURUSD"
+      conviction={row === null ? null : shapeConviction(row, confluence.weights)}
+      summary={shapePairSummary("EURUSD", [EVAL], over.firing ?? [FIRING], DATE, track)}
+      cards={shapeStrategyCards(row, "EURUSD", confluence.weights, track)}
+      lookbackDays={track.lookbackDays}
+      note={shapeDailyNote({ decision_date: DATE, note_text: "Quiet session.", generated: true })}
+      evidence={{ pair: "EURUSD", horizon: 1, sampleCount: 40, upShare: 0.5, downShare: 0.5 }}
+      systemRecord={shapeSystemRecord(REPORT)}
     />,
   );
-  return container;
-}
-
-/** True when `a` appears before `b` in document order. */
-function before(a: Element, b: Element): boolean {
-  return (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
 }
 
 describe("MasterCard", () => {
-  it("renders banner, pill, matrix, drawers in that DOM order (Req 1.2, 8.1, 8.2)", () => {
+  it("renders exactly six strategy cards, each with its own assessment", () => {
     renderCard();
-    const banner = screen.getByTestId("verdict-direction");
-    const pill = screen.getByTestId("backtest-edge-pill");
-    const matrix = screen.getByRole("group", { name: /strategy cells/ });
-    const drawers = screen.getByTestId("context-drawers");
-    expect(before(banner, pill)).toBe(true);
-    expect(before(pill, matrix)).toBe(true);
-    expect(before(matrix, drawers)).toBe(true);
-  });
-
-  it("renders exactly one backtest edge pill (Req 8.4)", () => {
-    renderCard();
-    expect(screen.getAllByTestId("backtest-edge-pill")).toHaveLength(1);
-  });
-
-  it("has no table with more than one pair column (Req 1.3)", () => {
-    const container = renderCard();
-    const pairs: readonly string[] = PAIRS;
-    for (const table of Array.from(container.querySelectorAll("table"))) {
-      const headers = Array.from(table.querySelectorAll("th, [role='columnheader']"));
-      const pairHeaders = headers.filter((h) => pairs.includes((h.textContent ?? "").trim()));
-      expect(pairHeaders.length).toBeLessThanOrEqual(1);
+    const grid = screen.getByTestId("strategy-card-grid");
+    const cards = within(grid).getAllByRole("listitem");
+    expect(cards).toHaveLength(6);
+    expect(cards.map((c) => c.getAttribute("data-testid"))).toEqual(
+      ids.map((id) => `strategy-card-${id}`),
+    );
+    // Each card states a direction, a meaning sentence and a track-record line.
+    for (const id of ids) {
+      expect(screen.getByTestId(`strategy-card-${id}-direction`).textContent).toMatch(/Up|Down|Flat|Unavailable/);
+      expect(screen.getByTestId(`strategy-card-${id}-record`).textContent).not.toBe("");
     }
+    expect(screen.getByTestId("strategy-card-trend").textContent).toContain(
+      "Short-term average is below the long-term average and falling.",
+    );
   });
 
-  it("renders no h1; the ControlBar owns it (Req 12.1)", () => {
-    const container = renderCard();
-    expect(container.querySelectorAll("h1")).toHaveLength(0);
-    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
-  });
-
-  it("has both drawers collapsed by default (Req 7.2)", () => {
+  it("shows the Split tier with the tally that explains it (the EURUSD case)", () => {
     renderCard();
-    const drawers = screen.getByTestId("context-drawers");
-    const buttons = Array.from(drawers.querySelectorAll("button"));
-    expect(buttons).toHaveLength(2);
-    for (const b of buttons) {
-      expect(b.getAttribute("aria-expanded")).toBe("false");
-    }
-    expect(screen.queryByTestId("evidence-body")).toBeNull();
-    expect(screen.queryByText("Quiet session.")).toBeNull();
+    expect(screen.getByTestId("pair-conviction").textContent).toContain("Split");
+    expect(screen.getByTestId("pair-tally").textContent).toBe("1 up \u00B7 1 down \u00B7 3 flat");
+    expect(screen.getByTestId("strategy-card-trend").getAttribute("data-conflicting")).toBe("true");
+    expect(screen.getByTestId("strategy-card-custom_pattern").getAttribute("data-conflicting")).toBe("true");
+    expect(screen.getByTestId("strategy-card-range").getAttribute("data-conflicting")).toBeNull();
+  });
+
+  it("marks the third party display-only with no track record", () => {
+    renderCard();
+    const third = screen.getByTestId("strategy-card-third_party");
+    expect(third.getAttribute("data-display-only")).toBe("true");
+    expect(third.textContent).toContain("Display-only");
+    expect(screen.getByTestId("strategy-card-third_party-record").getAttribute("data-record-kind")).toBe("display-only");
+  });
+
+  it("states each strategy's recent record in words", () => {
+    renderCard();
+    expect(screen.getByTestId("strategy-card-trend-record").textContent).toBe("Right 12 of 31 recent calls.");
+    expect(screen.getByTestId("strategy-card-custom_pattern-record").textContent).toContain("small sample");
+    expect(screen.getByTestId("strategy-card-breakout-record").getAttribute("data-record-kind")).toBe("not-measured");
+  });
+
+  it("shows the expected candle size as a size and a pips range, with its record", () => {
+    renderCard();
+    const size = screen.getByTestId("candle-size");
+    expect(size.textContent).toContain("Large candle");
+    expect(size.textContent).toContain("About 70.2\u2013110.4 pips over 1 day.");
+    expect(size.textContent).toContain("Forecast right 11 of 18 recent days.");
+    expect(size.textContent).toMatch(/not direction/i);
+  });
+
+  it("shows the pattern engine's own call", () => {
+    renderCard();
+    expect(screen.getByTestId("pair-pattern").textContent).toBe(
+      "Pattern engine fired: Up, 57% confidence, 1 day horizon.",
+    );
+  });
+
+  it("shows NO stop-loss, take-profit, net expectancy, backtest-edge pill or 'Neutral' label", () => {
+    renderCard();
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/stop.?loss|take.?profit|expectancy/i);
+    expect(text).not.toMatch(/backtest edge/i);
+    expect(text).not.toMatch(/\bneutral\b/i);
+    expect(text).not.toMatch(/un-validated/i);
+    // The firing row's stored pip levels never leak into the DOM.
+    expect(text).not.toContain("31.5");
+    expect(text).not.toContain("47.5");
+    expect(screen.queryByTestId("backtest-edge-pill")).toBeNull();
+    expect(screen.queryByTestId("verdict-direction")).toBeNull();
+  });
+
+  it("has no repeated large panel: one summary, one grid, one footer, and no rationale drawer", () => {
+    renderCard();
+    expect(screen.getAllByTestId("pair-summary")).toHaveLength(1);
+    expect(screen.getAllByTestId("strategy-card-grid")).toHaveLength(1);
+    expect(screen.getAllByTestId("system-record")).toHaveLength(1);
+    expect(screen.queryByTestId("rationale-drawer")).toBeNull();
+    expect(screen.queryByTestId("pair-confluence-matrix")).toBeNull();
+    expect(screen.queryAllByRole("heading", { level: 1 })).toHaveLength(0); // ControlBar owns the h1
+  });
+
+  it("puts the system record in the footer, and flags a lead within noise", () => {
+    renderCard();
+    const footer = screen.getByTestId("system-record");
+    expect(footer.textContent).toContain("System record: 50.0% right vs 48.7% naive over 28,470 forecasts.");
+    expect(footer.textContent).toMatch(/roughly level/);
+  });
+
+  it("collapses the technical rationale and the context drawers by default", () => {
+    renderCard();
+    const detail = screen.getByTestId("strategy-card-trend").querySelector("details");
+    expect(detail).not.toBeNull();
+    expect(detail!.hasAttribute("open")).toBe(false);
+    expect(screen.getByRole("button", { name: /Daily AI note/ }).getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("degrades gracefully for a pair with no confluence row: six unavailable cards, no signal", () => {
+    renderCard({ confluence: EMPTY_CONFLUENCE, firing: [], track: EMPTY_TRACK_RECORD });
+    expect(screen.getAllByRole("listitem")).toHaveLength(6);
+    expect(screen.getByTestId("pair-conviction").textContent).toContain("No signal");
+    expect(screen.getByTestId("pair-pattern").textContent).toBe("Pattern engine did not fire for this pair.");
+    expect(screen.getByTestId("strategy-card-grid").textContent).toMatch(/not available yet/i);
+  });
+
+  it("gives every card an accessible name that includes the meaning and the record", () => {
+    renderCard();
+    const label = screen.getByTestId("strategy-card-trend").getAttribute("aria-label") ?? "";
+    expect(label).toContain("EURUSD Trend");
+    expect(label).toContain("Down");
+    expect(label).toContain("Right 12 of 31 recent calls.");
   });
 });

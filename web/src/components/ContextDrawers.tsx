@@ -4,12 +4,13 @@
  *
  *   - Daily AI note: verbatim `DailyNoteViewModel.text` when generated; an explicit
  *     placeholder when unavailable or absent; always labelled advisory and non-scoring.
- *   - Historical evidence: one `EvidenceVM`, the same fields `EvidencePanel` renders; an
+ *   - Historical evidence: one `EvidenceVM` (the pair's own recent up/down base rate); an
  *     explicit placeholder when there is none. The header stays present and activatable.
  *
- * Raw sample counts (analogue tallies, simulated-trade counts) live only inside the
- * evidence drawer, which is collapsed by default, so they never appear in the default view
- * (Req 8.7). Each `Accordion` holds its own open state, so the two toggle independently.
+ * Raw sample counts live only inside the evidence drawer, which is collapsed by default, so
+ * they never appear in the default view (Req 8.7). The drawer shows no stop-loss, take-profit
+ * or expectancy figure. Each `Accordion` holds its own open state, so the two toggle
+ * independently.
  *
  * Presentation only: values are rendered as given by the pure shapers; nothing is
  * recomputed. The note is a React text child (auto-escaped); no `dangerouslySetInnerHTML`.
@@ -66,35 +67,21 @@ function NoteBody({ note }: { readonly note: DailyNoteViewModel }): JSX.Element 
   );
 }
 
+const pct = (share: number): string => `${Math.round(share * 100)}%`;
+
 function EvidenceBody({ evidence: e }: { readonly evidence: EvidenceVM | null }): JSX.Element {
-  if (e === null) {
+  if (e === null || e.upShare === null || e.downShare === null) {
     return <p style={bodyTextStyle}>{NO_EVIDENCE_TEXT}</p>;
   }
   return (
     <div style={{ fontSize: 14, color: theme.colors.textPrimary }} data-testid="evidence-body">
       <strong>{e.pair}</strong>
       {" — "}
-      {e.analogueCount} matured analogue{e.analogueCount === 1 ? "" : "s"} ({e.horizon}d horizon)
-      {e.analogueCount > 0 && e.classifiable ? (
-        <div style={detailStyle}>
-          Reached target only: {e.targetOnly} · stop only: {e.stopOnly} · both (order
-          unresolved): {e.ambiguous} · neither: {e.neither}
-        </div>
-      ) : null}
-      {e.analogueCount > 0 && !e.classifiable ? (
-        <div style={detailStyle}>
-          No stop/target on this setup, so outcomes are not classified.
-        </div>
-      ) : null}
-      {e.ledger !== null ? (
-        <div style={detailStyle}>
-          Simulated trades: {e.ledger.tradeCount} · win rate {Math.round(e.ledger.winRate * 100)}%
-          · ambiguous {Math.round(e.ledger.ambiguousShare * 100)}% · expired{" "}
-          {Math.round(e.ledger.expiredShare * 100)}%
-        </div>
-      ) : (
-        <div style={detailStyle}>Simulated trade outcomes not yet measured.</div>
-      )}
+      {e.sampleCount} matured {e.horizon}-day outcome{e.sampleCount === 1 ? "" : "s"}: {pct(e.upShare)} went up,{" "}
+      {pct(e.downShare)} went down.
+      <div style={detailStyle}>
+        This is the pair&apos;s own recent base rate, the coin-flip reference to hold any reading against.
+      </div>
     </div>
   );
 }

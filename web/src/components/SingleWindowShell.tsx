@@ -2,10 +2,10 @@
  * SingleWindowShell — the load state machine and ready-state composition for the
  * single-window dashboard (mobile-dashboard-single-window; Req 2.6, 10.x, 11.x).
  *
- * UNWIRED: `AppShell` still mounts the tab router. This component is built to replace the
- * routed body once the rest of the spec lands.
+ * Mounted by `AppShell` as the dashboard body (the `#/evaluation` hash route shows the
+ * Evaluation view instead). The only pair navigator is the All_Pairs_Strip.
  *
- * State machine (mirrors `SetupsTab`'s `LoadState`): `loading | error | ready`.
+ * State machine: `loading | error | ready`.
  *   - `loading`: first load only. `LoadingState` renders synchronously on first render, so it
  *     is visible within 100 ms (Req 11.1).
  *   - `error`: a non-secret message plus a retry that re-runs the load for the CURRENT
@@ -15,42 +15,43 @@
  * The whole load is raced against a 10 s timer via `withTimeout`, so a stall is a failure
  * (Req 11.5). The timer owns NO `AbortSignal`: `getSnapshot` shares one in-flight promise,
  * and aborting it would cancel the fetch for every other consumer. The only signal passed to
- * the loaders is this component's own unmount/dependency `AbortController`, as in `SetupsTab`.
+ * the loaders is this component's own unmount/dependency `AbortController`.
  *
- * Selection: `resolveWindowSelection` maps the store's `ALL_PAIRS` sentinel / invalid values
- * to defaults (EURUSD / latest) without touching `state/selection.ts`. The raw URL params for
+ * Selection: `resolveWindowSelection` maps an unsupported pair (including the legacy "ALL"
+ * URL value) to the default (EURUSD) and a missing date to the latest. The raw URL params for
  * the best-effort Req 10.4 message are read once from `window.location.search` on mount
  * (the selection provider rewrites the URL afterwards).
  *
- * Extension points: tasks 4.4 (full composition), 4.5 (last-good-card retention) and 5.1
- * (null verdict banner) extend `ReadyView` and the load effect.
+ * Composition: PairSummary + 2 x 3 StrategyCardGrid + collapsed context drawers + the
+ * System record footer (see `MasterCard`). No stop-loss, take-profit or expectancy anywhere.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 
 import { withTimeout } from "../api/withTimeout";
-import { EMPTY_CONFLUENCE } from "../api/snapshot";
+import { EMPTY_CONFLUENCE, type ApiResult } from "../api/snapshot";
 import { getSnapshot } from "../api/snapshotCache";
-import type { Confluence, DailyCommentary, EvaluationReportRow, FiringSetupRow } from "../api/types";
+import type {
+  AnalogueOutcomeRow,
+  Confluence,
+  DailyCommentary,
+  EvaluationReportRow,
+  FiringSetupRow,
+  Pair,
+  PairEvaluationRow,
+  TrackRecord,
+} from "../api/types";
 import { resolveWindowSelection } from "../pure/resolveWindowSelection";
-import { selectPairConfluenceRow } from "../pure/selectPairConfluenceRow";
 import { shapeAllPairsStrip } from "../pure/shapeAllPairsStrip";
-import { shapeBacktestEdge } from "../pure/shapeBacktestEdge";
-import { shapeConfluence } from "../pure/shapeConfluence";
+import { shapeConviction } from "../pure/shapeConviction";
 import { shapeDailyNote } from "../pure/shapeDailyNote";
-import { shapeDashboardView } from "../pure/shapeDashboard";
 import { shapeEvidence } from "../pure/shapeEvidence";
-import { shapeSetupTrades } from "../pure/shapeSetupTrades";
+import { shapePairSummary } from "../pure/shapePairSummary";
+import { shapeStrategyCards } from "../pure/shapeStrategyCards";
+import { shapeSystemRecord } from "../pure/shapeSystemRecord";
 import { useSelection } from "../state/selection";
 import { selectLatestReport } from "../tabs/Gate/selectReport";
 import type { EvaluationReportsLoader } from "../tabs/Gate/GateTab";
-import type {
-  ConfluenceLoader,
-  DailyCommentaryLoader,
-  FiringSetupsLoader,
-  SetupsEvidence,
-  SetupsEvidenceLoader,
-} from "../tabs/Setups/SetupsTab";
 import { theme } from "../theme/darkTheme";
 import { AllPairsStrip } from "./AllPairsStrip";
 import { EmptyState } from "./EmptyState";
@@ -63,8 +64,43 @@ export const LOAD_TIMEOUT_MS = 10_000;
 
 const FALLBACK_ERROR = "The dashboard data could not be loaded.";
 
+/** Per-load options shared by the loaders. */
+interface LoadOptions {
+  readonly bustCache?: boolean;
+  readonly signal?: AbortSignal;
+  /** The shared refresh generation (the shell's refreshNonce), so all reads share one fetch. */
+  readonly generation?: number;
+}
+
+/** Loader for a Decision_Date's firing-setups rows (all five pairs). Injected for testability. */
+export type FiringSetupsLoader = (
+  decisionDate: string,
+  options?: LoadOptions,
+) => Promise<ApiResult<FiringSetupRow>>;
+
+/** Loader for the per-run Confluence_Matrix slice. Injected for testability. */
+export type ConfluenceLoader = (options?: LoadOptions) => Promise<Confluence>;
+
+/** Loader for the pair-independent daily AI commentary. Injected for testability. */
+export type DailyCommentaryLoader = (
+  decisionDate: string,
+  options?: LoadOptions,
+) => Promise<DailyCommentary>;
+
+/** The slices the pair view reads beyond firing rows and confluence. */
+export interface WindowEvidence {
+  readonly analogueOutcomes: readonly AnalogueOutcomeRow[];
+  /** Every pair evaluated on each run (carries the expected candle size). */
+  readonly pairEvaluations: readonly PairEvaluationRow[];
+  /** Recent per-strategy and candle-size hit counts. */
+  readonly trackRecord: TrackRecord;
+}
+
+/** Loader for the evidence slices. Injected for testability. */
+export type WindowEvidenceLoader = (options?: LoadOptions) => Promise<WindowEvidence>;
+
 /** Resolve the shared snapshot for a load, forwarding the generation + abort signal. */
-function snapshotFor(options?: { readonly generation?: number; readonly signal?: AbortSignal }) {
+function snapshotFor(options?: LoadOptions) {
   return getSnapshot(options?.generation ?? 0, {
     ...(options?.signal !== undefined ? { signal: options.signal } : {}),
   });
@@ -79,7 +115,7 @@ const defaultLoadFiringSetups: FiringSetupsLoader = async (decisionDate, options
 };
 
 const defaultLoadConfluence: ConfluenceLoader = async (options) => {
-  // Same graceful degradation as SetupsTab: a failed slice shapes to the explicit empty state.
+  // A failed slice shapes to the explicit empty state rather than failing the whole view.
   try {
     return (await snapshotFor(options)).confluence;
   } catch {
@@ -87,13 +123,12 @@ const defaultLoadConfluence: ConfluenceLoader = async (options) => {
   }
 };
 
-const defaultLoadEvidence: SetupsEvidenceLoader = async (options) => {
+const defaultLoadEvidence: WindowEvidenceLoader = async (options) => {
   const snapshot = await snapshotFor(options);
   return {
     analogueOutcomes: snapshot.analogueOutcomes,
-    tradeLedgerSummary: snapshot.tradeLedgerSummary,
-    provenance: snapshot.provenance,
-    validationStatus: snapshot.validationStatus,
+    pairEvaluations: snapshot.pairEvaluations,
+    trackRecord: snapshot.trackRecord,
   };
 };
 
@@ -121,7 +156,7 @@ export interface SingleWindowShellProps {
   readonly decisionDate: string | null;
   readonly loadFiringSetups?: FiringSetupsLoader;
   readonly loadConfluence?: ConfluenceLoader;
-  readonly loadEvidence?: SetupsEvidenceLoader;
+  readonly loadEvidence?: WindowEvidenceLoader;
   readonly loadDailyCommentary?: DailyCommentaryLoader;
   readonly loadEvaluationReports?: EvaluationReportsLoader;
 }
@@ -130,7 +165,7 @@ export interface SingleWindowShellProps {
 interface LoadedData {
   readonly rows: readonly FiringSetupRow[];
   readonly confluence: Confluence;
-  readonly evidence: SetupsEvidence;
+  readonly evidence: WindowEvidence;
   readonly dailyCommentary: DailyCommentary;
   readonly evaluationReports: readonly EvaluationReportRow[];
   readonly decisionDate: string;
@@ -299,59 +334,59 @@ function ErrorRegion(props: {
   );
 }
 
-/** Ready-state composition from the existing shapers (extended by tasks 4.4, 4.5, 5.1). */
+/** Ready-state composition from the shapers. Every value is a shaper output used verbatim. */
 function ReadyView(props: {
   readonly data: LoadedData;
-  readonly pair: import("../api/types").Pair;
-  readonly onSelectPair: (pair: import("../api/types").Pair) => void;
+  readonly pair: Pair;
+  readonly onSelectPair: (pair: Pair) => void;
 }): JSX.Element {
   const { data, pair, onSelectPair } = props;
 
-  // Every value below is a shaper output used verbatim; nothing is recomputed here.
   const composed = useMemo(() => {
-    const confluenceVM = shapeConfluence(data.confluence); // once
-    const model = shapeDashboardView(data.rows, pair);
-    const setup =
-      shapeSetupTrades({
-        cards: model.cards,
-        decisionDate: data.decisionDate,
-        ...data.evidence,
-      }).find((s) => s.pair === pair) ?? null;
-    const evidence =
-      shapeEvidence({
-        cards: model.cards,
-        analogueOutcomes: data.evidence.analogueOutcomes,
-        tradeLedgerSummary: data.evidence.tradeLedgerSummary,
-      }).find((e) => e.pair === pair) ?? null;
+    const confluenceRow = data.confluence.pairs.find((p) => p.pair === pair) ?? null;
+    const summary = shapePairSummary(
+      pair,
+      data.evidence.pairEvaluations,
+      data.rows,
+      data.decisionDate,
+      data.evidence.trackRecord,
+    );
+    // The evidence drawer reads the pair's horizon: the firing horizon, else the evaluated one.
+    const evaluation = data.evidence.pairEvaluations.find(
+      (e) => e.pair === pair && e.decision_date === data.decisionDate,
+    );
+    const horizon = summary.pattern.horizon ?? evaluation?.horizon ?? null;
     return {
-      confluenceVM,
-      setup,
-      evidence,
-      strip: shapeAllPairsStrip(confluenceVM),
-      row: selectPairConfluenceRow(confluenceVM, pair),
+      strip: shapeAllPairsStrip(data.confluence),
+      conviction: confluenceRow === null ? null : shapeConviction(confluenceRow, data.confluence.weights),
+      summary,
+      cards: shapeStrategyCards(confluenceRow, pair, data.confluence.weights, data.evidence.trackRecord),
       note: shapeDailyNote(data.dailyCommentary),
-      edge: shapeBacktestEdge(selectLatestReport(data.evaluationReports)),
+      evidence:
+        horizon === null
+          ? null
+          : shapeEvidence({ pair, horizon, analogueOutcomes: data.evidence.analogueOutcomes }),
+      systemRecord: shapeSystemRecord(selectLatestReport(data.evaluationReports)),
+      empty: data.rows.length === 0 && data.confluence.pairs.length === 0,
     };
   }, [data, pair]);
 
-  const { confluenceVM, setup, evidence, strip, row, note, edge } = composed;
-
-  if (data.rows.length === 0 && confluenceVM.empty) {
+  if (composed.empty) {
     return <EmptyState message="No data for this date." />;
   }
 
   return (
     <>
-      <AllPairsStrip strip={strip} selectedPair={pair} onSelectPair={onSelectPair} />
+      <AllPairsStrip strip={composed.strip} selectedPair={pair} onSelectPair={onSelectPair} />
       <MasterCard
-        setup={setup}
         pair={pair}
-        edge={edge}
-        row={row}
-        columns={confluenceVM.columns}
-        validated={confluenceVM.validated}
-        note={note}
-        evidence={evidence}
+        conviction={composed.conviction}
+        summary={composed.summary}
+        cards={composed.cards}
+        lookbackDays={data.evidence.trackRecord.lookbackDays}
+        note={composed.note}
+        evidence={composed.evidence}
+        systemRecord={composed.systemRecord}
       />
     </>
   );

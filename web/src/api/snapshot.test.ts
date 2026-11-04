@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   EMPTY_CONFLUENCE,
+  EMPTY_TRACK_RECORD,
   loadSnapshot,
   parseSnapshot,
   resolveSnapshotPath,
@@ -64,6 +65,7 @@ const FULL_SNAPSHOT: DashboardSnapshot = {
   // A v1 (pre-v5) fixture carries no real confluence slice; the loader defaults a pre-v5
   // snapshot to EMPTY_CONFLUENCE, so the fixture mirrors that fail-safe empty value.
   confluence: EMPTY_CONFLUENCE,
+  trackRecord: EMPTY_TRACK_RECORD,
 };
 
 describe("loadSnapshot — same-origin static fetch (R5.1, R4.4)", () => {

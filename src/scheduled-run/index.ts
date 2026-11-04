@@ -41,6 +41,11 @@ export {
   type SnapshotAiRationaleRow,
   type SnapshotExternalComparisonRow,
   type SnapshotEvaluationReportRow,
+  EMPTY_TRACK_RECORD,
+  type SnapshotExpectedRange,
+  type SnapshotStrategyRecordRow,
+  type SnapshotRangeRecordRow,
+  type SnapshotTrackRecordSlice,
 } from "./snapshot.js";
 export { mostRecentCompletedTradingDay } from "./completedTradingDay.js";
 export {

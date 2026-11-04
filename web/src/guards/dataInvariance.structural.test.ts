@@ -25,16 +25,9 @@ const GUARDS_DIR = dirname(fileURLToPath(import.meta.url));
 /** `web/src/` — protected paths in the fixture are relative to this directory. */
 const SRC_DIR = join(GUARDS_DIR, "..");
 
-const PROTECTED_FILES = [
-  "pure/shapeDashboard.ts",
-  "pure/shapeConfluence.ts",
-  "pure/shapeSetupTrades.ts",
-  "pure/shapeEvidence.ts",
-  "pure/shapeDailyNote.ts",
-  "pure/confluenceNav.ts",
-  "pure/format.ts",
-  "state/selection.ts",
-] as const;
+// dashboard-simplification deliberately removed/rewrote the other six originally pinned files
+// (see the fixture's `_comment`); these two are unchanged and stay pinned.
+const PROTECTED_FILES = ["pure/shapeDailyNote.ts", "pure/format.ts"] as const;
 
 type HashFixture = Record<string, string>;
 
@@ -53,7 +46,7 @@ function sha256OfFile(relPath: string): string {
 describe("data invariance guard (Property 5; Req 9.3, 9.4)", () => {
   const fixture = loadFixture();
 
-  it("pins exactly the eight protected files", () => {
+  it("pins exactly the protected files", () => {
     const pinned = Object.keys(fixture)
       .filter((key) => !key.startsWith("_"))
       .sort();

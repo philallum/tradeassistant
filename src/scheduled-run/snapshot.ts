@@ -44,11 +44,14 @@ import type {
  * (multi-strategy-confluence-engine) appends the pair-INDEPENDENT `confluence`
  * slice (the per-run Confluence_Matrix: six Strategy_Id cells per Pair plus the
  * aggregated score/status, with the weights and thresholds used and the
- * `unvalidated` Validation_Label), defaulting to `EMPTY_CONFLUENCE`. The SPA
+ * `unvalidated` Validation_Label), defaulting to `EMPTY_CONFLUENCE`. v6
+ * (dashboard-simplification) adds the optional per-pair `expected_range` on the
+ * `pairEvaluations` rows and the appended `trackRecord` slice (per-strategy and
+ * expected-candle-size hit counts), defaulting to `EMPTY_TRACK_RECORD`. The SPA
  * tolerates a version mismatch (best-effort render) and defaults an absent slice
  * to its empty value, so each bump is backward- and forward-compatible.
  */
-export const SNAPSHOT_SCHEMA_VERSION = 5 as const;
+export const SNAPSHOT_SCHEMA_VERSION = 6 as const;
 
 /** The canonical file name the SPA fetches as a same-origin static asset. */
 export const SNAPSHOT_FILE_NAME = "dashboard.json" as const;
@@ -127,6 +130,22 @@ export interface SnapshotPairEvaluationRow {
   readonly fired: boolean;
   /** Efficiency-Ratio Choppiness_Metric in [0,1] (~1 clean trend, ~0 chop); displayed only. */
   readonly choppiness: number;
+  /**
+   * v6: the analogue-based, pair-relative expected candle size. Absent when the
+   * pair could not be forecast (neighbourhood or history below its floor).
+   * Display-only; says nothing about direction.
+   */
+  readonly expected_range?: SnapshotExpectedRange;
+}
+
+/** Wire form of the expected candle size (Small / Medium / Large + a pips range). */
+export interface SnapshotExpectedRange {
+  readonly bucket: "SMALL" | "MEDIUM" | "LARGE";
+  readonly horizon: SnapshotHorizon;
+  readonly low_pips: number;
+  readonly high_pips: number;
+  /** Analogues behind the forecast. */
+  readonly sample_size: number;
 }
 
 /** A price (OHLC) candle row. */
@@ -377,9 +396,47 @@ export interface SnapshotConfluenceSlice {
 export const EMPTY_CONFLUENCE: SnapshotConfluenceSlice = {
   validationLabel: "unvalidated",
   weights: { trend: 1, breakout: 1, range: 1, reversal: 1, custom_pattern: 1, third_party: 0 },
-  conflictThreshold: 0.6,
+  conflictThreshold: 0.5,
   alignmentThreshold: 0.4,
   pairs: [],
+};
+
+// ---------------------------------------------------------------------------------------
+// v6 track-record slice. Plain "how often was each strategy right lately" counts, built by
+// deterministic, look-ahead-safe replay (see `src/track-record/`). Display-only, LLM-free,
+// and never re-enters firing / scoring. A call is a directional (UP/DOWN) signal; FLAT is an
+// abstention and is not counted.
+// ---------------------------------------------------------------------------------------
+
+/** Recent directional calls and how many were right, for one strategy on one pair. */
+export interface SnapshotStrategyRecordRow {
+  readonly pair: string;
+  readonly strategyId: SnapshotConfluenceStrategyId;
+  /** Directional (UP/DOWN) calls made in the look-back window that have a realized outcome. */
+  readonly calls: number;
+  /** Calls whose direction matched the realized direction. */
+  readonly correct: number;
+}
+
+/** Recent expected-candle-size forecasts and how many landed in the right bucket. */
+export interface SnapshotRangeRecordRow {
+  readonly pair: string;
+  readonly forecasts: number;
+  readonly correct: number;
+}
+
+/** The v6 `trackRecord` slice. `lookbackDays` is the trading-day replay window. */
+export interface SnapshotTrackRecordSlice {
+  readonly lookbackDays: number;
+  readonly strategies: readonly SnapshotStrategyRecordRow[];
+  readonly rangeForecast: readonly SnapshotRangeRecordRow[];
+}
+
+/** The empty/fail-safe default for the v6 track-record slice. */
+export const EMPTY_TRACK_RECORD: SnapshotTrackRecordSlice = {
+  lookbackDays: 0,
+  strategies: [],
+  rangeForecast: [],
 };
 
 /**
@@ -434,6 +491,11 @@ export interface DashboardSnapshot {
    * renders an explicit state without guarding for a missing key.
    */
   readonly confluence: SnapshotConfluenceSlice;
+  /**
+   * v6: recent per-strategy hit counts and expected-candle-size hit counts, built
+   * by look-ahead-safe replay. `EMPTY_TRACK_RECORD` by default. Always present.
+   */
+  readonly trackRecord: SnapshotTrackRecordSlice;
 }
 
 /** The v1 deterministic system Strategy_Source (schema default 'system'). */
@@ -517,6 +579,17 @@ export function pairEvaluationRows(
     earned_confidence: ev.earnedConfidence,
     fired: ev.direction !== "FLAT" && ev.earnedConfidence >= confidenceThreshold,
     choppiness: ev.choppiness,
+    ...(ev.expectedRange !== undefined
+      ? {
+          expected_range: {
+            bucket: ev.expectedRange.bucket,
+            horizon: ev.expectedRange.horizon,
+            low_pips: ev.expectedRange.lowPips,
+            high_pips: ev.expectedRange.highPips,
+            sample_size: ev.expectedRange.sampleSize,
+          },
+        }
+      : {}),
   }));
 }
 
@@ -591,6 +664,7 @@ function externalComparisonRow(
  *                        evaluated this run, fired or not). Omitted → `[]`.
  * @param edge            The v4 evidence slices; each omitted slice takes its empty default.
  * @param confluence      The v5 per-run Confluence_Matrix slice; omitted → `EMPTY_CONFLUENCE`.
+ * @param trackRecord     The v6 track-record slice; omitted → `EMPTY_TRACK_RECORD`.
  */
 export function buildDashboardSnapshot(
   view: DashboardView,
@@ -600,6 +674,7 @@ export function buildDashboardSnapshot(
   pairEvaluations: readonly SnapshotPairEvaluationRow[] = [],
   edge: SnapshotEdgeSlices = {},
   confluence: SnapshotConfluenceSlice = EMPTY_CONFLUENCE,
+  trackRecord: SnapshotTrackRecordSlice = EMPTY_TRACK_RECORD,
 ): DashboardSnapshot {
   const decisionDate = view.decisionDate;
   const todayFiring = view.cards.map((card) => firingSetupRow(decisionDate, card));
@@ -639,8 +714,10 @@ export function buildDashboardSnapshot(
     exposure: edge.exposure ?? EMPTY_EXPOSURE,
     provenance: edge.provenance ?? [],
     validationStatus: edge.validationStatus ?? [],
-    // v5: appended LAST so every earlier key keeps its byte order (Requirement 11.8).
+    // v5: appended so every earlier key keeps its byte order (Requirement 11.8).
     confluence,
+    // v6: appended LAST for the same reason.
+    trackRecord,
   };
 }
 

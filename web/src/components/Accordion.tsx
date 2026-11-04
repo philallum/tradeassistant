@@ -8,9 +8,8 @@
  *
  * Presentation only: it holds one boolean and knows nothing about the content it wraps.
  *
- * Focus indicator: reuses the `confluence-focusable` `:focus-visible` outline pattern from
- * `tabs/Setups/ConfluencePanel.tsx`. That rule is injected once per document under the same
- * style id, so whichever component mounts first installs it and the other reuses it.
+ * Focus indicator: a `confluence-focusable` `:focus-visible` outline rule, injected once per
+ * document under a fixed style id.
  */
 
 import { useEffect, useId, useState, type JSX, type ReactNode } from "react";

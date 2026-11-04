@@ -4,6 +4,7 @@
 > Updated alongside PROJECT-STATE.md when code structure changes.
 
 ## 3. Repository / code map
+- **Dashboard simplification (2026-11-04).** Backend: `src/range-forecast/` (pure expected candle size: `expectedRange.ts`, `realized.ts`), `src/track-record/` (`strategyRecord.ts`, `rangeRecord.ts`, `trackRecordSlice.ts`, `memoizedAnalogueStore.ts`), `src/strategies/calibration.ts` + `src/ops/confluence-calibration/main.ts` (read-only threshold measurement over `data/*.csv`); `PairEvaluation.expectedRange`, snapshot v6 (`expected_range`, `trackRecord`). Web: `components/{PairSummary,StrategyCard,StrategyCardGrid,SystemRecordFooter,MasterCard,AllPairsStrip,ControlBar}.tsx`, `pure/{shapeConviction,shapeStrategyCards,shapePairSummary,shapeSystemRecord,shapeAllPairsStrip,shapeEvidence}.ts`; `tabs/` now holds only `Gate/` (accuracy-vs-baseline report). `state/selection.ts` has no "All pairs" (`DEFAULT_PAIR` EURUSD).
 
 Top-level TypeScript modules under `src/` (see each module's `index.ts` for the
 authoritative export surface):

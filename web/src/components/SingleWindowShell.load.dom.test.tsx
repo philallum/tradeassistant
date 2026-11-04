@@ -8,11 +8,10 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { EMPTY_CONFLUENCE } from "../api/snapshot";
+import { EMPTY_CONFLUENCE, EMPTY_TRACK_RECORD } from "../api/snapshot";
 import type { FiringSetupRow } from "../api/types";
 import { SelectionProvider } from "../state/selection";
-import type { SetupsEvidence } from "../tabs/Setups/SetupsTab";
-import { LOAD_TIMEOUT_MS, SingleWindowShell } from "./SingleWindowShell";
+import { LOAD_TIMEOUT_MS, SingleWindowShell, type WindowEvidence } from "./SingleWindowShell";
 
 const DATE = "2026-02-01";
 
@@ -29,11 +28,10 @@ const firing: FiringSetupRow = {
   suppression_reason: null,
 };
 
-const evidence: SetupsEvidence = {
+const evidence: WindowEvidence = {
   analogueOutcomes: [],
-  tradeLedgerSummary: { window: null, strategies: [] },
-  provenance: [],
-  validationStatus: [],
+  pairEvaluations: [],
+  trackRecord: EMPTY_TRACK_RECORD,
 };
 
 type Rows = readonly FiringSetupRow[];

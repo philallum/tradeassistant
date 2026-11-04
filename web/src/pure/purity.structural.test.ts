@@ -182,12 +182,13 @@ describe("web/src/pure purity invariant (Req 19.1, 19.2)", () => {
     expect(names.length).toBeGreaterThan(0);
     for (const expected of [
       "selectDates.ts",
-      "shapeDashboard.ts",
       "format.ts",
-      "shapeCharts.ts",
-      "shapePredictionActual.ts",
-      "shapeAi.ts",
-      "shapeExternal.ts",
+      "shapeConviction.ts",
+      "shapeStrategyCards.ts",
+      "shapePairSummary.ts",
+      "shapeSystemRecord.ts",
+      "shapeAllPairsStrip.ts",
+      "shapeEvidence.ts",
     ]) {
       expect(names).toContain(expected);
     }
