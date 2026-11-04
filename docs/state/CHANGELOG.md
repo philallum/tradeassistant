@@ -8,6 +8,13 @@
 > the satellites where they conflict.
 
 ---
+### 2026-11-04 — Daily AI note: show the selected pair's own rationale (USDCAD was showing EURUSD text)
+LOCALLY VERIFIED (`make check` exit 0: backend 1241 passed/7 skipped; web build + 263 tests). NOT committed, NOT deployed.
+- **Cause:** the "Daily AI note" drawer renders `dailyCommentary`, ONE pair-independent whole-day note per run, so it showed the same text for every selected pair. The live 2026-11-03 note only described EURUSD. The per-pair `aiRationale` rows (one per FIRING pair, e.g. EURUSD and USDCAD that day) were published in `dashboard.json` but no longer rendered after the dashboard simplification removed the old AI tab.
+- **Change (web only):** new pure shaper `web/src/pure/shapePairNote.ts` picks the selected pair's rationale for the Decision_Date (verbatim; absent when the pair did not fire). `SingleWindowShell` passes `aiRationale` through `WindowEvidence` (optional field) -> `MasterCard` `pairNote` -> `ContextDrawers`, which now shows the pair's note first under the pair label, then a separately labelled "All pairs, whole-day overview". `shapeDailyNote.ts` is untouched (its hash is pinned). A pair with no rationale says so explicitly.
+- **Backend prompt tweak:** `toDailyCommentaryInput` intent now says to name EVERY pair with fired=true (the live overview named only one of two firing pairs). Takes effect on the next deployed run; no schema change.
+- **Horizon unit (fixed, backend, local):** the live EURUSD rationale said "over the next hour" because the model saw a bare `selectedHorizon: 1`. `src/llm/geminiProvider.ts` now adds a fixed `HORIZON_UNIT_NOTE` (horizons are TRADING DAYS on daily candles, never minutes/hours) to the `signal_rationale` and `pattern_description` prompts; the daily-commentary intent says the same; the pattern string in `displayOnly.ts` reads "horizon N trading day(s)". The role-input key set is unchanged (the smoke test pins it). New test in `geminiProvider.test.ts`. `make check` exit 0 (backend 1242 passed). Takes effect on the next deployed run.
+
 ### 2026-11-04 — Decision-date Option B: a run at/after the 17:00 NY close is labelled the NEXT trading day
 LOCALLY VERIFIED (`make check` exit 0: backend 1241 passed/7 skipped; web build + 251 tests). NOT committed, NOT deployed; no cloud change (the live Scheduler is untouched).
 - **Why:** the 17:00 NY run on day D used `Decision_Date = D` and candles strictly before D, so D's just-closed candle was ignored and a UK morning read was built on the close two sessions back. The strictly-before rule lives in 12+ places and stored vectors/baselines depend on it, so the rule was NOT changed (rejected Option A: re-encode all hosted vectors + re-baseline).

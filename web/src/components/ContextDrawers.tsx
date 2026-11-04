@@ -24,8 +24,12 @@ import { theme } from "../theme/darkTheme";
 import { Accordion } from "./Accordion";
 
 export interface ContextDrawersProps {
-  /** The shaped daily note for the selected pair's decision date. */
+  /** The whole-day overview across all pairs (pair-independent) for the decision date. */
   readonly note: DailyNoteViewModel;
+  /** The selected pair's own AI rationale, shown first. Omit to render the overview only. */
+  readonly pairNote?: DailyNoteViewModel;
+  /** The selected pair, used to label {@link pairNote}. */
+  readonly pair?: string;
   /** The selected pair's evidence, or `null` when there is none. */
   readonly evidence: EvidenceVM | null;
 }
@@ -36,7 +40,45 @@ const NO_EVIDENCE_TEXT = "No historical evidence is available for this pair.";
 const bodyTextStyle = { margin: 0, fontSize: 14, color: theme.colors.textSecondary } as const;
 const detailStyle = { color: theme.colors.textSecondary, marginTop: theme.spacing.xs } as const;
 
-function NoteBody({ note }: { readonly note: DailyNoteViewModel }): JSX.Element {
+const sectionLabelStyle = {
+  margin: `${theme.spacing.sm}px 0 ${theme.spacing.xs}px 0`,
+  fontSize: 12,
+  fontWeight: 600,
+  color: theme.colors.textSecondary,
+} as const;
+
+function NoteText({
+  note,
+  unavailableText,
+}: {
+  readonly note: DailyNoteViewModel;
+  readonly unavailableText: string;
+}): JSX.Element {
+  return note.status === "generated" && note.text !== null ? (
+    <p
+      style={{
+        margin: 0,
+        fontSize: 15,
+        color: theme.colors.textPrimary,
+        whiteSpace: "pre-wrap",
+      }}
+    >
+      {note.text}
+    </p>
+  ) : (
+    <p style={bodyTextStyle}>{unavailableText}</p>
+  );
+}
+
+function NoteBody({
+  note,
+  pairNote,
+  pair,
+}: {
+  readonly note: DailyNoteViewModel;
+  readonly pairNote?: DailyNoteViewModel;
+  readonly pair?: string;
+}): JSX.Element {
   return (
     <div>
       <p
@@ -49,20 +91,23 @@ function NoteBody({ note }: { readonly note: DailyNoteViewModel }): JSX.Element 
       >
         AI-generated · advisory and non-scoring.
       </p>
-      {note.status === "generated" && note.text !== null ? (
-        <p
-          style={{
-            margin: 0,
-            fontSize: 15,
-            color: theme.colors.textPrimary,
-            whiteSpace: "pre-wrap",
-          }}
-        >
-          {note.text}
-        </p>
-      ) : (
-        <p style={bodyTextStyle}>{NOTE_UNAVAILABLE_TEXT}</p>
-      )}
+      {pairNote !== undefined && pair !== undefined ? (
+        <>
+          <p style={sectionLabelStyle} data-testid="pair-note-label">
+            {pair}
+          </p>
+          <div data-testid="pair-note">
+            <NoteText
+              note={pairNote}
+              unavailableText={`No AI note for ${pair} on this run (it only writes one for pairs that fired).`}
+            />
+          </div>
+          <p style={sectionLabelStyle} data-testid="overview-note-label">
+            All pairs, whole-day overview
+          </p>
+        </>
+      ) : null}
+      <NoteText note={note} unavailableText={NOTE_UNAVAILABLE_TEXT} />
     </div>
   );
 }
@@ -86,11 +131,11 @@ function EvidenceBody({ evidence: e }: { readonly evidence: EvidenceVM | null })
   );
 }
 
-export function ContextDrawers({ note, evidence }: ContextDrawersProps): JSX.Element {
+export function ContextDrawers({ note, pairNote, pair, evidence }: ContextDrawersProps): JSX.Element {
   return (
     <div data-testid="context-drawers">
       <Accordion title="Daily AI note" subtitle="Advisory">
-        <NoteBody note={note} />
+        <NoteBody note={note} {...(pairNote !== undefined ? { pairNote } : {})} {...(pair !== undefined ? { pair } : {})} />
       </Accordion>
       <Accordion title="Historical evidence">
         <EvidenceBody evidence={evidence} />

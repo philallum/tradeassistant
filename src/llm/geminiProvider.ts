@@ -87,6 +87,17 @@ function generateContentUrl(config: GeminiProviderConfig): string {
 }
 
 /**
+ * Fixed instruction stating the unit of every horizon in the payload. The system
+ * works on DAILY candles, so a horizon of N means N trading DAYS (1, 2 or 3).
+ * Without this the model sees a bare number and invents a unit (it has written
+ * "over the next hour"). A constant string, not derived from any LLM output.
+ */
+const HORIZON_UNIT_NOTE =
+  "Every horizon is measured in TRADING DAYS on daily candles (a horizon of 1 means " +
+  "the next trading day, 2 means two trading days, 3 means three). Never describe a " +
+  "horizon in minutes or hours.";
+
+/**
  * Compose the plain-text prompt handed to the model for a sanctioned role. The
  * inputs are the deterministic numeric payloads the `LlmInterface` already
  * forwards; the prompt only ASKS for display text and never feeds anything back
@@ -101,7 +112,9 @@ function buildPrompt(role: SanctionedRole, input: RoleInput[SanctionedRole]): st
         "for ONE firing FX setup. Describe, in 2-3 sentences, why the setup looks the " +
         "way it does given the deterministic numeric signal below (pattern, trend " +
         "context, structural liquidity distance, selected horizon, direction, earned " +
-        "confidence). Do NOT invent numbers, do NOT give trade advice, and do NOT " +
+        "confidence). " +
+        `${HORIZON_UNIT_NOTE} ` +
+        "Do NOT invent numbers, do NOT give trade advice, and do NOT " +
         "recommend a different direction. Return prose only.\n\n" +
         `Signal:\n${payload}`
       );
@@ -109,7 +122,8 @@ function buildPrompt(role: SanctionedRole, input: RoleInput[SanctionedRole]): st
       return (
         "You label matched historical analogues for a trading dashboard. Given the " +
         "analogue summaries below, return a JSON array of short (2-4 word) qualitative " +
-        'labels, one per analogue, e.g. ["sharp V-reversal","slow grind up"]. Return ' +
+        `labels, one per analogue. ${HORIZON_UNIT_NOTE} ` +
+        'Example: ["sharp V-reversal","slow grind up"]. Return ' +
         "ONLY the JSON array, no prose.\n\n" +
         `Analogues:\n${payload}`
       );

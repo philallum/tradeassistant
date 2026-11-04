@@ -37,6 +37,7 @@ import type {
   DailyCommentary,
   EvaluationReportRow,
   FiringSetupRow,
+  SignalRationaleRow,
   Pair,
   PairEvaluationRow,
   TrackRecord,
@@ -45,6 +46,7 @@ import { resolveWindowSelection } from "../pure/resolveWindowSelection";
 import { shapeAllPairsStrip } from "../pure/shapeAllPairsStrip";
 import { shapeConviction } from "../pure/shapeConviction";
 import { shapeDailyNote } from "../pure/shapeDailyNote";
+import { shapePairNote } from "../pure/shapePairNote";
 import { shapeEvidence } from "../pure/shapeEvidence";
 import { shapePairSummary } from "../pure/shapePairSummary";
 import { shapeStrategyCards } from "../pure/shapeStrategyCards";
@@ -94,6 +96,8 @@ export interface WindowEvidence {
   readonly pairEvaluations: readonly PairEvaluationRow[];
   /** Recent per-strategy and candle-size hit counts. */
   readonly trackRecord: TrackRecord;
+  /** Per-pair AI rationales (one per firing pair). Absent = none loaded. */
+  readonly aiRationale?: readonly SignalRationaleRow[];
 }
 
 /** Loader for the evidence slices. Injected for testability. */
@@ -129,6 +133,7 @@ const defaultLoadEvidence: WindowEvidenceLoader = async (options) => {
     analogueOutcomes: snapshot.analogueOutcomes,
     pairEvaluations: snapshot.pairEvaluations,
     trackRecord: snapshot.trackRecord,
+    aiRationale: snapshot.aiRationale,
   };
 };
 
@@ -362,6 +367,7 @@ function ReadyView(props: {
       summary,
       cards: shapeStrategyCards(confluenceRow, pair, data.confluence.weights, data.evidence.trackRecord),
       note: shapeDailyNote(data.dailyCommentary),
+      pairNote: shapePairNote(data.evidence.aiRationale, pair, data.decisionDate),
       evidence:
         horizon === null
           ? null
@@ -385,6 +391,7 @@ function ReadyView(props: {
         cards={composed.cards}
         lookbackDays={data.evidence.trackRecord.lookbackDays}
         note={composed.note}
+        pairNote={composed.pairNote}
         evidence={composed.evidence}
         systemRecord={composed.systemRecord}
       />

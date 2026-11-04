@@ -75,7 +75,7 @@ export interface DisplayOnlyDeps {
  */
 function toNumericInputs(card: FiringCard): SignalNumericInputs {
   return {
-    pattern: `${card.pair} ${card.direction} setup (horizon ${card.horizon})`,
+    pattern: `${card.pair} ${card.direction} setup (horizon ${card.horizon} trading ${card.horizon === 1 ? "day" : "days"})`,
     trendContext: card.direction === "DOWN" ? "DOWN" : "UP",
     structuralLiquidityDistancePips: Math.round(card.excursionProfile.favorablePips),
     selectedHorizon: card.horizon,
