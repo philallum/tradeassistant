@@ -4,8 +4,10 @@
  * rationale (secondary), and the strategy's recent track record.
  *
  * Pure: no fetch, DOM, clock, or core import. Every number is copied from the snapshot's
- * confluence cell or track-record row; nothing is recomputed or fabricated. A missing record
- * is stated as such, never filled with a default.
+ * confluence cell, the replay track-record row, or the recorded signal-scorecard row; nothing
+ * is recomputed or fabricated. A missing record is stated as such, never filled with a default.
+ * Each card carries TWO histories: `record` (replay-based, classical strategies + pattern) and
+ * `recorded` (the dated scorecard, covering all six signals incl. the non-replayable third_party).
  */
 import type {
   Confluence,
@@ -13,6 +15,7 @@ import type {
   ConfluencePair,
   ConfluenceStrategyId,
   Direction,
+  SignalScorecard,
   TrackRecord,
 } from "../api/types";
 import { formatDirection } from "./format";
@@ -33,6 +36,9 @@ export const STRATEGY_IDS: readonly ConfluenceStrategyId[] = [
 /** A record with fewer directional calls than this is flagged as a small sample. */
 export const SMALL_SAMPLE_CALLS = 20;
 
+/** Local empty recorded-scorecard default so the shaper needs no non-type import. */
+const EMPTY_SIGNAL_SCORECARD: SignalScorecard = { totalRecorded: 0, rows: [] };
+
 export type RecordKind = "measured" | "no-calls" | "display-only" | "not-measured";
 
 export interface RecordVM {
@@ -42,6 +48,17 @@ export interface RecordVM {
   /** True when `calls` is below {@link SMALL_SAMPLE_CALLS}. */
   readonly smallSample: boolean;
   /** e.g. "Right 12 of 31 recent calls" or "Display-only, not scored". */
+  readonly text: string;
+}
+
+/** The recorded (dated, not replayed) direction tally for one signal on one pair. */
+export interface RecordedVM {
+  /** "measured" = ≥1 matured call; "pending-only" = recorded but none matured yet; "none" = nothing recorded. */
+  readonly kind: "measured" | "pending-only" | "none";
+  readonly calls: number;
+  readonly correct: number;
+  readonly pending: number;
+  /** e.g. "Recorded: right 3 of 5 (2 pending)." or "Recorded: 4 pending, none scored yet." */
   readonly text: string;
 }
 
@@ -59,6 +76,8 @@ export interface StrategyCardVM {
   /** The strategy's own technical rationale, or the unavailable reason. */
   readonly detail: string;
   readonly record: RecordVM;
+  /** The RECORDED direction tally (dated `signal_predictions`), covering all six signals. */
+  readonly recorded: RecordedVM;
   /** True when this card is one side of a strong disagreement (a Split pair). */
   readonly conflicting: boolean;
   readonly accessibleName: string;
@@ -135,15 +154,50 @@ function shapeRecord(
   };
 }
 
+/**
+ * Shape the RECORDED tally for one signal on one pair from the dated scorecard. Unlike the
+ * replay `record`, this applies to ALL six signals (including the display-only `third_party`,
+ * which cannot be replayed) — recording it is the whole point of the scorecard.
+ */
+function shapeRecorded(
+  id: ConfluenceStrategyId,
+  pair: string,
+  scorecard: SignalScorecard,
+): RecordedVM {
+  const row = scorecard.rows.find((r) => r.pair === pair && r.strategyId === id);
+  if (row === undefined || (row.calls === 0 && row.pending === 0)) {
+    return { kind: "none", calls: 0, correct: 0, pending: 0, text: "Recorded: nothing yet." };
+  }
+  if (row.calls === 0) {
+    return {
+      kind: "pending-only",
+      calls: 0,
+      correct: 0,
+      pending: row.pending,
+      text: `Recorded: ${row.pending} pending, none scored yet.`,
+    };
+  }
+  const pendingText = row.pending > 0 ? ` (${row.pending} pending)` : "";
+  return {
+    kind: "measured",
+    calls: row.calls,
+    correct: row.correct,
+    pending: row.pending,
+    text: `Recorded: right ${row.correct} of ${row.calls}${pendingText}.`,
+  };
+}
+
 function shapeCard(
   cell: ConfluenceCell,
   pair: string,
   displayOnly: boolean,
   conflicting: boolean,
   track: TrackRecord,
+  scorecard: SignalScorecard,
 ): StrategyCardVM {
   const title = TITLES[cell.strategyId];
   const record = shapeRecord(cell.strategyId, displayOnly, pair, track);
+  const recorded = shapeRecorded(cell.strategyId, pair, scorecard);
   const suffix = displayOnly ? " (display-only)" : "";
   if (!cell.available) {
     return {
@@ -158,8 +212,9 @@ function shapeCard(
       meaning: "No reading today.",
       detail: cell.reason,
       record,
+      recorded,
       conflicting,
-      accessibleName: `${pair} ${title}${suffix}: unavailable. ${cell.reason}. ${record.text}`,
+      accessibleName: `${pair} ${title}${suffix}: unavailable. ${cell.reason}. ${record.text} ${recorded.text}`,
     };
   }
   const directionLabel = formatDirection(cell.direction);
@@ -176,10 +231,11 @@ function shapeCard(
     meaning: MEANING[cell.strategyId][cell.direction],
     detail: cell.rationale,
     record,
+    recorded,
     conflicting,
     accessibleName:
       `${pair} ${title}${suffix}: ${directionLabel}${strengthText ? `, ${strengthText.toLowerCase()}` : ""}. ` +
-      `${MEANING[cell.strategyId][cell.direction]} ${record.text}`,
+      `${MEANING[cell.strategyId][cell.direction]} ${record.text} ${recorded.text}`,
   };
 }
 
@@ -193,6 +249,7 @@ export function shapeStrategyCards(
   pair: string,
   weights: Confluence["weights"],
   track: TrackRecord,
+  scorecard: SignalScorecard = EMPTY_SIGNAL_SCORECARD,
 ): readonly StrategyCardVM[] {
   const opposing = new Set<ConfluenceStrategyId>(
     pairRow?.status === "CONFLICT_FLAT" ? pairRow.opposingStrategyIds : [],
@@ -205,6 +262,6 @@ export function shapeStrategyCards(
         available: false,
         reason: "no data for this pair",
       };
-    return shapeCard(cell, pair, displayOnly, opposing.has(id), track);
+    return shapeCard(cell, pair, displayOnly, opposing.has(id), track, scorecard);
   });
 }

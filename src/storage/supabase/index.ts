@@ -36,6 +36,10 @@ export {
   type FrozenBaselineLogger,
 } from "./frozenBaselineStore.js";
 export {
+  SupabaseSignalPredictionStore,
+  type SignalPredictionLogger,
+} from "./signalPredictionStore.js";
+export {
   makeSupabaseViewPersister,
   firingSetupRows,
 } from "./viewPersister.js";

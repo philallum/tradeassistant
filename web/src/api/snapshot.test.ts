@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   EMPTY_CONFLUENCE,
+  EMPTY_SIGNAL_SCORECARD,
   EMPTY_TRACK_RECORD,
   loadSnapshot,
   parseSnapshot,
@@ -66,6 +67,7 @@ const FULL_SNAPSHOT: DashboardSnapshot = {
   // snapshot to EMPTY_CONFLUENCE, so the fixture mirrors that fail-safe empty value.
   confluence: EMPTY_CONFLUENCE,
   trackRecord: EMPTY_TRACK_RECORD,
+  signalScorecard: EMPTY_SIGNAL_SCORECARD,
 };
 
 describe("loadSnapshot — same-origin static fetch (R5.1, R4.4)", () => {

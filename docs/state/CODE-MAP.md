@@ -74,6 +74,8 @@ authoritative export surface):
   currency's |net| equals the firing count) and picks `strongestPair` (highest
   earnedConfidence, ties by PAIRS order; R8). Pure, deterministic, LLM-free,
   information-only; wired into the v4 snapshot via `scheduled-run/edgeSlices.ts` (Stage F task 15).
+- `scheduled-run/signalScorecardStep.ts` — (signal-scorecard, 2026-11-05) `runSignalScorecardStep` is the fail-safe daily-run wiring for the Signal Scorecard: it reconciles the open `signal_predictions` backlog, then rebuilds the per-run Confluence_Matrix the SAME way `confluenceSlice.ts` does (same strategy bundle/engine/config/candles/third-party refs) and records today's six per-signal directions. Wired into `main.ts` `makePersistView` via the new injectable `runScorecard` seam, AFTER the firing rows persist; writes only `signal_predictions`, never throws, feeds nothing firing reads.
+- `scheduled-run/signalScorecardSlice.ts` — (signal-scorecard, 2026-11-05) `buildSignalScorecardSlice` is the fail-safe v7 `signalScorecard` snapshot-slice builder: reads the recorded `signal_predictions` rows via `store.getAll()`, aggregates them with `aggregateSignalScorecard`, and maps to the wire slice (`totalRecorded` + per pair+signal `calls`/`correct`/`flat`/`pending`). `EMPTY_SIGNAL_SCORECARD` on any failure. Wired into `makePersistView` via the `buildScorecard` seam AFTER the scorecard step runs so today's rows are included. Snapshot schema bumped v6->v7 (`snapshot.ts`); the slice is appended LAST to keep earlier keys' byte order.
 - `scheduled-run/edgeSlices.ts` — (`trader-edge-validation`, Stage F task 15) `buildEdgeSlices` builds the additive v4 `dashboard.json` slices (`tradeLedgerSummary`, `calibration`, `exposure`, `provenance`, `validationStatus`); each slice fail-safe (empty + secret-free log). Reads existing `trade_ledger` rows only (daily run builds none, so ledger/calibration slices are empty until the Stage H edge-eval entry writes them). `validationStatus` is `validated` only if the system has trades, positive net expectancy, and beats every comparator; else `unvalidated`. `SNAPSHOT_SCHEMA_VERSION`=4. Firing/scoring untouched.
 - `provenance/` — (`trader-edge-validation`, Stage E task 14 landed) `signalProvenance.ts`:
   `deriveSignalProvenance` builds per-pair Signal_Provenance (last candle stamp with
@@ -143,6 +145,19 @@ authoritative export surface):
   `simplify-to-cloud-minimal` task 3), firing-setup persistence, realized-outcome
   journal. `choppinessMetric.ts` retains the choppiness/efficiency computation as
   a DISPLAYED field on each observation (never a suppressor).
+  `signalScorecard.ts` (signal-scorecard feature, 2026-11-05) is the per-signal
+  daily direction record: `SignalPredictionStore` port + `InMemory…` reference,
+  `recordPredictions(store, matrix)` (one open row per AVAILABLE Confluence_Matrix
+  cell, copying its direction — no new signal),
+  `reconcileOutcomes(store, decisionDate, candleStore)` (fills the realized
+  next-session direction via the shared `track-record/strategyRecord.realizedDirectionAfter`;
+  FLAT is an unscored abstention), and `aggregateSignalScorecard(rows)` (pure:
+  matured UP/DOWN -> calls/correct, matured FLAT -> flat, unreconciled -> pending,
+  for the v7 snapshot slice). Idempotent on `(decision_date, pair, strategy_id)`;
+  self-contained date helper so `dashboard/` depends on no `scheduled-run/` code.
+  A separate read-only consumer — never feeds firing/confidence/Kill_Gate, takes
+  no LLM input. Surfaced on the dashboard by the v7 `signalScorecard` snapshot
+  slice -> web `shapeStrategyCards` `recorded` line (see web/ below).
 - `risk-boundaries/` — Empirical analogue-derived risk boundaries.
 - `external-signal/` — External cross-reference, display/research-only, never
   feeds scoring. `fcsProvider.ts` is the real FCS adapter (`/forex/latest` over
@@ -214,7 +229,11 @@ authoritative export surface):
 - `csv-loader/`, `staged-runner/` — CSV backfill import + backfill/backtest/
   forward-look staged runner.
 - `storage/` — Supabase config + REST client + adapters (candle, vector,
-  analogue, evaluation-report, view-persister stores). The display-data WRITER
+  analogue, evaluation-report, trade-ledger, frozen-baseline, signal-prediction,
+  view-persister stores). `signalPredictionStore.ts` (signal-scorecard,
+  2026-11-05) backs the `signal_predictions` table (migration …0009): idempotent
+  merge upsert on the composite PK, fail-safe reads that degrade to `[]` on any
+  error incl. a not-yet-present table (torn-deploy-safe). The display-data WRITER
   (`displayDataPersister.ts`, which upserted `signal_rationale`/
   `external_reference_comparison`) was DELETED in `simplify-to-cloud-minimal`
   task 6.5 — that content now lives only in the `dashboard.json` snapshot; its
@@ -253,7 +272,11 @@ authoritative export surface):
   compute/storage/serving separation guard; the Living-Docs Writer.
 
 Other roots: `web/` (the SPA, now reading the static `dashboard.json`
-snapshot), `supabase/migrations/` (schema),
+snapshot; as of signal-scorecard 2026-11-05 it parses the v7 `signalScorecard`
+slice leniently in `api/snapshot.ts` and each `StrategyCard` shows a "Recorded:
+right X of Y (N pending)" line from `shapeStrategyCards`'s `recorded` VM — the
+dated scorecard for all six signals, beside the replay-based `record` line),
+`supabase/migrations/` (schema; `…0009_signal_predictions.sql`),
 `ops/` + `ops.config.json` (operational config, including the
 `Data_Source_Role` decision that CSV is backfill-only), `.github/workflows/`
 (CI + deploy), `data/` (seed CSV candle files).

@@ -8,7 +8,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { EMPTY_CONFLUENCE, EMPTY_TRACK_RECORD } from "../api/snapshot";
+import { EMPTY_CONFLUENCE, EMPTY_SIGNAL_SCORECARD, EMPTY_TRACK_RECORD } from "../api/snapshot";
 import type { FiringSetupRow } from "../api/types";
 import { SelectionProvider } from "../state/selection";
 import { LOAD_TIMEOUT_MS, SingleWindowShell, type WindowEvidence } from "./SingleWindowShell";
@@ -32,6 +32,7 @@ const evidence: WindowEvidence = {
   analogueOutcomes: [],
   pairEvaluations: [],
   trackRecord: EMPTY_TRACK_RECORD,
+  signalScorecard: EMPTY_SIGNAL_SCORECARD,
 };
 
 type Rows = readonly FiringSetupRow[];

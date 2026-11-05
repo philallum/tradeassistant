@@ -40,6 +40,7 @@ import type {
   ProvenanceRow,
   RealizedOutcomeRow,
   SignalRationaleRow,
+  SignalScorecard,
   TrackRecord,
   TradeLedgerSummary,
   ValidationStatusRow,
@@ -84,9 +85,11 @@ export function resolveSnapshotPath(): string {
  * defective slice rather than returning a partial snapshot (Requirements 11.11, 11.12). v6
  * added the optional per-pair `expected_range` on `pairEvaluations` rows and the `trackRecord`
  * slice; both are parsed leniently (an absent or malformed `trackRecord` becomes the empty
- * record, an absent `expected_range` means "not forecast").
+ * record, an absent `expected_range` means "not forecast"). v7 appends the `signalScorecard`
+ * slice (the RECORDED per-signal direction ledger from the dated `signal_predictions` rows),
+ * parsed leniently to `EMPTY_SIGNAL_SCORECARD` when absent or malformed.
  */
-export const SNAPSHOT_SCHEMA_VERSION = 6;
+export const SNAPSHOT_SCHEMA_VERSION = 7;
 
 /**
  * The complete `dashboard.json` envelope. Mirrors the writer's wire shape in
@@ -133,10 +136,19 @@ export interface DashboardSnapshot {
    * replay. `EMPTY_TRACK_RECORD` for older snapshots. Always present.
    */
   readonly trackRecord: TrackRecord;
+  /**
+   * v7: the RECORDED per-signal direction ledger from the dated `signal_predictions` rows
+   * (all six signals, incl. the non-replayable third_party). `EMPTY_SIGNAL_SCORECARD` for
+   * older snapshots. Always present.
+   */
+  readonly signalScorecard: SignalScorecard;
 }
 
 /** The fail-safe empty track record (pre-v6 snapshots, or a slice that failed to build). */
 export const EMPTY_TRACK_RECORD: TrackRecord = { lookbackDays: 0, strategies: [], rangeForecast: [] };
+
+/** The fail-safe empty recorded scorecard (pre-v7 snapshots, or a slice that failed to build). */
+export const EMPTY_SIGNAL_SCORECARD: SignalScorecard = { totalRecorded: 0, rows: [] };
 
 const EMPTY_TRADE_LEDGER_SUMMARY: TradeLedgerSummary = { window: null, strategies: [] };
 const EMPTY_CALIBRATION: Calibration = { bands: [], monotonic: null, wellCalibrated: null };
@@ -232,6 +244,7 @@ export const EMPTY_SNAPSHOT: DashboardSnapshot = {
   validationStatus: [],
   confluence: EMPTY_CONFLUENCE,
   trackRecord: EMPTY_TRACK_RECORD,
+  signalScorecard: EMPTY_SIGNAL_SCORECARD,
 };
 
 /** Narrow an untrusted `dailyCommentary` object, defaulting a missing/malformed one. */
@@ -291,6 +304,32 @@ export function parseTrackRecord(value: unknown): TrackRecord {
     lookbackDays: count(value.lookbackDays) ? value.lookbackDays : 0,
     strategies,
     rangeForecast,
+  };
+}
+
+/**
+ * Narrow an untrusted `signalScorecard`, defaulting a missing/malformed one. Lenient by
+ * design (display-only): a defective row is dropped, not fabricated, and a defective slice
+ * becomes the empty record rather than failing the whole snapshot.
+ */
+export function parseSignalScorecard(value: unknown): SignalScorecard {
+  if (!isObj(value)) return EMPTY_SIGNAL_SCORECARD;
+  const count = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0;
+  const rows = (Array.isArray(value.rows) ? value.rows : []).filter(
+    (r): r is SignalScorecard["rows"][number] =>
+      isObj(r) &&
+      typeof r.pair === "string" &&
+      typeof r.strategyId === "string" &&
+      CONFLUENCE_STRATEGY_ID_SET.has(r.strategyId) &&
+      count(r.calls) &&
+      count(r.correct) &&
+      count(r.flat) &&
+      count(r.pending) &&
+      r.correct <= r.calls,
+  );
+  return {
+    totalRecorded: count(value.totalRecorded) ? value.totalRecorded : 0,
+    rows,
   };
 }
 
@@ -466,6 +505,7 @@ export function parseSnapshot(body: unknown): DashboardSnapshot {
     validationStatus: arr<ValidationStatusRow>(b.validationStatus),
     confluence,
     trackRecord: parseTrackRecord(b.trackRecord),
+    signalScorecard: parseSignalScorecard(b.signalScorecard),
   };
 }
 

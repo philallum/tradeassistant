@@ -389,3 +389,25 @@ export interface TrackRecord {
   readonly strategies: readonly StrategyRecordRow[];
   readonly rangeForecast: readonly RangeRecordRow[];
 }
+
+/**
+ * The RECORDED (not replayed) direction history for one signal on one pair (schema v7). Built
+ * from the dated `signal_predictions` rows, so it covers all six signals including the
+ * non-replayable `third_party`. `calls`/`correct` count matured directional (UP/DOWN)
+ * predictions; `flat` counts matured abstentions (outcome known, not scored); `pending` counts
+ * predictions whose next session has not closed yet.
+ */
+export interface SignalScorecardRow {
+  readonly pair: string;
+  readonly strategyId: ConfluenceStrategyId;
+  readonly calls: number;
+  readonly correct: number;
+  readonly flat: number;
+  readonly pending: number;
+}
+
+/** The v7 `signalScorecard` slice: the recorded per-signal direction ledger. */
+export interface SignalScorecard {
+  readonly totalRecorded: number;
+  readonly rows: readonly SignalScorecardRow[];
+}

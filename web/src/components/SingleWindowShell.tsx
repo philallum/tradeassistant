@@ -38,6 +38,7 @@ import type {
   EvaluationReportRow,
   FiringSetupRow,
   SignalRationaleRow,
+  SignalScorecard,
   Pair,
   PairEvaluationRow,
   TrackRecord,
@@ -94,8 +95,10 @@ export interface WindowEvidence {
   readonly analogueOutcomes: readonly AnalogueOutcomeRow[];
   /** Every pair evaluated on each run (carries the expected candle size). */
   readonly pairEvaluations: readonly PairEvaluationRow[];
-  /** Recent per-strategy and candle-size hit counts. */
+  /** Recent per-strategy and candle-size hit counts (replay-based). */
   readonly trackRecord: TrackRecord;
+  /** Recorded per-signal direction history (dated `signal_predictions`, all six signals). */
+  readonly signalScorecard: SignalScorecard;
   /** Per-pair AI rationales (one per firing pair). Absent = none loaded. */
   readonly aiRationale?: readonly SignalRationaleRow[];
 }
@@ -133,6 +136,7 @@ const defaultLoadEvidence: WindowEvidenceLoader = async (options) => {
     analogueOutcomes: snapshot.analogueOutcomes,
     pairEvaluations: snapshot.pairEvaluations,
     trackRecord: snapshot.trackRecord,
+    signalScorecard: snapshot.signalScorecard,
     aiRationale: snapshot.aiRationale,
   };
 };
@@ -365,7 +369,13 @@ function ReadyView(props: {
       strip: shapeAllPairsStrip(data.confluence),
       conviction: confluenceRow === null ? null : shapeConviction(confluenceRow, data.confluence.weights),
       summary,
-      cards: shapeStrategyCards(confluenceRow, pair, data.confluence.weights, data.evidence.trackRecord),
+      cards: shapeStrategyCards(
+        confluenceRow,
+        pair,
+        data.confluence.weights,
+        data.evidence.trackRecord,
+        data.evidence.signalScorecard,
+      ),
       note: shapeDailyNote(data.dailyCommentary),
       pairNote: shapePairNote(data.evidence.aiRationale, pair, data.decisionDate),
       evidence:

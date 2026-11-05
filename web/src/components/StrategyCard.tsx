@@ -83,6 +83,18 @@ export function StrategyCard({ card }: StrategyCardProps): JSX.Element {
         {card.record.text}
       </p>
 
+      <p
+        data-testid={`strategy-card-${card.strategyId}-recorded`}
+        data-recorded-kind={card.recorded.kind}
+        style={{
+          margin: 0,
+          fontSize: 12,
+          color: theme.colors.textMuted,
+        }}
+      >
+        {card.recorded.text}
+      </p>
+
       <details style={{ fontSize: 12, color: theme.colors.textMuted }}>
         <summary style={{ cursor: "pointer", minHeight: 24 }}>Technical detail</summary>
         <p style={{ margin: `${theme.spacing.xs}px 0 0 0`, fontFamily: theme.font.mono }}>{card.detail}</p>
