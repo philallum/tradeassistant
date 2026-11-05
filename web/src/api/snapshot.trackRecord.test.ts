@@ -15,8 +15,8 @@ const GOOD = {
 };
 
 describe("parseTrackRecord", () => {
-  it("is schema v6", () => {
-    expect(SNAPSHOT_SCHEMA_VERSION).toBe(6);
+  it("the current schema version is v7 (the trackRecord slice landed at v6 and still parses)", () => {
+    expect(SNAPSHOT_SCHEMA_VERSION).toBe(7);
   });
 
   it("passes a well-formed slice through", () => {

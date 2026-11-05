@@ -53,11 +53,12 @@ function ledgerRow(strategyId: string, day: number, netPips: number): TradeLedge
 const view = dailyRun("2024-03-15", [evaluation("EURUSD"), evaluation("GBPUSD")]);
 
 describe("snapshot v4 shape + defaults", () => {
-  it("is schema v6 and defaults every new slice to empty/absent", () => {
+  it("is schema v7 and defaults every new slice to empty/absent", () => {
     const snap = buildDashboardSnapshot(view, undefined, {}, NOW);
-    expect(SNAPSHOT_SCHEMA_VERSION).toBe(6);
-    expect(snap.schemaVersion).toBe(6);
+    expect(SNAPSHOT_SCHEMA_VERSION).toBe(7);
+    expect(snap.schemaVersion).toBe(7);
     expect(snap.trackRecord).toEqual({ lookbackDays: 0, strategies: [], rangeForecast: [] });
+    expect(snap.signalScorecard).toEqual({ totalRecorded: 0, rows: [] });
     expect(snap.tradeLedgerSummary).toEqual({ window: null, strategies: [] });
     expect(snap.calibration).toEqual({ bands: [], monotonic: null, wellCalibrated: null });
     expect(snap.exposure).toEqual({ perCurrency: [], concentrated: false, strongestPair: null });

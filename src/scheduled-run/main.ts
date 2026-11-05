@@ -63,6 +63,9 @@ import {
 import { loadSnapshotHistory } from "./snapshotHistory.js";
 import { makeGcsSnapshotSink } from "./gcsSnapshotSink.js";
 import { SupabaseRestClient } from "../storage/supabase/index.js";
+import { SupabaseSignalPredictionStore } from "../storage/supabase/index.js";
+import { runSignalScorecardStep } from "./signalScorecardStep.js";
+import { buildSignalScorecardSlice } from "./signalScorecardSlice.js";
 import { SupabaseTradeLedgerStore } from "../storage/supabase/tradeLedgerStore.js";
 import { buildEdgeSlices } from "./edgeSlices.js";
 import { buildConfluenceSlice } from "./confluenceSlice.js";
@@ -466,6 +469,27 @@ export interface PersistViewDeps {
   readonly buildSnapshot?: typeof buildDashboardSnapshot;
   /** Write the assembled snapshot. Defaults to {@link writeDashboardSnapshot}. */
   readonly writeSnapshot?: typeof writeDashboardSnapshot;
+  /**
+   * Run the per-signal scorecard step (reconcile the open backlog + record
+   * today's six directions). Defaults to {@link runSignalScorecardStep} over the
+   * Supabase-backed store. Fail-safe: it never throws and writes only to its own
+   * `signal_predictions` table, so it can never disturb the firing rows.
+   */
+  readonly runScorecard?: (
+    supabase: SupabaseConfigArg,
+    view: DashboardView,
+    evaluations: readonly PairEvaluation[],
+    displayOnly: DisplayOnlyWrite | undefined,
+  ) => Promise<void>;
+  /**
+   * Build the v7 recorded `signalScorecard` snapshot slice from the persisted
+   * `signal_predictions` rows. Defaults to {@link buildSignalScorecardSlice}
+   * over the Supabase-backed store. Read-only and fail-safe (empty slice on any
+   * failure); runs AFTER {@link runScorecard} so today's rows are included.
+   */
+  readonly buildScorecard?: (
+    supabase: SupabaseConfigArg,
+  ) => Promise<Awaited<ReturnType<typeof buildSignalScorecardSlice>>>;
   /** Secret-free warning sink. Defaults to {@link logStartupWarning}. */
   readonly warn?: (collaborator: string, err: unknown) => void;
 }
@@ -545,6 +569,22 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
     });
   const buildSnapshot = deps.buildSnapshot ?? buildDashboardSnapshot;
   const writeSnapshot = deps.writeSnapshot ?? writeDashboardSnapshot;
+  const runScorecard =
+    deps.runScorecard ??
+    ((supabase, view, evaluations, displayOnly) =>
+      runSignalScorecardStep({
+        decisionDate: view.decisionDate,
+        store: new SupabaseSignalPredictionStore(new SupabaseRestClient(supabase)),
+        evaluations,
+        displayOnly,
+        candleStore: buildSupabaseStores(supabase).candleStore,
+      }));
+  const buildScorecard =
+    deps.buildScorecard ??
+    ((supabase) =>
+      buildSignalScorecardSlice({
+        store: new SupabaseSignalPredictionStore(new SupabaseRestClient(supabase)),
+      }));
 
   return async (view: DashboardView, supabase) => {
     // The persisted DB rows are the source of truth and are written FIRST.
@@ -556,6 +596,21 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
     } catch (err) {
       warn("display_build", err);
       displayOnly = undefined;
+    }
+
+    // Signal Scorecard (signal-scorecard feature): a separate, fail-safe,
+    // read-only consumer. It reconciles the open backlog (filling the realized
+    // next-session direction of prior predictions whose session has now closed)
+    // and records today's six per-signal directions from the same per-run
+    // Confluence_Matrix the dashboard's confluence slice uses. It writes ONLY to
+    // its own `signal_predictions` table and returns nothing firing reads, so it
+    // can never disturb the firing view, the persisted firing rows, or the
+    // snapshot (Scoring isolation). `runSignalScorecardStep` never throws; the
+    // extra try/catch is belt-and-braces so a defect here cannot fail the run.
+    try {
+      await runScorecard(supabase, view, deps.cached.get(), displayOnly);
+    } catch (err) {
+      warn("signal_scorecard", err);
     }
 
     // Public_Read_Path (simplify-to-cloud-minimal R5.1, R5.2): at the END of the
@@ -616,6 +671,16 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
     } catch (err) {
       warn("track_record", err);
     }
+    // v7 recorded signal-scorecard slice (signal-scorecard feature): read-only
+    // aggregation of the dated `signal_predictions` rows the scorecard step just
+    // recorded/reconciled. Fail-safe — a defect degrades the slice to its empty
+    // default and can never fail the run or disturb the persisted rows.
+    let signalScorecard: Awaited<ReturnType<typeof buildSignalScorecardSlice>> | undefined;
+    try {
+      signalScorecard = await buildScorecard(supabase);
+    } catch (err) {
+      warn("signal_scorecard_slice", err);
+    }
     const snapshot = buildSnapshot(
       view,
       displayOnly,
@@ -625,6 +690,7 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
       edge,
       confluence,
       trackRecord,
+      signalScorecard,
     );
     await writeSnapshot(snapshot, deps.snapshotSink);
   };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ConfluenceCell, ConfluencePair, TrackRecord } from "../api/types";
+import type { ConfluenceCell, ConfluencePair, SignalScorecard, TrackRecord } from "../api/types";
 import { EMPTY_CONFLUENCE, EMPTY_TRACK_RECORD } from "../api/snapshot";
 import { SMALL_SAMPLE_CALLS, shapeStrategyCards } from "./shapeStrategyCards";
 
@@ -118,5 +118,32 @@ describe("shapeStrategyCards", () => {
       EMPTY_TRACK_RECORD,
     );
     expect(cards.filter((c) => c.conflicting).map((c) => c.strategyId)).toEqual(["trend", "custom_pattern"]);
+  });
+
+  it("states the RECORDED tally for all six signals, including display-only third party", () => {
+    const scorecard: SignalScorecard = {
+      totalRecorded: 9,
+      rows: [
+        { pair: "EURUSD", strategyId: "trend", calls: 5, correct: 3, flat: 0, pending: 2 },
+        { pair: "EURUSD", strategyId: "breakout", calls: 0, correct: 0, flat: 0, pending: 4 },
+        // third_party is display-only for the replay record, but IS recorded here.
+        { pair: "EURUSD", strategyId: "third_party", calls: 2, correct: 2, flat: 1, pending: 0 },
+      ],
+    };
+    const cards = shapeStrategyCards(pairRow({}), "EURUSD", W, EMPTY_TRACK_RECORD, scorecard);
+    expect(cards[0]!.recorded).toMatchObject({ kind: "measured", calls: 5, correct: 3, pending: 2 });
+    expect(cards[0]!.recorded.text).toBe("Recorded: right 3 of 5 (2 pending).");
+    expect(cards[1]!.recorded).toMatchObject({ kind: "pending-only", pending: 4 });
+    expect(cards[1]!.recorded.text).toBe("Recorded: 4 pending, none scored yet.");
+    const third = cards[5]!;
+    expect(third.displayOnly).toBe(true);
+    expect(third.recorded).toMatchObject({ kind: "measured", calls: 2, correct: 2 });
+    expect(third.recorded.text).toBe("Recorded: right 2 of 2.");
+  });
+
+  it("recorded tally is 'nothing yet' when no scorecard row exists for the pair+signal", () => {
+    const cards = shapeStrategyCards(pairRow({}), "EURUSD", W, EMPTY_TRACK_RECORD);
+    expect(cards[0]!.recorded).toMatchObject({ kind: "none" });
+    expect(cards[0]!.recorded.text).toBe("Recorded: nothing yet.");
   });
 });

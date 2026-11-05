@@ -47,11 +47,15 @@ import type {
  * `unvalidated` Validation_Label), defaulting to `EMPTY_CONFLUENCE`. v6
  * (dashboard-simplification) adds the optional per-pair `expected_range` on the
  * `pairEvaluations` rows and the appended `trackRecord` slice (per-strategy and
- * expected-candle-size hit counts), defaulting to `EMPTY_TRACK_RECORD`. The SPA
+ * expected-candle-size hit counts), defaulting to `EMPTY_TRACK_RECORD`. v7
+ * (signal-scorecard) appends the `signalScorecard` slice — the RECORDED
+ * (not replayed) per-signal direction ledger: each of the six signals' matured
+ * calls/correct per pair plus the still-open (pending) count, from the dated
+ * `signal_predictions` rows — defaulting to `EMPTY_SIGNAL_SCORECARD`. The SPA
  * tolerates a version mismatch (best-effort render) and defaults an absent slice
  * to its empty value, so each bump is backward- and forward-compatible.
  */
-export const SNAPSHOT_SCHEMA_VERSION = 6 as const;
+export const SNAPSHOT_SCHEMA_VERSION = 7 as const;
 
 /** The canonical file name the SPA fetches as a same-origin static asset. */
 export const SNAPSHOT_FILE_NAME = "dashboard.json" as const;
@@ -439,6 +443,42 @@ export const EMPTY_TRACK_RECORD: SnapshotTrackRecordSlice = {
   rangeForecast: [],
 };
 
+// ---------------------------------------------------------------------------------------
+// v7 signal-scorecard slice. The RECORDED (not replayed) per-signal direction ledger: what
+// each of the six signals suggested on a Decision_Date and whether the matured next session
+// proved it right. Built from the dated `signal_predictions` rows (see
+// `src/dashboard/signalScorecard.ts`), so it covers the non-replayable `third_party` signal
+// and every day's call, not just fired days. Display-only, LLM-free, never re-enters firing /
+// scoring. A FLAT prediction is an abstention and is NOT counted as a call.
+// ---------------------------------------------------------------------------------------
+
+/** Recorded calls and hits for one signal on one pair, plus the still-open backlog. */
+export interface SnapshotSignalScorecardRow {
+  readonly pair: string;
+  readonly strategyId: SnapshotConfluenceStrategyId;
+  /** Matured directional (UP/DOWN) calls recorded for the pair+signal. */
+  readonly calls: number;
+  /** Matured calls whose recorded direction matched the realized direction. */
+  readonly correct: number;
+  /** Matured FLAT predictions (abstentions) — recorded, outcome known, not scored. */
+  readonly flat: number;
+  /** Predictions recorded but not yet reconciled (next session has not closed). */
+  readonly pending: number;
+}
+
+/** The v7 `signalScorecard` slice: one row per pair+signal with a recorded direction history. */
+export interface SnapshotSignalScorecardSlice {
+  /** Total predictions recorded across every pair+signal (matured + pending). */
+  readonly totalRecorded: number;
+  readonly rows: readonly SnapshotSignalScorecardRow[];
+}
+
+/** The empty/fail-safe default for the v7 signal-scorecard slice. */
+export const EMPTY_SIGNAL_SCORECARD: SnapshotSignalScorecardSlice = {
+  totalRecorded: 0,
+  rows: [],
+};
+
 /**
  * The complete `dashboard.json` envelope the SPA fetches. Every field is a
  * read-only array of wire-format rows plus the Decision_Date the run was for and
@@ -496,6 +536,12 @@ export interface DashboardSnapshot {
    * by look-ahead-safe replay. `EMPTY_TRACK_RECORD` by default. Always present.
    */
   readonly trackRecord: SnapshotTrackRecordSlice;
+  /**
+   * v7: the RECORDED per-signal direction ledger from the dated
+   * `signal_predictions` rows (all six signals, incl. the non-replayable
+   * third_party). `EMPTY_SIGNAL_SCORECARD` by default. Always present.
+   */
+  readonly signalScorecard: SnapshotSignalScorecardSlice;
 }
 
 /** The v1 deterministic system Strategy_Source (schema default 'system'). */
@@ -665,6 +711,7 @@ function externalComparisonRow(
  * @param edge            The v4 evidence slices; each omitted slice takes its empty default.
  * @param confluence      The v5 per-run Confluence_Matrix slice; omitted → `EMPTY_CONFLUENCE`.
  * @param trackRecord     The v6 track-record slice; omitted → `EMPTY_TRACK_RECORD`.
+ * @param signalScorecard The v7 recorded signal-scorecard slice; omitted → `EMPTY_SIGNAL_SCORECARD`.
  */
 export function buildDashboardSnapshot(
   view: DashboardView,
@@ -675,6 +722,7 @@ export function buildDashboardSnapshot(
   edge: SnapshotEdgeSlices = {},
   confluence: SnapshotConfluenceSlice = EMPTY_CONFLUENCE,
   trackRecord: SnapshotTrackRecordSlice = EMPTY_TRACK_RECORD,
+  signalScorecard: SnapshotSignalScorecardSlice = EMPTY_SIGNAL_SCORECARD,
 ): DashboardSnapshot {
   const decisionDate = view.decisionDate;
   const todayFiring = view.cards.map((card) => firingSetupRow(decisionDate, card));
@@ -716,8 +764,10 @@ export function buildDashboardSnapshot(
     validationStatus: edge.validationStatus ?? [],
     // v5: appended so every earlier key keeps its byte order (Requirement 11.8).
     confluence,
-    // v6: appended LAST for the same reason.
+    // v6: appended after v5 for the same reason.
     trackRecord,
+    // v7: appended LAST for the same reason.
+    signalScorecard,
   };
 }
 
