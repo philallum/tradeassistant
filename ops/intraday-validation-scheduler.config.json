@@ -14,6 +14,8 @@
     "Schedule derives from Europe/London so the ~08:00 UK trigger tracks UK DST automatically; the Job itself derives the forming 4H bar from fixed UTC boundaries, so no fixed-offset assumption is made.",
     "Reuses existing secrets by NAME only: TWELVE_DATA_API_KEY (intraday 4H feed), supabase-key, supabase-url (storage), DASHBOARD_SNAPSHOT_BUCKET (snapshot republish). Optional TWELVE_DATA_BASE_URL overrides the provider base URL.",
     "Apply the additive migration supabase/migrations/20260916000010_intraday_validations.sql out-of-band (operator), consistent with project convention. The SupabaseIntradayValidationStore reads/writes fail-safe, so a torn deploy is harmless.",
+    "AFTER the one-time bootstrap below, the Cloud Run Job `intraday-validation-run` is (re)deployed on EVERY backend deploy by .github/workflows/deploy.yml (step 'Deploy SHA-pinned image to intraday validation Job', `gcloud run jobs deploy`, same SHA-pinned image + runtime SA, entrypoint dist/scheduled-run/intradayMain.js), so its image can never go stale. Only the Cloud Scheduler job below is still operator-managed.",
+    "Provisioning gotcha: the DASHBOARD_SNAPSHOT_BUCKET value must be NON-EMPTY; an empty value silently turns the snapshot republish into a logged no-op (the workflow step fails fast on an empty value).",
     "The agent takes NO live-cloud action; these commands are operator-gated."
   ],
   "commands": [

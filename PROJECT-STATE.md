@@ -27,9 +27,9 @@
 > write a secret value into any doc — reference credentials by name only.
 
 <!-- BEGIN STATE -->
-- **Phase:** v1 feature-complete and LIVE. `multi-strategy-confluence-engine` + Signal Scorecard LIVE; `intraday-validation` (snapshot schema v8) is deployed but its first live republish DEGRADED the published `dashboard.json`; a code fix is done locally and NOT yet deployed. Delivery cadence: operator merges dev->main to deploy; agent builds/verifies locally.
+- **Phase:** v1 feature-complete and LIVE. `multi-strategy-confluence-engine`, Signal Scorecard and `intraday-validation` (snapshot schema v8) are all LIVE; the intraday republish bug is fixed, deployed and live-verified. Delivery cadence: operator merges dev->main to deploy; agent builds/verifies locally.
 - **Updated:** 2026-11-06
-- **Summary:** The manual intraday run worked but overwrote the live `dashboard.json` with empty daily slices (pairEvaluations, confluence, track record, scorecard, AI notes). Fixed locally (full backend gate green): the intraday Job now republishes the same snapshot with only `intradayValidation` replaced, and validates all 5 pairs from the published `pairEvaluations`. To do: deploy the fix, restore the live file by re-running the daily Job, and keep the 08:00 trigger from firing the old image meanwhile.
+- **Summary:** After the fix deployed (PR #63), the live `dashboard.json` was restored by a daily Job run and a manual intraday run validated all 5 pairs with every other slice byte-identical. The 08:00 Europe/London trigger is resumed; its first scheduled fire (Mon 2026-11-09) is the next thing to check. Intraday thresholds/delta stay provisional and unvalidated.
 <!-- END STATE -->
 
 ---
