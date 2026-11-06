@@ -36,6 +36,8 @@ import type {
   Exposure,
   ExternalReferenceComparisonRow,
   FiringSetupRow,
+  IntradayValidation,
+  IntradayValidationRow,
   PairEvaluationRow,
   ProvenanceRow,
   RealizedOutcomeRow,
@@ -43,8 +45,10 @@ import type {
   SignalScorecard,
   TrackRecord,
   TradeLedgerSummary,
+  ValidationState,
   ValidationStatusRow,
 } from "./types";
+import { VALIDATION_STATES } from "./types";
 
 /**
  * The URL the SPA fetches the snapshot from.
@@ -87,9 +91,12 @@ export function resolveSnapshotPath(): string {
  * slice; both are parsed leniently (an absent or malformed `trackRecord` becomes the empty
  * record, an absent `expected_range` means "not forecast"). v7 appends the `signalScorecard`
  * slice (the RECORDED per-signal direction ledger from the dated `signal_predictions` rows),
- * parsed leniently to `EMPTY_SIGNAL_SCORECARD` when absent or malformed.
+ * parsed leniently to `EMPTY_SIGNAL_SCORECARD` when absent or malformed. v8 appends the
+ * `intradayValidation` slice (the read-only intraday 4H enrichment produced a few hours after
+ * the immutable daily run), parsed leniently to `EMPTY_INTRADAY_VALIDATION` when absent or
+ * malformed; a defective row is dropped, never fabricated.
  */
-export const SNAPSHOT_SCHEMA_VERSION = 7;
+export const SNAPSHOT_SCHEMA_VERSION = 8;
 
 /**
  * The complete `dashboard.json` envelope. Mirrors the writer's wire shape in
@@ -142,6 +149,13 @@ export interface DashboardSnapshot {
    * older snapshots. Always present.
    */
   readonly signalScorecard: SignalScorecard;
+  /**
+   * v8: the read-only intraday 4H validation produced a few hours after the immutable daily
+   * run (per `(decisionDate, pair)`: a snapshot of the original direction/confidence, the
+   * forming candle's validation state, a bounded UNVALIDATED confidence delta, the current
+   * confidence, and a reason). `EMPTY_INTRADAY_VALIDATION` for older snapshots. Always present.
+   */
+  readonly intradayValidation: IntradayValidation;
 }
 
 /** The fail-safe empty track record (pre-v6 snapshots, or a slice that failed to build). */
@@ -149,6 +163,13 @@ export const EMPTY_TRACK_RECORD: TrackRecord = { lookbackDays: 0, strategies: []
 
 /** The fail-safe empty recorded scorecard (pre-v7 snapshots, or a slice that failed to build). */
 export const EMPTY_SIGNAL_SCORECARD: SignalScorecard = { totalRecorded: 0, rows: [] };
+
+/** The fail-safe empty intraday validation (pre-v8 snapshots, or a slice that failed to build). */
+export const EMPTY_INTRADAY_VALIDATION: IntradayValidation = {
+  observedAt: null,
+  validationLabel: "unvalidated",
+  rows: [],
+};
 
 const EMPTY_TRADE_LEDGER_SUMMARY: TradeLedgerSummary = { window: null, strategies: [] };
 const EMPTY_CALIBRATION: Calibration = { bands: [], monotonic: null, wellCalibrated: null };
@@ -245,6 +266,7 @@ export const EMPTY_SNAPSHOT: DashboardSnapshot = {
   confluence: EMPTY_CONFLUENCE,
   trackRecord: EMPTY_TRACK_RECORD,
   signalScorecard: EMPTY_SIGNAL_SCORECARD,
+  intradayValidation: EMPTY_INTRADAY_VALIDATION,
 };
 
 /** Narrow an untrusted `dailyCommentary` object, defaulting a missing/malformed one. */
@@ -331,6 +353,65 @@ export function parseSignalScorecard(value: unknown): SignalScorecard {
     totalRecorded: count(value.totalRecorded) ? value.totalRecorded : 0,
     rows,
   };
+}
+
+const VALIDATION_STATE_SET: ReadonlySet<string> = new Set<ValidationState>(VALIDATION_STATES);
+const INTRADAY_DIRECTION_SET: ReadonlySet<string> = new Set<Direction>(["UP", "DOWN", "FLAT"]);
+
+/**
+ * Narrow an untrusted `intradayValidation` slice, defaulting a missing/malformed one. Lenient
+ * by design (display-only): a defective row is DROPPED (never fabricated), and a defective
+ * slice becomes `EMPTY_INTRADAY_VALIDATION` rather than failing the whole snapshot — so a
+ * pre-v8 snapshot (which lacks the key) and a snapshot whose intraday Job has not yet run both
+ * render the explicit "validation unavailable" state.
+ */
+export function parseIntradayValidation(value: unknown): IntradayValidation {
+  if (!isObj(value)) return EMPTY_INTRADAY_VALIDATION;
+  const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+  const parseCandle = (v: unknown): IntradayValidationRow["h4"] | null => {
+    if (!isObj(v) || !num(v.open) || !num(v.high) || !num(v.low) || !num(v.currentPrice)) {
+      return null;
+    }
+    return { open: v.open, high: v.high, low: v.low, currentPrice: v.currentPrice };
+  };
+  const rows: IntradayValidationRow[] = (Array.isArray(value.rows) ? value.rows : []).flatMap(
+    (r): IntradayValidationRow[] => {
+      if (
+        !isObj(r) ||
+        typeof r.pair !== "string" ||
+        typeof r.decisionDate !== "string" ||
+        typeof r.originalDirection !== "string" ||
+        !INTRADAY_DIRECTION_SET.has(r.originalDirection) ||
+        !num(r.originalConfidence) ||
+        typeof r.validationState !== "string" ||
+        !VALIDATION_STATE_SET.has(r.validationState) ||
+        !num(r.confidenceDelta) ||
+        !num(r.currentConfidence) ||
+        typeof r.reason !== "string" ||
+        typeof r.barOpenUtc !== "string"
+      ) {
+        return [];
+      }
+      const h4 = parseCandle(r.h4);
+      if (h4 === null) return [];
+      return [
+        {
+          pair: r.pair,
+          decisionDate: r.decisionDate,
+          originalDirection: r.originalDirection as Direction,
+          originalConfidence: r.originalConfidence,
+          validationState: r.validationState as ValidationState,
+          confidenceDelta: r.confidenceDelta,
+          currentConfidence: r.currentConfidence,
+          reason: r.reason,
+          barOpenUtc: r.barOpenUtc,
+          h4,
+        },
+      ];
+    },
+  );
+  const observedAt = typeof value.observedAt === "string" ? value.observedAt : null;
+  return { observedAt, validationLabel: "unvalidated", rows };
 }
 
 /** Narrow an untrusted `calibration`, defaulting a missing/malformed one. */
@@ -506,6 +587,7 @@ export function parseSnapshot(body: unknown): DashboardSnapshot {
     confluence,
     trackRecord: parseTrackRecord(b.trackRecord),
     signalScorecard: parseSignalScorecard(b.signalScorecard),
+    intradayValidation: parseIntradayValidation(b.intradayValidation),
   };
 }
 

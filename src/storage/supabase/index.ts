@@ -40,6 +40,10 @@ export {
   type SignalPredictionLogger,
 } from "./signalPredictionStore.js";
 export {
+  SupabaseIntradayValidationStore,
+  type IntradayValidationLogger,
+} from "./intradayValidationStore.js";
+export {
   makeSupabaseViewPersister,
   firingSetupRows,
 } from "./viewPersister.js";

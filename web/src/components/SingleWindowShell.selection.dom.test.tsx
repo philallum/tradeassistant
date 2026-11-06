@@ -8,7 +8,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { EMPTY_CONFLUENCE, EMPTY_SIGNAL_SCORECARD, EMPTY_TRACK_RECORD } from "../api/snapshot";
+import {
+  EMPTY_CONFLUENCE,
+  EMPTY_INTRADAY_VALIDATION,
+  EMPTY_SIGNAL_SCORECARD,
+  EMPTY_TRACK_RECORD,
+} from "../api/snapshot";
 import type { FiringSetupRow, Pair } from "../api/types";
 import { SelectionProvider, type SelectionState } from "../state/selection";
 import { SingleWindowShell, type WindowEvidence } from "./SingleWindowShell";
@@ -36,6 +41,7 @@ const EVIDENCE: WindowEvidence = {
   pairEvaluations: [],
   trackRecord: EMPTY_TRACK_RECORD,
   signalScorecard: EMPTY_SIGNAL_SCORECARD,
+  intradayValidation: EMPTY_INTRADAY_VALIDATION,
 };
 
 interface Loaders {

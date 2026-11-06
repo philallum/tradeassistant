@@ -411,3 +411,57 @@ export interface SignalScorecard {
   readonly totalRecorded: number;
   readonly rows: readonly SignalScorecardRow[];
 }
+
+/** The deterministic intraday validation state (schema v8; mirrors the backend). */
+export type ValidationState =
+  | "STRONGLY_SUPPORTS"
+  | "SUPPORTS"
+  | "NEUTRAL"
+  | "CONTRADICTS"
+  | "STRONGLY_CONTRADICTS"
+  | "NOT_APPLICABLE";
+
+/** The forming 4H candle's minimal OHLC (schema v8). */
+export interface IntradayCandle {
+  readonly open: number;
+  readonly high: number;
+  readonly low: number;
+  readonly currentPrice: number;
+}
+
+/**
+ * One intraday-validation row (schema v8): the read-only 4H enrichment produced a few hours
+ * after the immutable daily run, tied to the original daily prediction for `(decisionDate,
+ * pair)`. `originalDirection`/`originalConfidence` are a SNAPSHOT of the untouched daily
+ * values; `confidenceDelta` is a BOUNDED, UNVALIDATED adjustment (percentage points), never a
+ * calibrated probability.
+ */
+export interface IntradayValidationRow {
+  readonly pair: string;
+  readonly decisionDate: string;
+  readonly originalDirection: Direction;
+  readonly originalConfidence: number;
+  readonly validationState: ValidationState;
+  readonly confidenceDelta: number;
+  readonly currentConfidence: number;
+  readonly reason: string;
+  readonly barOpenUtc: string;
+  readonly h4: IntradayCandle;
+}
+
+/** The v8 `intradayValidation` slice: the read-only intraday 4H validation ledger. */
+export interface IntradayValidation {
+  readonly observedAt: string | null;
+  readonly validationLabel: "unvalidated";
+  readonly rows: readonly IntradayValidationRow[];
+}
+
+/** The ordered set of intraday validation states (for exhaustive iteration/tests). */
+export const VALIDATION_STATES: readonly ValidationState[] = [
+  "STRONGLY_SUPPORTS",
+  "SUPPORTS",
+  "NEUTRAL",
+  "CONTRADICTS",
+  "STRONGLY_CONTRADICTS",
+  "NOT_APPLICABLE",
+] as const;

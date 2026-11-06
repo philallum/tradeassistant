@@ -10,10 +10,11 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { EMPTY_CONFLUENCE, EMPTY_TRACK_RECORD } from "../api/snapshot";
+import { EMPTY_CONFLUENCE, EMPTY_INTRADAY_VALIDATION, EMPTY_TRACK_RECORD } from "../api/snapshot";
 import type { Confluence, ConfluenceCell, FiringSetupRow, PairEvaluationRow, TrackRecord } from "../api/types";
 import { shapeConviction } from "../pure/shapeConviction";
 import { shapeDailyNote } from "../pure/shapeDailyNote";
+import { shapeIntradayValidation } from "../pure/shapeIntradayValidation";
 import { shapePairSummary } from "../pure/shapePairSummary";
 import { shapeStrategyCards } from "../pure/shapeStrategyCards";
 import { shapeSystemRecord } from "../pure/shapeSystemRecord";
@@ -104,6 +105,7 @@ function renderCard(over: { confluence?: Confluence; firing?: FiringSetupRow[]; 
       lookbackDays={track.lookbackDays}
       note={shapeDailyNote({ decision_date: DATE, note_text: "Quiet session.", generated: true })}
       evidence={{ pair: "EURUSD", horizon: 1, sampleCount: 40, upShare: 0.5, downShare: 0.5 }}
+      intradayValidation={shapeIntradayValidation(EMPTY_INTRADAY_VALIDATION, "EURUSD")}
       systemRecord={shapeSystemRecord(REPORT)}
     />,
   );
