@@ -6,17 +6,14 @@ import type { SupabaseConfig } from "../storage/supabaseConfig.js";
 import { InMemoryIntradayValidationStore } from "../intraday-validation/store.js";
 import type { Intraday4hSource, OriginalPrediction } from "../intraday-validation/index.js";
 import type { Intraday4hBar } from "../intraday-validation/types.js";
-import {
-  runIntradayValidationJob,
-  type IntradayJobDeps,
-} from "./intradayMain.js";
+import { runIntradayValidationJob, type IntradayJobDeps } from "./intradayMain.js";
+import type { PublishedSnapshot } from "./publishedSnapshot.js";
 import type { DashboardSnapshot, SnapshotSink } from "./snapshot.js";
 
 // Task 9: intraday Job entrypoint + isolation regression. These drive the
-// injectable orchestration (no network): the Job validates, persists, and
-// republishes a v8 snapshot; a no-source run still republishes an empty slice;
-// and the daily firing rows in the republished snapshot are byte-identical with
-// and without the intraday validation (isolation).
+// injectable orchestration (no network). The Job reads the PUBLISHED daily
+// snapshot, validates EVERY evaluated pair, and republishes the SAME snapshot with
+// only `intradayValidation` replaced — so every other slice is byte-identical.
 
 const SUPABASE: SupabaseConfig = {
   target: "hosted",
@@ -41,109 +38,161 @@ function strongBull(): Intraday4hBar {
   return { openTimeUtc: BAR_OPEN, open: 1.0, high: 1.102, low: 0.99, currentPrice: 1.1 };
 }
 
-const ORIGINALS: readonly OriginalPrediction[] = [{ pair: "EURUSD", direction: "UP", confidence: 58 }];
-
 const source: Intraday4hSource = { fetch4h: () => Promise.resolve(ok([strongBull()])) };
 
+/** A published daily snapshot: 5 evaluated pairs (2 fired, 3 not, incl. a FLAT) + other slices. */
+function publishedSnapshot(decisionDate = "2026-11-06"): PublishedSnapshot {
+  const ev = (pair: string, direction: string, conf: number, fired: boolean) => ({
+    decision_date: decisionDate,
+    pair,
+    direction,
+    horizon: 1,
+    earned_confidence: conf,
+    fired,
+    choppiness: 0.4,
+  });
+  return {
+    schemaVersion: 7,
+    decisionDate,
+    generatedAt: "2026-11-05T22:30:00.000Z",
+    decisionDates: [decisionDate],
+    firingSetups: [{ decision_date: decisionDate, pair: "GBPUSD", strategy_id: "system", direction: "DOWN" }],
+    pairEvaluations: [
+      ev("EURUSD", "UP", 0.5, false),
+      ev("GBPUSD", "DOWN", 0.6, true),
+      ev("USDJPY", "FLAT", 0.5, false),
+      ev("USDCHF", "UP", 0.58333, true),
+      ev("USDCAD", "DOWN", 0.52, false),
+    ],
+    confluence: { validationLabel: "unvalidated", pairs: [{ pair: "EURUSD" }] },
+    trackRecord: { lookbackDays: 20, strategies: [{ pair: "EURUSD" }], rangeForecast: [] },
+    signalScorecard: { totalRecorded: 30, rows: [] },
+    dailyCommentary: { decision_date: decisionDate, note_text: "Quiet.", generated: true },
+  };
+}
+
 /** A sink that captures the parsed snapshot written to dashboard.json. */
-function capturingSink(captured: { snapshot: DashboardSnapshot | null }): SnapshotSink {
+function capturingSink(captured: { snapshot: Record<string, unknown> | null }): SnapshotSink {
   return (_fileName, body) => {
-    captured.snapshot = JSON.parse(body) as DashboardSnapshot;
+    captured.snapshot = JSON.parse(body) as Record<string, unknown>;
     return Promise.resolve();
   };
 }
 
-/** The daily firing rows the republish reads back from history (the source of truth). */
-const DAILY_FIRING = [
-  {
-    decision_date: "2026-11-06",
-    pair: "EURUSD",
-    strategy_id: "system",
-    direction: "UP" as const,
-    horizon: 2 as const,
-    earned_confidence: 0.58,
-    stop_loss_pips: 40,
-    take_profit_pips: 60,
-    surfaced: true,
-    suppression_reason: null,
-  },
-];
-
-/**
- * Build the base Job deps. `withSource` controls whether a 4H source is wired
- * (the "no provider configured" case omits it entirely and passes an empty env,
- * so `buildSourceFromEnv` returns null). The history read-back (the daily firing
- * rows, the source of truth) is injected so no live Supabase read is attempted.
- */
 function makeDeps(
-  captured: { snapshot: DashboardSnapshot | null },
-  options: { withSource: boolean; sink?: SnapshotSink } = { withSource: true },
+  captured: { snapshot: Record<string, unknown> | null },
+  options: {
+    withSource?: boolean;
+    published?: PublishedSnapshot | null;
+    fallback?: readonly OriginalPrediction[];
+    sink?: SnapshotSink;
+  } = {},
 ): IntradayJobDeps {
+  const published = options.published === undefined ? publishedSnapshot() : options.published;
   const base = {
     config: CONFIG,
     store: new InMemoryIntradayValidationStore(),
-    loadOriginals: () => Promise.resolve(ORIGINALS),
+    loadPublished: () => Promise.resolve(published),
+    loadFallbackOriginals: () => Promise.resolve(options.fallback ?? []),
     snapshotSink: options.sink ?? capturingSink(captured),
     now: NOW,
-    loadHistory: () => Promise.resolve({ firingSetups: DAILY_FIRING }),
   } satisfies Partial<IntradayJobDeps>;
+  return options.withSource === false
+    ? { ...base, env: {} }
+    : { ...base, source, env: { TWELVE_DATA_API_KEY: "key" } };
+}
 
-  return options.withSource
-    ? { ...base, source, env: { TWELVE_DATA_API_KEY: "key" } }
-    : { ...base, env: {} };
+/** The snapshot with the intraday-owned keys removed (for byte-identity comparison). */
+function withoutIntraday(snapshot: Record<string, unknown>): Record<string, unknown> {
+  const { intradayValidation: _i, schemaVersion: _s, ...rest } = snapshot;
+  void _i;
+  void _s;
+  return rest;
 }
 
 describe("runIntradayValidationJob", () => {
-  it("validates, persists, and republishes a v8 snapshot with the slice filled", async () => {
-    const captured: { snapshot: DashboardSnapshot | null } = { snapshot: null };
+  it("validates EVERY evaluated pair (incl. FLAT and non-fired) and republishes a v8 snapshot", async () => {
+    const captured: { snapshot: Record<string, unknown> | null } = { snapshot: null };
     const result = await runIntradayValidationJob(makeDeps(captured));
 
-    expect(result.validated).toBe(1);
+    expect(result.validated).toBe(5);
     expect(result.unavailable).toBe(0);
     expect(result.republished).toBe(true);
 
-    const snap = captured.snapshot!;
+    const snap = captured.snapshot as unknown as DashboardSnapshot;
     expect(snap.schemaVersion).toBe(8);
-    expect(snap.intradayValidation.rows).toHaveLength(1);
-    expect(snap.intradayValidation.rows[0]?.validationState).toBe("STRONGLY_SUPPORTS");
-    expect(snap.intradayValidation.rows[0]?.currentConfidence).toBe(68);
+    const rows = snap.intradayValidation.rows;
+    expect(rows.map((r) => r.pair).sort()).toEqual(["EURUSD", "GBPUSD", "USDCAD", "USDCHF", "USDJPY"]);
+    // A FLAT original direction is NOT_APPLICABLE with zero delta.
+    expect(rows.find((r) => r.pair === "USDJPY")?.validationState).toBe("NOT_APPLICABLE");
+    // Confidence is converted to percentage points (no float noise).
+    expect(rows.find((r) => r.pair === "USDCHF")?.originalConfidence).toBe(58.33);
     // intradayValidation is the LAST key (byte order preserved).
     expect(Object.keys(snap).at(-1)).toBe("intradayValidation");
   });
 
-  it("republishes an EMPTY slice when no provider is configured (fail-safe)", async () => {
-    const captured: { snapshot: DashboardSnapshot | null } = { snapshot: null };
+  it("ISOLATION: every daily slice of the published snapshot is byte-identical after the Job", async () => {
+    const before = publishedSnapshot();
+    const captured: { snapshot: Record<string, unknown> | null } = { snapshot: null };
+    await runIntradayValidationJob(makeDeps(captured, { published: before }));
+
+    // Everything except the intraday-owned keys is untouched — including
+    // pairEvaluations, confluence, trackRecord, signalScorecard and dailyCommentary.
+    expect(JSON.stringify(withoutIntraday(captured.snapshot!))).toBe(
+      JSON.stringify(withoutIntraday(before as Record<string, unknown>)),
+    );
+  });
+
+  it("ISOLATION: the daily slices are also unchanged when the provider is not configured", async () => {
+    const before = publishedSnapshot();
+    const captured: { snapshot: Record<string, unknown> | null } = { snapshot: null };
     const result = await runIntradayValidationJob(
-      makeDeps(captured, { withSource: false }), // no TWELVE_DATA_API_KEY
+      makeDeps(captured, { withSource: false, published: before }),
     );
     expect(result.validated).toBe(0);
     expect(result.republished).toBe(true);
-    expect(captured.snapshot!.intradayValidation.rows).toHaveLength(0);
+    expect(JSON.stringify(withoutIntraday(captured.snapshot!))).toBe(
+      JSON.stringify(withoutIntraday(before as Record<string, unknown>)),
+    );
+    expect((captured.snapshot!.intradayValidation as { rows: unknown[] }).rows).toHaveLength(0);
   });
 
-  it("ISOLATION: the daily firing rows are byte-identical with and without validation", async () => {
-    const withCaptured: { snapshot: DashboardSnapshot | null } = { snapshot: null };
-    await runIntradayValidationJob(makeDeps(withCaptured));
+  it("SKIPS the republish (never publishes a degraded file) when no published snapshot is readable", async () => {
+    const captured: { snapshot: Record<string, unknown> | null } = { snapshot: null };
+    const result = await runIntradayValidationJob(makeDeps(captured, { published: null }));
+    expect(result.republished).toBe(false);
+    expect(captured.snapshot).toBeNull();
+  });
 
-    const withoutCaptured: { snapshot: DashboardSnapshot | null } = { snapshot: null };
-    await runIntradayValidationJob(makeDeps(withoutCaptured, { withSource: false }));
-
-    // The daily forecast slice is identical regardless of the intraday outcome.
-    expect(JSON.stringify(withCaptured.snapshot!.firingSetups)).toBe(
-      JSON.stringify(withoutCaptured.snapshot!.firingSetups),
+  it("SKIPS the republish when the published snapshot is for a different Decision_Date", async () => {
+    const captured: { snapshot: Record<string, unknown> | null } = { snapshot: null };
+    const result = await runIntradayValidationJob(
+      makeDeps(captured, { published: publishedSnapshot("2026-11-05") }),
     );
-    // And it matches the source-of-truth history verbatim (never recomputed).
-    expect(JSON.stringify(withCaptured.snapshot!.firingSetups)).toBe(JSON.stringify(DAILY_FIRING));
+    expect(result.republished).toBe(false);
+    expect(captured.snapshot).toBeNull();
+  });
+
+  it("falls back to the fired firing_setups when the published snapshot has no evaluations", async () => {
+    const captured: { snapshot: Record<string, unknown> | null } = { snapshot: null };
+    const noEvals = { ...publishedSnapshot(), pairEvaluations: [] };
+    const result = await runIntradayValidationJob(
+      makeDeps(captured, {
+        published: noEvals,
+        fallback: [{ pair: "GBPUSD", direction: "DOWN", confidence: 60 }],
+      }),
+    );
+    expect(result.validated).toBe(1);
   });
 
   it("does not throw when a sink write fails (republished=false)", async () => {
     const result = await runIntradayValidationJob(
       makeDeps(
         { snapshot: null },
-        { withSource: true, sink: () => Promise.reject(new Error("upload failed")) },
+        { sink: () => Promise.reject(new Error("upload failed")) },
       ),
     );
     expect(result.republished).toBe(false);
-    expect(result.validated).toBe(1);
+    expect(result.validated).toBe(5);
   });
 });

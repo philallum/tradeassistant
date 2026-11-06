@@ -27,9 +27,9 @@
 > write a secret value into any doc — reference credentials by name only.
 
 <!-- BEGIN STATE -->
-- **Phase:** v1 feature-complete and LIVE. `multi-strategy-confluence-engine` + Signal Scorecard confirmed LIVE (schema v7 in prod). `intraday-validation` (read-only 4H enrichment) IMPLEMENTED locally (schema bumped to v8), NOT committed/deployed; additive migration `…0010` not yet applied in hosted. Delivery cadence: operator merges dev->main to deploy; agent builds/verifies locally.
+- **Phase:** v1 feature-complete and LIVE. `multi-strategy-confluence-engine` + Signal Scorecard LIVE; `intraday-validation` (snapshot schema v8) is deployed but its first live republish DEGRADED the published `dashboard.json`; a code fix is done locally and NOT yet deployed. Delivery cadence: operator merges dev->main to deploy; agent builds/verifies locally.
 - **Updated:** 2026-11-06
-- **Summary:** Built the `intraday-validation` feature end-to-end LOCALLY (full gate green: backend eslint+tsc+1308 tests+version-policy, web build+288 tests). It adds a SEPARATE ~08:00-UK Cloud Run Job (`intradayMain.ts`) that reads back the immutable daily prediction, fetches the forming 4H candle (new isolated Twelve Data `interval=4h` client), classifies Support/Neutral/Contradict with a bounded ±10pp UNVALIDATED confidence delta, persists to a new `intraday_validations` table, and republishes `dashboard.json` with a new v8 `intradayValidation` slice + compact per-pair card. The daily engine is byte-identical (isolation regression test green). Open: operator review + dev->main deploy, apply migration `…0010` out-of-band, and provision the second Cloud Scheduler trigger.
+- **Summary:** The manual intraday run worked but overwrote the live `dashboard.json` with empty daily slices (pairEvaluations, confluence, track record, scorecard, AI notes). Fixed locally (full backend gate green): the intraday Job now republishes the same snapshot with only `intradayValidation` replaced, and validates all 5 pairs from the published `pairEvaluations`. To do: deploy the fix, restore the live file by re-running the daily Job, and keep the 08:00 trigger from firing the old image meanwhile.
 <!-- END STATE -->
 
 ---
