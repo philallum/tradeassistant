@@ -13,11 +13,13 @@ import type { JSX } from "react";
 import type { ConvictionVM } from "../pure/shapeConviction";
 import type { DailyNoteViewModel } from "../pure/shapeDailyNote";
 import type { EvidenceVM } from "../pure/shapeEvidence";
+import type { IntradayValidationViewModel } from "../pure/shapeIntradayValidation";
 import type { PairSummaryVM } from "../pure/shapePairSummary";
 import type { StrategyCardVM } from "../pure/shapeStrategyCards";
 import type { SystemRecordVM } from "../pure/shapeSystemRecord";
 import { theme } from "../theme/darkTheme";
 import { ContextDrawers } from "./ContextDrawers";
+import { IntradayValidationCard } from "./IntradayValidationCard";
 import { PairSummary } from "./PairSummary";
 import { StrategyCardGrid } from "./StrategyCardGrid";
 import { SystemRecordFooter } from "./SystemRecordFooter";
@@ -35,6 +37,8 @@ export interface MasterCardProps {
   /** The selected pair's own AI rationale (optional; omitted = overview only). */
   readonly pairNote?: DailyNoteViewModel;
   readonly evidence: EvidenceVM | null;
+  /** The read-only intraday 4H validation for the pair (schema v8). */
+  readonly intradayValidation: IntradayValidationViewModel;
   readonly systemRecord: SystemRecordVM;
 }
 
@@ -47,6 +51,7 @@ export function MasterCard({
   note,
   pairNote,
   evidence,
+  intradayValidation,
   systemRecord,
 }: MasterCardProps): JSX.Element {
   return (
@@ -61,6 +66,7 @@ export function MasterCard({
       }}
     >
       <PairSummary pair={pair} conviction={conviction} summary={summary} />
+      <IntradayValidationCard pair={pair} vm={intradayValidation} />
       <StrategyCardGrid pair={pair} cards={cards} lookbackDays={lookbackDays} />
       <ContextDrawers
         note={note}

@@ -37,6 +37,7 @@ import type {
   DailyCommentary,
   EvaluationReportRow,
   FiringSetupRow,
+  IntradayValidation,
   SignalRationaleRow,
   SignalScorecard,
   Pair,
@@ -49,6 +50,7 @@ import { shapeConviction } from "../pure/shapeConviction";
 import { shapeDailyNote } from "../pure/shapeDailyNote";
 import { shapePairNote } from "../pure/shapePairNote";
 import { shapeEvidence } from "../pure/shapeEvidence";
+import { shapeIntradayValidation } from "../pure/shapeIntradayValidation";
 import { shapePairSummary } from "../pure/shapePairSummary";
 import { shapeStrategyCards } from "../pure/shapeStrategyCards";
 import { shapeSystemRecord } from "../pure/shapeSystemRecord";
@@ -99,6 +101,8 @@ export interface WindowEvidence {
   readonly trackRecord: TrackRecord;
   /** Recorded per-signal direction history (dated `signal_predictions`, all six signals). */
   readonly signalScorecard: SignalScorecard;
+  /** Read-only intraday 4H validation slice (schema v8). */
+  readonly intradayValidation: IntradayValidation;
   /** Per-pair AI rationales (one per firing pair). Absent = none loaded. */
   readonly aiRationale?: readonly SignalRationaleRow[];
 }
@@ -137,6 +141,7 @@ const defaultLoadEvidence: WindowEvidenceLoader = async (options) => {
     pairEvaluations: snapshot.pairEvaluations,
     trackRecord: snapshot.trackRecord,
     signalScorecard: snapshot.signalScorecard,
+    intradayValidation: snapshot.intradayValidation,
     aiRationale: snapshot.aiRationale,
   };
 };
@@ -382,6 +387,7 @@ function ReadyView(props: {
         horizon === null
           ? null
           : shapeEvidence({ pair, horizon, analogueOutcomes: data.evidence.analogueOutcomes }),
+      intradayValidation: shapeIntradayValidation(data.evidence.intradayValidation, pair),
       systemRecord: shapeSystemRecord(selectLatestReport(data.evaluationReports)),
       empty: data.rows.length === 0 && data.confluence.pairs.length === 0,
     };
@@ -403,6 +409,7 @@ function ReadyView(props: {
         note={composed.note}
         pairNote={composed.pairNote}
         evidence={composed.evidence}
+        intradayValidation={composed.intradayValidation}
         systemRecord={composed.systemRecord}
       />
     </>

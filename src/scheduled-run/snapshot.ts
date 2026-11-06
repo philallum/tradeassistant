@@ -51,11 +51,17 @@ import type {
  * (signal-scorecard) appends the `signalScorecard` slice — the RECORDED
  * (not replayed) per-signal direction ledger: each of the six signals' matured
  * calls/correct per pair plus the still-open (pending) count, from the dated
- * `signal_predictions` rows — defaulting to `EMPTY_SIGNAL_SCORECARD`. The SPA
- * tolerates a version mismatch (best-effort render) and defaults an absent slice
- * to its empty value, so each bump is backward- and forward-compatible.
+ * `signal_predictions` rows — defaulting to `EMPTY_SIGNAL_SCORECARD`. v8
+ * (intraday-validation) appends the `intradayValidation` slice — the read-only
+ * intraday 4H enrichment produced a few hours AFTER the immutable daily run: per
+ * `(decisionDate, pair)` it carries a snapshot of the original daily
+ * direction/confidence, the forming 4H candle's validation state, a bounded
+ * UNVALIDATED confidence delta, the resulting current confidence, and a reason —
+ * defaulting to `EMPTY_INTRADAY_VALIDATION`. The SPA tolerates a version
+ * mismatch (best-effort render) and defaults an absent slice to its empty value,
+ * so each bump is backward- and forward-compatible.
  */
-export const SNAPSHOT_SCHEMA_VERSION = 7 as const;
+export const SNAPSHOT_SCHEMA_VERSION = 8 as const;
 
 /** The canonical file name the SPA fetches as a same-origin static asset. */
 export const SNAPSHOT_FILE_NAME = "dashboard.json" as const;
@@ -479,6 +485,72 @@ export const EMPTY_SIGNAL_SCORECARD: SnapshotSignalScorecardSlice = {
   rows: [],
 };
 
+// ---------------------------------------------------------------------------------------
+// v8 intraday-validation slice. The read-only intraday 4H enrichment produced a few hours
+// AFTER the immutable daily run by a SEPARATE scheduled Job. For each (decisionDate, pair) it
+// carries a SNAPSHOT of the original daily direction/confidence (audit — never a mutation),
+// the forming 4H candle's deterministic validation state, a BOUNDED, UNVALIDATED confidence
+// delta (percentage points), the resulting current confidence, a plain-language reason, and
+// the forming candle's OHLC. Display-only, LLM-free, never re-enters firing / scoring.
+// "Strength is not a probability": `validationLabel` is the literal `"unvalidated"`.
+// ---------------------------------------------------------------------------------------
+
+/** The forming 4H candle's minimal OHLC, as carried in the snapshot. */
+export interface SnapshotIntradayCandle {
+  readonly open: number;
+  readonly high: number;
+  readonly low: number;
+  readonly currentPrice: number;
+}
+
+/** The deterministic validation state (mirrors `ValidationState`). */
+export type SnapshotValidationState =
+  | "STRONGLY_SUPPORTS"
+  | "SUPPORTS"
+  | "NEUTRAL"
+  | "CONTRADICTS"
+  | "STRONGLY_CONTRADICTS"
+  | "NOT_APPLICABLE";
+
+/** One intraday-validation row, keyed to an original daily prediction. */
+export interface SnapshotIntradayValidationRow {
+  readonly pair: string;
+  readonly decisionDate: string;
+  /** Snapshot of the original daily direction (untouched). */
+  readonly originalDirection: SnapshotDirection;
+  /** Snapshot of the original Earned_Confidence in percentage points `[0,100]` (untouched). */
+  readonly originalConfidence: number;
+  readonly validationState: SnapshotValidationState;
+  /** Bounded symmetric Confidence_Delta in percentage points `[-10,+10]`. */
+  readonly confidenceDelta: number;
+  /** Current_Confidence = clamp(original + delta, 0, 100). */
+  readonly currentConfidence: number;
+  /** Plain-language explanation (display-only). */
+  readonly reason: string;
+  /** The forming bar's open instant (ISO-8601 UTC) — boundary audit. */
+  readonly barOpenUtc: string;
+  /** The forming 4H candle's minimal OHLC. */
+  readonly h4: SnapshotIntradayCandle;
+}
+
+/**
+ * The v8 `intradayValidation` slice. `observedAt` is the ISO-8601 UTC instant
+ * the intraday Job observed the forming bars (or `null` when none ran / all
+ * pairs were unavailable). `validationLabel` is the literal `"unvalidated"`.
+ */
+export interface SnapshotIntradayValidationSlice {
+  readonly observedAt: string | null;
+  readonly validationLabel: "unvalidated";
+  readonly rows: readonly SnapshotIntradayValidationRow[];
+}
+
+/** The empty/fail-safe default for the v8 intraday-validation slice. */
+export const EMPTY_INTRADAY_VALIDATION: SnapshotIntradayValidationSlice = {
+  observedAt: null,
+  validationLabel: "unvalidated",
+  rows: [],
+};
+
 /**
  * The complete `dashboard.json` envelope the SPA fetches. Every field is a
  * read-only array of wire-format rows plus the Decision_Date the run was for and
@@ -542,6 +614,14 @@ export interface DashboardSnapshot {
    * third_party). `EMPTY_SIGNAL_SCORECARD` by default. Always present.
    */
   readonly signalScorecard: SnapshotSignalScorecardSlice;
+  /**
+   * v8: the read-only intraday 4H validation produced a few hours after the
+   * immutable daily run (per `(decisionDate, pair)`: a snapshot of the original
+   * direction/confidence, the forming candle's validation state, a bounded
+   * UNVALIDATED confidence delta, the current confidence, and a reason).
+   * `EMPTY_INTRADAY_VALIDATION` by default. Always present.
+   */
+  readonly intradayValidation: SnapshotIntradayValidationSlice;
 }
 
 /** The v1 deterministic system Strategy_Source (schema default 'system'). */
@@ -723,6 +803,7 @@ export function buildDashboardSnapshot(
   confluence: SnapshotConfluenceSlice = EMPTY_CONFLUENCE,
   trackRecord: SnapshotTrackRecordSlice = EMPTY_TRACK_RECORD,
   signalScorecard: SnapshotSignalScorecardSlice = EMPTY_SIGNAL_SCORECARD,
+  intradayValidation: SnapshotIntradayValidationSlice = EMPTY_INTRADAY_VALIDATION,
 ): DashboardSnapshot {
   const decisionDate = view.decisionDate;
   const todayFiring = view.cards.map((card) => firingSetupRow(decisionDate, card));
@@ -766,8 +847,10 @@ export function buildDashboardSnapshot(
     confluence,
     // v6: appended after v5 for the same reason.
     trackRecord,
-    // v7: appended LAST for the same reason.
+    // v7: appended after v6 for the same reason.
     signalScorecard,
+    // v8: appended LAST so every earlier key keeps its byte order.
+    intradayValidation,
   };
 }
 

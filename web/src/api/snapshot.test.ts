@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   EMPTY_CONFLUENCE,
+  EMPTY_INTRADAY_VALIDATION,
   EMPTY_SIGNAL_SCORECARD,
   EMPTY_TRACK_RECORD,
   loadSnapshot,
@@ -68,6 +69,7 @@ const FULL_SNAPSHOT: DashboardSnapshot = {
   confluence: EMPTY_CONFLUENCE,
   trackRecord: EMPTY_TRACK_RECORD,
   signalScorecard: EMPTY_SIGNAL_SCORECARD,
+  intradayValidation: EMPTY_INTRADAY_VALIDATION,
 };
 
 describe("loadSnapshot — same-origin static fetch (R5.1, R4.4)", () => {
@@ -272,5 +274,69 @@ describe("parseSnapshot — v4 slices (trader-edge-validation R10.1–10.3)", ()
     expect(parsed.exposure).toEqual(body.exposure);
     expect(parsed.provenance).toHaveLength(1);
     expect(parsed.validationStatus[0]!.status).toBe("unvalidated");
+  });
+});
+
+describe("parseSnapshot — v8 intradayValidation slice", () => {
+  const ROW = {
+    pair: "EURUSD",
+    decisionDate: "2026-11-06",
+    originalDirection: "UP",
+    originalConfidence: 58,
+    validationState: "SUPPORTS",
+    confidenceDelta: 5,
+    currentConfidence: 63,
+    reason: "bullish bar supports the up forecast",
+    barOpenUtc: "2026-11-06T04:00:00.000Z",
+    h4: { open: 1.0, high: 1.1, low: 0.99, currentPrice: 1.08 },
+  };
+
+  it("defaults to the empty slice for a pre-v8 (or version-less) snapshot", () => {
+    // Pre-v8 but v5+, so a valid (empty) confluence slice is required by the strict parse.
+    const v7 = {
+      schemaVersion: 7,
+      decisionDate: "2026-11-06",
+      generatedAt: "t",
+      firingSetups: [],
+      confluence: EMPTY_CONFLUENCE,
+    };
+    const parsed = parseSnapshot(v7);
+    expect(parsed.intradayValidation).toEqual(EMPTY_INTRADAY_VALIDATION);
+  });
+
+  it("carries a well-formed v8 slice through", () => {
+    const parsed = parseSnapshot({
+      schemaVersion: 8,
+      confluence: EMPTY_CONFLUENCE,
+      intradayValidation: { observedAt: "2026-11-06T08:00:00.000Z", validationLabel: "unvalidated", rows: [ROW] },
+    });
+    expect(parsed.intradayValidation.observedAt).toBe("2026-11-06T08:00:00.000Z");
+    expect(parsed.intradayValidation.rows).toHaveLength(1);
+    expect(parsed.intradayValidation.rows[0]!.validationState).toBe("SUPPORTS");
+    expect(parsed.intradayValidation.rows[0]!.h4.currentPrice).toBe(1.08);
+  });
+
+  it("DROPS a defective row (unknown state / bad OHLC) but keeps the valid ones", () => {
+    const parsed = parseSnapshot({
+      schemaVersion: 8,
+      confluence: EMPTY_CONFLUENCE,
+      intradayValidation: {
+        observedAt: "t",
+        validationLabel: "unvalidated",
+        rows: [
+          ROW,
+          { ...ROW, pair: "GBPUSD", validationState: "WAT" },
+          { ...ROW, pair: "USDJPY", h4: { open: 1 } },
+        ],
+      },
+    });
+    expect(parsed.intradayValidation.rows.map((r) => r.pair)).toEqual(["EURUSD"]);
+  });
+
+  it("defaults a malformed slice to empty rather than failing the whole snapshot", () => {
+    expect(
+      parseSnapshot({ schemaVersion: 8, confluence: EMPTY_CONFLUENCE, intradayValidation: "nope" })
+        .intradayValidation,
+    ).toEqual(EMPTY_INTRADAY_VALIDATION);
   });
 });
