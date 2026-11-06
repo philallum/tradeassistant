@@ -112,9 +112,18 @@ describe("computeCandleFeatures (properties)", () => {
           const jpy = computeCandleFeatures(mk(150));
           expect(jpy.bodyToRange).toBeCloseTo(major.bodyToRange, 9);
           expect(jpy.pricePositionInRange).toBeCloseTo(major.pricePositionInRange, 9);
-          expect(jpy.bodyDirection).toBe(major.bodyDirection);
+          // Direction is only comparable above floating-point noise: when the body is
+          // sub-ulp (|a - b| ~ 1e-17 of the range), building the candle rounds differently
+          // at each price scale, so one can be FLAT and the other a 1-ulp UP/DOWN. Such a
+          // body has bodyToRange ~ 0 and classifies NEUTRAL either way, so it is not a
+          // scale-invariance defect in the features.
+          if (major.bodyToRange > 1e-9 && jpy.bodyToRange > 1e-9) {
+            expect(jpy.bodyDirection).toBe(major.bodyDirection);
+          }
         },
       ),
+      // Regression: the sub-ulp counterexample CI found (see comment above).
+      { examples: [[0.21333333333333335, 4.6259e-17, 0]] },
     );
   });
 });

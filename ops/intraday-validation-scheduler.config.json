@@ -20,7 +20,7 @@
     {
       "kind": "create-job",
       "affectedResource": "Cloud Run Job \"intraday-validation-run\" (same image as scheduled-daily-run, overriding the container command to run the intraday entrypoint)",
-      "command": "gcloud run jobs create intraday-validation-run --image=<same-image-as-scheduled-daily-run> --region=europe-west1 --project=trade-assistant-508806 --command=node --args=dist/scheduled-run/intradayMain.js --set-secrets=TWELVE_DATA_API_KEY=twelve-data-api-key:latest,SUPABASE_URL=supabase-url:latest,SUPABASE_KEY=supabase-key:latest --set-env-vars=DASHBOARD_SNAPSHOT_BUCKET=<dashboard-bucket>"
+      "command": "gcloud run jobs create intraday-validation-run --image=<same-image-as-scheduled-daily-run> --region=europe-west1 --project=trade-assistant-508806 --command=node --args=dist/scheduled-run/intradayMain.js --service-account=<same-runtime-sa-as-scheduled-daily-run> --set-secrets=TWELVE_DATA_API_KEY=twelve-data-api-key:latest,SUPABASE_HOSTED_KEY=supabase-key:latest,SUPABASE_PUBLISHABLE_KEY=supabase-publishable-key:latest,SUPABASE_HOSTED_URL=supabase-url:latest,SUPABASE_POOLER_URL=supabase-pooler-url:latest --set-env-vars=SUPABASE_TARGET=hosted,DASHBOARD_SNAPSHOT_BUCKET=<dashboard-bucket>"
     },
     {
       "kind": "grant-invoker",
