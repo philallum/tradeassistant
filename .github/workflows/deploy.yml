@@ -67,6 +67,9 @@ env:
   AR_REPOSITORY: ${{ vars.AR_REPOSITORY }}
   # Cloud Run Job name and its dedicated least-privilege runtime service account.
   CLOUD_RUN_JOB: ${{ vars.CLOUD_RUN_JOB }}
+  # The intraday 4H validation Job (same image, intradayMain entrypoint). Defaults to
+  # the name the operator created it with, so no new repository variable is required.
+  INTRADAY_CLOUD_RUN_JOB: ${{ vars.INTRADAY_CLOUD_RUN_JOB || 'intraday-validation-run' }}
   RUNTIME_SERVICE_ACCOUNT: ${{ vars.RUNTIME_SERVICE_ACCOUNT }}
   # Workload Identity Federation provider + the deploy-time service account CI
   # impersonates (both non-secret resource names).
@@ -241,6 +244,29 @@ jobs:
             --service-account "${RUNTIME_SERVICE_ACCOUNT}" \
             --set-env-vars "GCP_PROJECT_ID=${GCP_PROJECT_ID},GCP_REGION=${GCP_REGION},GEMINI_MODEL=${GEMINI_MODEL},GOOGLE_GENAI_USE_VERTEXAI=true,EXTERNAL_SIGNAL_PROVIDER=FCS,SUPABASE_TARGET=hosted,DASHBOARD_SNAPSHOT_BUCKET=${DASHBOARD_SNAPSHOT_BUCKET}" \
             --set-secrets "EXTERNAL_SIGNAL_API_KEY=external-signal-api-key:latest,TWELVE_DATA_API_KEY=twelve-data-api-key:latest,MASSIVE_API_KEY=massive-api-key:latest,SUPABASE_HOSTED_KEY=supabase-key:latest,SUPABASE_PUBLISHABLE_KEY=supabase-publishable-key:latest,SUPABASE_HOSTED_URL=supabase-url:latest,SUPABASE_POOLER_URL=supabase-pooler-url:latest"
+
+      # intraday-validation (2026-11-06): the SEPARATE ~08:00-UK intraday 4H validation
+      # Job runs the SAME SHA-pinned image with its entrypoint overridden to
+      # `dist/scheduled-run/intradayMain.js`, so it must be redeployed on EVERY backend
+      # deploy or it silently keeps running a stale image (that stale image once
+      # overwrote the published snapshot). `gcloud run jobs deploy` creates-or-updates,
+      # so the Job's full config lives in the repo. Same runtime SA; only the secrets the
+      # intraday Job reads (Twelve Data key + Supabase). Secret Manager refs by NAME only.
+      # It deliberately does NOT inject the daily-only secrets (FCS, Massive, Gemini).
+      # The guard fails fast on an empty bucket: an EMPTY DASHBOARD_SNAPSHOT_BUCKET
+      # silently turns the snapshot republish into a logged no-op.
+      - name: Deploy SHA-pinned image to intraday validation Job
+        run: |
+          test -n "${DASHBOARD_SNAPSHOT_BUCKET}" || { echo "DASHBOARD_SNAPSHOT_BUCKET is empty" >&2; exit 1; }
+          gcloud run jobs deploy "${INTRADAY_CLOUD_RUN_JOB}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${GCP_REGION}" \
+            --image "${{ steps.image.outputs.uri }}" \
+            --service-account "${RUNTIME_SERVICE_ACCOUNT}" \
+            --command "node" \
+            --args "dist/scheduled-run/intradayMain.js" \
+            --set-env-vars "GCP_PROJECT_ID=${GCP_PROJECT_ID},GCP_REGION=${GCP_REGION},SUPABASE_TARGET=hosted,DASHBOARD_SNAPSHOT_BUCKET=${DASHBOARD_SNAPSHOT_BUCKET}" \
+            --set-secrets "TWELVE_DATA_API_KEY=twelve-data-api-key:latest,SUPABASE_HOSTED_KEY=supabase-key:latest,SUPABASE_PUBLISHABLE_KEY=supabase-publishable-key:latest,SUPABASE_HOSTED_URL=supabase-url:latest,SUPABASE_POOLER_URL=supabase-pooler-url:latest"
 
   # Stage 1 (frontend) — build + test the dashboard SPA. This mirrors the `web`
   # CI job and gates the deploy below, so a broken SPA never reaches production.
