@@ -8,20 +8,25 @@
 //
 //   1. read the same runtime configuration from the environment;
 //   2. SKIP non-trading days (defence-in-depth; the cron is Mon-Fri);
-//   3. read back the latest Decision_Date's PERSISTED daily prediction
-//      (direction + Earned_Confidence per pair) from `firing_setups` / the
-//      snapshot — READ-ONLY, never recomputed;
+//   3. read the PUBLISHED daily snapshot (`dashboard.json`) — the authoritative,
+//      immutable record of the original prediction for EVERY evaluated pair
+//      (fired or not) in `pairEvaluations` — READ-ONLY, never recomputed. If the
+//      snapshot cannot be read it falls back to the fired pairs in `firing_setups`;
 //   4. fetch the currently-forming 4H candle per pair (Twelve Data `interval=4h`),
 //      select the forming bar timezone-aware, classify it against the original
 //      direction, and persist the result to its OWN `intraday_validations` table;
-//   5. rebuild and republish `dashboard.json` with the v8 `intradayValidation`
-//      slice filled, reusing the existing fail-safe snapshot sink.
+//   5. republish `dashboard.json` as the SAME published snapshot with ONLY the
+//      `intradayValidation` key replaced (and the schema version stamped), through
+//      the existing fail-safe sink.
 //
 // ISOLATION: it NEVER runs the daily pipeline, NEVER writes `firing_setups` /
 // `realized_outcomes` / `pattern_vectors` / `analogue_outcomes`, and NEVER
-// recomputes direction or confidence. Every failure path (no key, provider down,
-// stale/invalid bar, read-back empty, write error) degrades to "validation
-// unavailable" and leaves the daily forecast byte-identical.
+// recomputes direction or confidence. Because the republish is a key-replace on the
+// published snapshot, every OTHER slice (pairEvaluations, confluence, trackRecord,
+// scorecard, AI notes, ...) stays byte-identical. If there is no readable published
+// snapshot for this Decision_Date it SKIPS the republish rather than publish a
+// degraded file. Every failure path degrades to "validation unavailable" and
+// leaves the daily forecast byte-identical.
 
 import { fileURLToPath } from "node:url";
 
@@ -35,7 +40,6 @@ import {
   SupabaseRestClient,
   SupabaseIntradayValidationStore,
 } from "../storage/supabase/index.js";
-import type { SupabaseConfig } from "../storage/supabaseConfig.js";
 import { TwelveDataIntradayClient } from "../ingestion/intradayFeed/twelveDataIntraday.js";
 import {
   runIntradayValidation,
@@ -45,12 +49,16 @@ import {
 import type { IntradayValidationStore } from "../intraday-validation/store.js";
 import { buildIntradayValidationSlice } from "./intradayValidationSlice.js";
 import {
-  buildDashboardSnapshot,
+  SNAPSHOT_SCHEMA_VERSION,
   writeDashboardSnapshot,
   type DashboardSnapshot,
   type SnapshotSink,
 } from "./snapshot.js";
-import { loadSnapshotHistory } from "./snapshotHistory.js";
+import {
+  fetchPublishedSnapshot,
+  originalsFromPublished,
+  type PublishedSnapshot,
+} from "./publishedSnapshot.js";
 import { makeGcsSnapshotSink } from "./gcsSnapshotSink.js";
 import { resolveAccessTokenProvider } from "./accessToken.js";
 
@@ -68,11 +76,10 @@ interface FiringSetupReadRow {
 }
 
 /**
- * Read back the latest persisted Decision_Date's per-pair daily prediction as
- * {@link OriginalPrediction}s. READ-ONLY: a plain select of `firing_setups`
- * (direction + Earned_Confidence), converting the stored `[0,1]` confidence to
- * PERCENTAGE POINTS `[0,100]`. Returns `[]` fail-safe on any read error (the Job
- * then republishes an empty intraday slice).
+ * FALLBACK read of the per-pair daily prediction from `firing_setups` (used only
+ * when the published snapshot is unreadable). It holds FIRED pairs only, so it gives
+ * partial coverage. READ-ONLY; converts the stored `[0,1]` confidence to percentage
+ * points `[0,100]` (rounded to 2 dp). Returns `[]` fail-safe on any read error.
  */
 export async function loadOriginalsFromFiringSetups(
   client: SupabaseRestClient,
@@ -90,7 +97,7 @@ export async function loadOriginalsFromFiringSetups(
       out.push({
         pair: r.pair,
         direction: r.direction as DirectionClass,
-        confidence: r.earned_confidence * 100,
+        confidence: Math.round(r.earned_confidence * 10_000) / 100,
       });
     }
     return out;
@@ -107,21 +114,18 @@ export interface IntradayJobDeps {
   readonly source?: Intraday4hSource;
   /** The validation store. Defaults to the Supabase adapter. */
   readonly store?: IntradayValidationStore;
-  /** Read back the latest daily prediction. Defaults to the firing_setups read. */
-  readonly loadOriginals?: (decisionDate: TradingDate) => Promise<readonly OriginalPrediction[]>;
+  /** Load the published daily snapshot. Defaults to the public GCS object read. */
+  readonly loadPublished?: () => Promise<PublishedSnapshot | null>;
+  /** Fallback original-prediction read. Defaults to the `firing_setups` select. */
+  readonly loadFallbackOriginals?: (
+    decisionDate: TradingDate,
+  ) => Promise<readonly OriginalPrediction[]>;
   /** The snapshot sink. Defaults to the GCS sink (undefined → logged no-op). */
   readonly snapshotSink?: SnapshotSink | undefined;
-  /** Load the read-back history slices. Defaults to {@link loadSnapshotHistory}. */
-  readonly loadHistory?: (
-    client: SupabaseRestClient,
-    decisionDate: TradingDate,
-  ) => Promise<Awaited<ReturnType<typeof loadSnapshotHistory>>>;
   /** The current instant (UTC). Injected for determinism. Defaults to `new Date()`. */
   readonly now?: Date;
   /** Env the provider config is read from. Defaults to `process.env`. */
   readonly env?: Readonly<Record<string, string | undefined>>;
-  /** Assemble the snapshot. Defaults to {@link buildDashboardSnapshot}. */
-  readonly buildSnapshot?: typeof buildDashboardSnapshot;
   /** Write the snapshot. Defaults to {@link writeDashboardSnapshot}. */
   readonly writeSnapshot?: typeof writeDashboardSnapshot;
   /** Secret-free warning sink. */
@@ -146,7 +150,7 @@ function defaultWarn(collaborator: string, err: unknown): void {
 
 /**
  * Build the Twelve Data 4H source from the environment, or `null` when no key is
- * configured (the Job then republishes an empty slice — fail-safe).
+ * configured (the Job then republishes the snapshot with an empty slice — fail-safe).
  */
 function buildSourceFromEnv(
   env: Readonly<Record<string, string | undefined>>,
@@ -162,10 +166,10 @@ function buildSourceFromEnv(
 }
 
 /**
- * Run the intraday validation Job: read back the daily prediction, validate the
- * forming 4H candle per pair, persist, and republish the snapshot with the v8
- * slice filled. Never throws for a provider/data failure; the snapshot republish
- * is best-effort (a failing write is logged + swallowed).
+ * Run the intraday validation Job: read the published daily prediction, validate
+ * the forming 4H candle per pair, persist, and republish the SAME snapshot with only
+ * the v8 `intradayValidation` slice replaced. Never throws for a provider/data
+ * failure; the republish is best-effort (a failing write is logged + swallowed).
  */
 export async function runIntradayValidationJob(
   deps: IntradayJobDeps,
@@ -173,16 +177,20 @@ export async function runIntradayValidationJob(
   const warn = deps.warn ?? defaultWarn;
   const now = deps.now ?? new Date();
   const env = deps.env ?? process.env;
-  const supabase: SupabaseConfig = deps.config.supabase;
-  const client = new SupabaseRestClient(supabase);
   const decisionDate = deps.config.decisionDate;
+  const client = new SupabaseRestClient(deps.config.supabase);
 
   const store = deps.store ?? new SupabaseIntradayValidationStore(client);
   const source = deps.source ?? buildSourceFromEnv(env);
-  const loadOriginals =
-    deps.loadOriginals ?? ((d: TradingDate) => loadOriginalsFromFiringSetups(client, d));
-  const buildSnapshot = deps.buildSnapshot ?? buildDashboardSnapshot;
   const writeSnapshot = deps.writeSnapshot ?? writeDashboardSnapshot;
+  const loadPublished =
+    deps.loadPublished ?? (() => fetchPublishedSnapshot(deps.config.dashboardSnapshotBucket));
+  const loadFallbackOriginals =
+    deps.loadFallbackOriginals ?? ((d: TradingDate) => loadOriginalsFromFiringSetups(client, d));
+
+  // The published daily snapshot is BOTH the source of the original prediction
+  // (every evaluated pair) AND the base the republish key-replaces.
+  const published = await loadPublished();
 
   let validated = 0;
   let unavailable = 0;
@@ -192,7 +200,14 @@ export async function runIntradayValidationJob(
     warn("intraday_source", new Error("no intraday 4H provider configured (missing TWELVE_DATA_API_KEY)"));
   } else {
     try {
-      const originals = await loadOriginals(decisionDate);
+      let originals = originalsFromPublished(published, decisionDate);
+      if (originals.length === 0) {
+        warn(
+          "intraday_originals",
+          new Error("no pairEvaluations in the published snapshot; falling back to fired firing_setups"),
+        );
+        originals = await loadFallbackOriginals(decisionDate);
+      }
       const result = await runIntradayValidation({
         decisionDate,
         originals,
@@ -209,17 +224,13 @@ export async function runIntradayValidationJob(
     }
   }
 
-  // 5. Rebuild + republish the snapshot with the v8 slice from the store.
-  const loadHistory =
-    deps.loadHistory ?? ((c, d) => loadSnapshotHistory(c, { decisionDate: d }));
+  // 5. Republish the SAME snapshot with only the intradayValidation slice replaced.
   const republished = await republishSnapshot({
-    client,
+    published,
     decisionDate,
     store,
     snapshotSink: deps.snapshotSink ?? (await resolveSnapshotSink(deps.config, warn)),
-    buildSnapshot,
     writeSnapshot,
-    loadHistory,
     warn,
   });
 
@@ -227,45 +238,45 @@ export async function runIntradayValidationJob(
 }
 
 interface RepublishDeps {
-  readonly client: SupabaseRestClient;
+  readonly published: PublishedSnapshot | null;
   readonly decisionDate: TradingDate;
   readonly store: IntradayValidationStore;
   readonly snapshotSink: SnapshotSink | undefined;
-  readonly buildSnapshot: typeof buildDashboardSnapshot;
   readonly writeSnapshot: typeof writeDashboardSnapshot;
-  readonly loadHistory: (
-    client: SupabaseRestClient,
-    decisionDate: TradingDate,
-  ) => Promise<Awaited<ReturnType<typeof loadSnapshotHistory>>>;
   readonly warn: (collaborator: string, err: unknown) => void;
 }
 
 /**
- * Rebuild `dashboard.json` from the persisted history plus the just-written
- * intraday slice and write it through the best-effort sink. The daily firing
- * view is read back from `firing_setups` via `loadSnapshotHistory` and merged by
- * `buildDashboardSnapshot`; this Job produces NO firing view of its own, so it
- * passes an empty view (today's firing rows are already in history). Fail-safe.
+ * Republish the published snapshot with ONLY `intradayValidation` replaced (and the
+ * schema version stamped). Every other key is carried through untouched, so the daily
+ * slices stay byte-identical. SKIPS (returns false) when there is no readable
+ * published snapshot for THIS Decision_Date — it never publishes a degraded or
+ * mismatched file. Fail-safe: never throws.
  */
 async function republishSnapshot(deps: RepublishDeps): Promise<boolean> {
   try {
-    const history = await deps.loadHistory(deps.client, deps.decisionDate);
+    if (deps.published === null) {
+      deps.warn("snapshot_republish", new Error("no readable published snapshot; skipping republish"));
+      return false;
+    }
+    if (deps.published.decisionDate !== deps.decisionDate) {
+      deps.warn(
+        "snapshot_republish",
+        new Error("published snapshot is for a different Decision_Date; skipping republish"),
+      );
+      return false;
+    }
     const intradayValidation = await buildIntradayValidationSlice({
       decisionDate: deps.decisionDate,
       store: deps.store,
     });
-    const snapshot: DashboardSnapshot = deps.buildSnapshot(
-      { decisionDate: deps.decisionDate, cards: [] },
-      undefined,
-      history,
-      undefined,
-      [],
-      {},
-      undefined,
-      undefined,
-      undefined,
+    // Spread preserves every existing key in order; an existing `intradayValidation`
+    // is replaced in place, an absent one is appended LAST.
+    const snapshot = {
+      ...deps.published,
+      schemaVersion: SNAPSHOT_SCHEMA_VERSION,
       intradayValidation,
-    );
+    } as unknown as DashboardSnapshot;
     return await deps.writeSnapshot(snapshot, deps.snapshotSink);
   } catch (err) {
     deps.warn("snapshot_republish", err);
