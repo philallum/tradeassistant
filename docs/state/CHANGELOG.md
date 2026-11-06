@@ -8,6 +8,9 @@
 > the satellites where they conflict.
 
 ---
+### 2026-11-06 — Fix: intraday Job create-command env/secret names in `ops/intraday-validation-scheduler.config.json`
+Config-only correction, no code/schema/cloud change. The committed `create-job` command used wrong runtime env names (`SUPABASE_URL`/`SUPABASE_KEY`); it now mirrors the daily Job's real contract from `.github/workflows/deploy.yml`: `SUPABASE_HOSTED_URL`, `SUPABASE_HOSTED_KEY`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_POOLER_URL`, `TWELVE_DATA_API_KEY` (secrets, by Secret Manager name only) plus `SUPABASE_TARGET=hosted`, `DASHBOARD_SNAPSHOT_BUCKET`, and the runtime service account. The operator was given the three gcloud steps (create Job, grant `roles/run.invoker`, create the `0 8 * * 1-5` Europe/London Scheduler job) to run themselves; the agent ran none of them and did not verify them against the live project. Prerequisite noted: the deployed image must already contain `dist/scheduled-run/intradayMain.js` (i.e. after dev->main deploy) and the `intraday_validations` table must exist.
+
 ### 2026-11-06 — `intraday-validation`: read-only 4H candle validation layer (schema v8), IMPLEMENTED locally
 LOCALLY VERIFIED (backend eslint + `tsc --noEmit` clean, full `vitest run` 1308 passed/7 skipped incl. the new suites, `version-policy` OK; web `tsc + vite build` clean, `vitest run` 288 passed incl. the new purity-guarded shaper + card DOM tests). NOT committed, NOT deployed; migration `…0010` NOT yet applied in hosted. Built from a reviewed plan (this session) implementing all 10 tasks.
 - **Goal:** a SMALL, non-invasive intraday enrichment around the immutable daily forecast — a few hours after the daily run, fetch the currently-forming 4H candle and answer "does it support or contradict the original daily direction?" It is NOT a second forecasting system.
