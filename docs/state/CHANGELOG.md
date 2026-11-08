@@ -8,6 +8,9 @@
 > the satellites where they conflict.
 
 ---
+### 2026-11-06 — Fix: flaky `operationalSafety.secretRedaction` property test (second CI merge failure)
+Test-only fix, no production change; unrelated to the 4H feature (this is the pre-existing flaky test listed in RISKS). GitHub CI failed on `src/ops/safety/operationalSafety.secretRedaction.property.test.ts`, shrunk counterexample secret name `A` / value `UCT`. Cause: a generated secret VALUE that is a fragment of the FIXED text `formatPresentation` prints (`UCT` ⊂ "DESTRUCTIVE/OVERWRITING OPERATION") tripped the "value never appears" substring assertion — a false positive, not a leak. The collision filter's hand-copied token list had drifted from the real wording. Fix: derive `PRESENTATION_FIXED_TEXT` from `formatPresentation` itself (rendered in destructive and non-destructive form, blank lines skipped) and include it in `confusableWithStructural`, so the filter cannot drift again; added a direct regression test for `UCT` and a sanity test that an ordinary high-entropy key is NOT excluded. LOCALLY VERIFIED: the file passes 26 consecutive runs (4/4 tests each), eslint + `tsc --noEmit` clean. Full suite not re-run locally; CI re-runs it on push.
+
 ### 2026-11-06 — Candle-freshness timing issue marked RESOLVED (operator confirmation)
 Documentation-only. The operator confirmed that moving the daily Scheduler off the exact 17:00 NY close to `30 17 * * 1-5` America/New_York fixed the recurring `candle_freshness.degraded` alert. Updated PROJECT-STATE §9 (issue → resolved), RISKS (resolved entry on top; older triage entries kept as history) and NEXT-STEPS 0c (marked done). Based on the operator's report only; the agent did not re-verify against logs, nor check whether the retry env vars were also widened. The optional alert-softening idea stays open.
 

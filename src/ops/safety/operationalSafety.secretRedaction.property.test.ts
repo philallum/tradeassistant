@@ -94,6 +94,19 @@ const STRUCTURAL_TOKENS: readonly string[] = [
 ];
 
 /**
+ * The fixed, NON-secret scaffolding `formatPresentation` itself emits (the destructive
+ * warning banner, "About to run:", the approve prompts). It is DERIVED from the real
+ * function (rendered with empty command / resource, in both the destructive and the
+ * non-destructive form) so this list can never drift from the production wording — a
+ * hand-copied list previously missed `DESTRUCTIVE/OVERWRITING OPERATION`, and a generated
+ * secret value `UCT` (a fragment of "DESTRUCTIVE") tripped the "value never appears"
+ * assertion on benign fixed text, not on a real leak.
+ */
+const PRESENTATION_FIXED_TEXT: readonly string[] = [true, false].flatMap((destructive) =>
+  formatPresentation({ displayCommand: "", destructive, affectedResource: "" }).split("\n"),
+);
+
+/**
  * True when `value` is confusable with the test's PRESERVED, non-secret text —
  * i.e. it is a substring of (or contains) a secret NAME or any structural token.
  *
@@ -113,11 +126,25 @@ function confusableWithStructural(value: string, names: readonly string[]): bool
   for (const name of names) {
     if (name.includes(value) || value.includes(name)) return true;
   }
-  for (const token of STRUCTURAL_TOKENS) {
+  for (const token of [...STRUCTURAL_TOKENS, ...PRESENTATION_FIXED_TEXT]) {
+    // An empty token (a blank rendered line) is a substring of everything; skip it.
+    if (token === "") continue;
     if (token.includes(value) || value.includes(token)) return true;
   }
   return false;
 }
+
+describe("collision filter (regression for the CI-found counterexample)", () => {
+  it("treats a value that is a fragment of the destructive warning text as confusable", () => {
+    // Shrunk CI counterexample: secret name `A`, value `UCT` ("DESTRUCTIVE").
+    expect(confusableWithStructural("UCT", ["A"])).toBe(true);
+    expect(PRESENTATION_FIXED_TEXT.some((t) => t.includes("DESTRUCTIVE/OVERWRITING"))).toBe(true);
+  });
+
+  it("does not exclude an ordinary high-entropy key", () => {
+    expect(confusableWithStructural("sk_live_9f8a7b6c5d4e3f2a1b", ["MY_SECRET"])).toBe(false);
+  });
+});
 
 /**
  * A set of distinct (NAME, VALUE) secrets. Both names AND values are forced
