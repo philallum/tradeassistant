@@ -6,7 +6,7 @@
 // decision, the Earned_Confidence selector, or the Kill_Gate verdict. This test
 // proves that empirically by running the REAL deterministic-core selectors —
 // `earnedConfidence` (src/confidence) and the Kill_Gate verdict composition
-// `composeGateVerdict` (src/kill-gate) — across the full matrix of confluence
+// `composeEvaluationReport` (src/kill-gate) — across the full matrix of confluence
 // conditions and asserting the results are byte-for-byte identical:
 //
 //     third-party reference present / absent   ×   confluence matrix run / not-run
@@ -17,15 +17,19 @@
 // It does not: the confluence matrix takes only read-only copies of the
 // evaluations/candles/references and returns a brand-new structure.
 //
-// `composeGateVerdict` is the Kill_Gate verdict and is cheaply callable in
+// `composeEvaluationReport` is the Kill_Gate measurement and is cheaply callable in
 // isolation (it is a pure function of the per-fold gate inputs with no I/O), so
 // it is exercised here directly alongside `earnedConfidence`.
 
 import { describe, expect, it } from "vitest";
 import { earnedConfidence } from "../confidence/confidenceSelector.js";
 import type { Confidence, Horizon } from "../confidence/types.js";
-import { composeGateVerdict, type FoldGateInput } from "../kill-gate/verdict.js";
-import type { Gate1FiringSample, GateVerdict } from "../kill-gate/types.js";
+import { composeEvaluationReport, type FoldGateInput } from "../kill-gate/verdict.js";
+import type {
+  EvaluationReport,
+  EvaluationSplit,
+  Gate1FiringSample,
+} from "../kill-gate/types.js";
 import type { TradingDate } from "../guard/types.js";
 import type { AnalogueRecord, DirectionClass, ForwardOutcome } from "../retrieval/types.js";
 import type { Candle } from "../guard/types.js";
@@ -89,7 +93,14 @@ function earnedConfidenceByHorizon(
   };
 }
 
-// --- Kill_Gate verdict fixtures ----------------------------------------------
+// --- Kill_Gate evaluation-report fixtures ------------------------------------
+
+/** A fixed out-of-sample split; only the report's identity across conditions matters. */
+const SPLIT: EvaluationSplit = {
+  trainEnd: "2023-12-31",
+  testStart: "2024-01-01",
+  testEnd: "2024-12-31",
+};
 
 /** A forward outcome whose selected horizon resolves in `direction`. */
 function outcome(direction: DirectionClass, mfePips: number, maePips: number): ForwardOutcome {
@@ -100,7 +111,7 @@ function outcome(direction: DirectionClass, mfePips: number, maePips: number): F
 /**
  * Build a single walk-forward fold with a matched firing subset above the
  * 30-sample floor. The model is correct more often than the baseline so the
- * verdict is a deterministic PASS; the exact value does not matter, only that
+ * report is deterministic and non-degenerate; the exact value does not matter, only that
  * it is identical across every confluence condition.
  */
 function buildFolds(): readonly FoldGateInput[] {
@@ -241,7 +252,7 @@ describe("firing decision and Earned_Confidence are unchanged by confluence (Req
    */
   function firingOutputs(runConfluence: boolean, withThirdParty: boolean): {
     confidence: Record<Horizon, number>;
-    verdict: GateVerdict;
+    report: EvaluationReport;
   } {
     if (runConfluence) {
       const candlesByPair = new Map<Pair, readonly Candle[]>([
@@ -255,7 +266,7 @@ describe("firing decision and Earned_Confidence are unchanged by confluence (Req
     }
     return {
       confidence: earnedConfidenceByHorizon(neighborhoodInputs),
-      verdict: composeGateVerdict("config-under-test", folds),
+      report: composeEvaluationReport("config-under-test", folds, SPLIT),
     };
   }
 
@@ -275,7 +286,7 @@ describe("firing decision and Earned_Confidence are unchanged by confluence (Req
     }
   });
 
-  it("the Kill_Gate verdict is identical across all four third-party × matrix combinations", () => {
+  it("the Kill_Gate evaluation report is identical across all four third-party × matrix combinations", () => {
     const combinations: Array<{ runConfluence: boolean; withThirdParty: boolean }> = [
       { runConfluence: false, withThirdParty: false },
       { runConfluence: false, withThirdParty: true },
@@ -283,8 +294,8 @@ describe("firing decision and Earned_Confidence are unchanged by confluence (Req
       { runConfluence: true, withThirdParty: true },
     ];
     for (const combo of combinations) {
-      const { verdict } = firingOutputs(combo.runConfluence, combo.withThirdParty);
-      expect(verdict).toStrictEqual(baseline.verdict);
+      const { report } = firingOutputs(combo.runConfluence, combo.withThirdParty);
+      expect(report).toStrictEqual(baseline.report);
     }
   });
 
@@ -293,14 +304,15 @@ describe("firing decision and Earned_Confidence are unchanged by confluence (Req
     // present. If any coupling existed, this is where it would surface.
     const withEverything = firingOutputs(true, true);
     expect(withEverything.confidence).toStrictEqual(baseline.confidence);
-    expect(withEverything.verdict).toStrictEqual(baseline.verdict);
+    expect(withEverything.report).toStrictEqual(baseline.report);
   });
 
-  it("the shared Earned_Confidence and verdict are themselves meaningful (non-degenerate) so the equality is not vacuous", () => {
+  it("the shared Earned_Confidence and evaluation report are themselves meaningful (non-degenerate) so the equality is not vacuous", () => {
     // Guard against a vacuous pass: the baseline must carry real signal.
     expect(baseline.confidence[1]).toBeGreaterThan(0.5); // C_raw 0.75 at horizon 1
     expect(baseline.confidence[2]).toBeLessThan(0.5); // C_raw 0.40 at horizon 2
-    expect(baseline.verdict.verdict).toBe("PASS");
-    expect(baseline.verdict.sampleSize).toBeGreaterThanOrEqual(30);
+    expect(baseline.report.deltaVsBaseline).toBeGreaterThan(0.03); // model 36/40 vs baseline 20/40
+    expect(baseline.report.annotations.deltaExceeds3pp).toBe(true);
+    expect(baseline.report.sampleSize).toBeGreaterThanOrEqual(30);
   });
 });

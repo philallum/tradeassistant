@@ -17,12 +17,20 @@ import type { CandleStore, Pair } from "../ingestion/types.js";
 /** Default trailing window size fed to the encoder (≥40 for the widest scale). */
 export const DEFAULT_WINDOW_SIZE = 60;
 
+/** Called for each date whose vector was NOT stored, with the encode/write error. */
+export type EncodeSkipHandler = (date: TradingDate, err: unknown) => void;
+
 /**
  * Encode a specific set of target `dates` for a pair into pattern vectors,
  * reading the trailing window of stored candles STRICTLY BEFORE each date and
  * upserting the resulting vector. Returns the dates for which a vector was
- * stored (encode failures are skipped). The candles are read once from the
- * store and the window is sliced per date.
+ * stored (failures are skipped). The candles are read once from the store and
+ * the window is sliced per date.
+ *
+ * A skipped date lowers the analogue pool for that pair, so it must not be
+ * invisible: each skip (an encode error OR a vector-store write error) is
+ * reported through the optional `onSkip` callback. Skipping itself is unchanged -
+ * the callback only observes; subsequent dates still succeed.
  */
 export async function encodeDatesIntoVectors(
   candleStore: CandleStore,
@@ -30,6 +38,7 @@ export async function encodeDatesIntoVectors(
   pair: Pair,
   dates: readonly TradingDate[],
   windowSize: number = DEFAULT_WINDOW_SIZE,
+  onSkip?: EncodeSkipHandler,
 ): Promise<readonly TradingDate[]> {
   if (dates.length === 0) {
     return [];
@@ -48,9 +57,11 @@ export async function encodeDatesIntoVectors(
       const vector = encodePatternVector(window, date);
       await vectorStore.upsertVector(pair, date, vector);
       encoded.push(date);
-    } catch {
+    } catch (err) {
       // Skip dates where encoding fails (e.g. the look-ahead guard fires for an
-      // edge-case window); subsequent dates still succeed.
+      // edge-case window) or the vector write fails; subsequent dates still
+      // succeed. The skip is reported, never silent.
+      onSkip?.(date, err);
       continue;
     }
   }
@@ -70,6 +81,7 @@ export async function encodeAllForPair(
   vectorStore: PatternVectorStore,
   pair: Pair,
   windowSize: number = DEFAULT_WINDOW_SIZE,
+  onSkip?: EncodeSkipHandler,
 ): Promise<readonly TradingDate[]> {
   const candles = await candleStore.getCandles(pair);
   if (candles.length === 0) {
@@ -82,6 +94,7 @@ export async function encodeAllForPair(
     pair,
     sorted.map((c) => c.date),
     windowSize,
+    onSkip,
   );
 }
 

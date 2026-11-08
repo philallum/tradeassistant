@@ -16,9 +16,9 @@ coverage
 .kiro
 .nvmrc
 
-# NOTE: `data/` (the five *_D1.csv candle files) IS shipped into the runtime
-# image so the one-shot seed Job (dist/ops/seed-run) can read the CSVs for its
-# backfill → vector-encoding stage. These are non-secret market OHLC files.
+# Seed candle CSVs are repo-only (operator backfill tools and tests); the runtime
+# image never reads them, so keep them out of the build context.
+data
 
 # Editor / OS noise.
 *.log

@@ -4,16 +4,29 @@ import type { DirectionClass, ForwardOutcome } from "../retrieval/types.js";
 import type { Horizon } from "../confidence/types.js";
 import type { Pair } from "../ingestion/types.js";
 import { PAIRS } from "../ingestion/types.js";
-import { composeGateVerdict, type FoldGateInput } from "./verdict.js";
+import { composeEvaluationReport, type FoldGateInput } from "./verdict.js";
 import {
   GATE1_MIN_DELTA,
   GATE1_SAMPLE_SIZE_FLOOR,
+  type EvaluationSplit,
   type Gate1FiringSample,
 } from "./types.js";
 
+/** A fixed out-of-sample split; the null-feature property does not depend on it. */
+const SPLIT: EvaluationSplit = {
+  trainEnd: "2019-12-31",
+  testStart: "2020-01-01",
+  testEnd: "2020-12-31",
+};
+
 // Feature: fx-daily-pattern-assistant, Named test (Task 6.16): a deliberately
-// null feature with no predictive signal FAILS both gates (verdict CUT),
-// verifying Properties 20/22/23 discriminate signal from noise.
+// null feature with no predictive signal shows NO edge over the baseline on the
+// evaluation report (delta == 0, below the 3pp annotation, Gate 2 never evaluated),
+// verifying the gates discriminate signal from noise.
+//
+// (Originally asserted a PASS/CUT verdict via the legacy `composeGateVerdict`, retired
+// in codebase-housekeeping Task 5. The report path shares the same gate math, so the
+// same "no edge" facts are asserted on the measured values and annotations.)
 //
 // Validates: Requirements 11.6, 11.8, 11.9, 11.10
 //
@@ -111,8 +124,8 @@ const directionArb: fc.Arbitrary<DirectionClass> = fc.constantFrom(
   ...DIRECTIONS,
 );
 
-describe("Named test (Task 6.16): a deliberately null feature FAILS both gates (verdict CUT)", () => {
-  it("null feature (model == baseline, deltaPp == 0) always yields CUT on a qualifying subset", () => {
+describe("Named test (Task 6.16): a deliberately null feature shows NO edge (report delta 0, no 3pp annotation)", () => {
+  it("null feature (model == baseline, delta == 0) never exceeds the 3pp annotation on a qualifying subset", () => {
     fc.assert(
       fc.property(
         fc.constantFrom(...PAIRS),
@@ -141,31 +154,27 @@ describe("Named test (Task 6.16): a deliberately null feature FAILS both gates (
             mae,
           );
 
-          const verdict = composeGateVerdict("cfg-null-6.16", [fold]);
+          const report = composeEvaluationReport("cfg-null-6.16", [fold], SPLIT);
 
-          // The fold qualifies (>= 30 samples), so it drives the verdict.
-          expect(verdict.metrics.qualifyingFolds).toBe(1);
-          expect(verdict.metrics.skippedFolds).toBe(0);
+          // The fold qualifies (>= 30 samples), so its subset is pooled.
+          expect(report.sampleSize).toBe(size);
 
           // No predictive signal: model accuracy EXACTLY equals baseline's.
-          expect(verdict.gate1.deltaPp).toBeCloseTo(0, 10);
-          expect(verdict.gate1.deltaPp).toBeLessThan(GATE1_MIN_DELTA);
+          expect(report.deltaVsBaseline).toBeCloseTo(0, 10);
+          expect(report.deltaVsBaseline).toBeLessThan(GATE1_MIN_DELTA);
+          expect(report.annotations.deltaExceeds3pp).toBe(false);
 
-          // Gate 1 fails (delta < 3pp) ⇒ Gate 2 is not evaluated (Req 11.8).
-          expect(verdict.gate1.passed).toBe(false);
-          expect(verdict.gate2.evaluated).toBe(false);
-          expect(verdict.gate2.passed).toBe(false);
-
-          // Overall verdict is CUT — the gates reject the null feature.
-          expect(verdict.verdict).toBe("CUT");
-          expect(verdict.foldVerdicts[0]?.verdict).toBe("CUT");
+          // Gate 1 does not pass (delta < 3pp) ⇒ Gate 2 is NOT evaluated (Req 11.8),
+          // so both friction-adjusted metrics are the zero "not evaluated" value.
+          expect(report.frictionAdjustedModel).toBe(0);
+          expect(report.frictionAdjustedBaseline).toBe(0);
         },
       ),
       { numRuns: 200 },
     );
   });
 
-  it("null feature drawn INDEPENDENTLY of the actual outcome (random, no correlation) is CUT", () => {
+  it("null feature drawn INDEPENDENTLY of the actual outcome (random, no correlation) shows no edge", () => {
     fc.assert(
       fc.property(
         fc.constantFrom(...PAIRS),
@@ -214,20 +223,19 @@ describe("Named test (Task 6.16): a deliberately null feature FAILS both gates (
             baselineOutcomes: firingSubset.map(() => outcome),
           };
 
-          const verdict = composeGateVerdict("cfg-null-indep-6.16", [fold]);
+          const report = composeEvaluationReport("cfg-null-indep-6.16", [fold], SPLIT);
 
-          // Independent-but-shared predictions ⇒ model has no edge ⇒ deltaPp
-          // == 0 < 0.03 ⇒ Gate 1 fails ⇒ CUT.
-          expect(verdict.gate1.deltaPp).toBeLessThan(GATE1_MIN_DELTA);
-          expect(verdict.gate1.passed).toBe(false);
-          expect(verdict.verdict).toBe("CUT");
+          // Independent-but-shared predictions ⇒ model has no edge ⇒ delta
+          // == 0 < 0.03 ⇒ the 3pp annotation is not met.
+          expect(report.deltaVsBaseline).toBeLessThan(GATE1_MIN_DELTA);
+          expect(report.annotations.deltaExceeds3pp).toBe(false);
         },
       ),
       { numRuns: 200 },
     );
   });
 
-  it("even a null feature whose excursions equal the baseline's is CUT because Gate 1 fails first", () => {
+  it("even a null feature whose excursions equal the baseline's shows no edge because Gate 1 fails first", () => {
     // Concrete case: model accuracy == baseline accuracy AND model excursions
     // == baseline excursions. Gate 1 fails (deltaPp == 0), so despite the
     // identical (tie) Gate 2 excursions the verdict is CUT.
@@ -238,12 +246,12 @@ describe("Named test (Task 6.16): a deliberately null feature FAILS both gates (
     ) as DirectionClass[];
     const fold = buildNullFold("EURUSD", 1, size, size >> 1, actuals, 20, 20);
 
-    const verdict = composeGateVerdict("cfg-null-tie-6.16", [fold]);
+    const report = composeEvaluationReport("cfg-null-tie-6.16", [fold], SPLIT);
 
-    expect(verdict.gate1.deltaPp).toBeCloseTo(0, 10);
-    expect(verdict.gate1.passed).toBe(false);
-    // Gate 2 not evaluated because Gate 1 did not pass (Req 11.8).
-    expect(verdict.gate2.evaluated).toBe(false);
-    expect(verdict.verdict).toBe("CUT");
+    expect(report.deltaVsBaseline).toBeCloseTo(0, 10);
+    expect(report.annotations.deltaExceeds3pp).toBe(false);
+    // Gate 2 not evaluated because Gate 1 did not pass (Req 11.8): zero metrics.
+    expect(report.frictionAdjustedModel).toBe(0);
+    expect(report.frictionAdjustedBaseline).toBe(0);
   });
 });

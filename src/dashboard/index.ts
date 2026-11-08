@@ -16,8 +16,7 @@ export {
 } from "./choppinessMetric.js";
 export {
   dailyRun,
-  createDashboard,
-  type Dashboard,
+  fires,
   type PairEvaluation,
 } from "./dashboard.js";
 export {

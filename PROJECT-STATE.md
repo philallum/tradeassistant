@@ -28,8 +28,8 @@
 
 <!-- BEGIN STATE -->
 - **Phase:** v1 feature-complete and LIVE. `multi-strategy-confluence-engine`, Signal Scorecard and `intraday-validation` (snapshot schema v8) are all LIVE; the intraday republish bug is fixed, deployed and live-verified. Delivery cadence: operator merges dev->main to deploy; agent builds/verifies locally.
-- **Updated:** 2026-11-06
-- **Summary:** After the fix deployed (PR #63), the live `dashboard.json` was restored by a daily Job run and a manual intraday run validated all 5 pairs with every other slice byte-identical. The 08:00 Europe/London trigger is resumed; its first scheduled fire (Mon 2026-11-09) is the next thing to check. A new `deploy.yml` step (written locally, not yet merged/run) will keep the intraday Job on the current image. Intraday thresholds/delta stay provisional and unvalidated.
+- **Updated:** 2026-11-08
+- **Summary:** A senior peer review was actioned as the `codebase-housekeeping` spec (12 tasks, implemented locally, not yet deployed): behaviour is byte-identical on a fixed scenario except two tested changes (replay guard for the live `third_party` signal; confluence matrix built once), the dormant PASS/CUT verdict path was removed, and the docs were rebuilt (README, snapshot contract, runbook, decision index). Next: operator review + dev->main, then read the new `scheduled_run.step_timing` logs and work the RUNBOOK cloud-cleanup checklist; the first scheduled intraday fire (Mon 2026-11-09) is still to be confirmed.
 <!-- END STATE -->
 
 ---
@@ -46,9 +46,13 @@ in `LESSONS.md`.
 
 **Two non-negotiable principles govern every design choice:**
 
-1. **Measure before believing.** Nothing drives a displayed signal until it beats
-   a defined baseline out-of-sample through a two-stage kill-gate. The baseline is
-   a naive weekly-trend-follow rule; the system must earn its keep against it.
+1. **Measure before believing.** The system is judged out-of-sample against a
+   defined baseline - a naive weekly-trend-follow rule - through a two-stage
+   measurement (Gate 1 directional, Gate 2 risk-adjusted; §5.8). In the *live* path
+   that measurement is a **human-read evaluation report with no PASS/CUT verdict**:
+   it does not block firing (the firing rule is the single predicate in §5.7), and
+   numbers that have not earned their keep are labelled "unvalidated" rather than
+   hidden. The measured edge is small (§5.8), and the documents say so.
 2. **AI explains and filters; deterministic code decides and scores.** An LLM may
    read news, write display rationale, label analogues, and help interpret
    results. It must **never** compute the directional probability, the confidence,
@@ -59,8 +63,10 @@ A promoted third principle (from `trader-edge-validation`): **nothing is present
 as more certain than the evidence supports** — un-validated numbers are labelled
 as such in the UI, and "strength is not a probability."
 
-The authoritative design and task breakdowns live in `PROJECT-PLAN.md` and under
-`.kiro/specs/`. This document tracks the *system as built*.
+`PROJECT-PLAN.md` is the original plan and is partly superseded (see the banner at its
+top); `.kiro/specs/` holds the specs still in the repository - several older specs these
+docs cite by name are no longer in the working tree, so their requirement numbers cannot
+be re-verified from the repo. This document tracks the *system as built*.
 
 ---
 
@@ -74,7 +80,7 @@ The authoritative design and task breakdowns live in `PROJECT-PLAN.md` and under
   `exactOptionalPropertyTypes`, `verbatimModuleSyntax`, `isolatedModules`.
   Deliberately strict.
 - **Testing:** Vitest + fast-check (property-based testing) — the sole authority.
-  The backend suite is ~1,200+ tests; the web suite ~270. Property tests encode
+  Run `npm test` and `cd web && npm test` for the current test counts (they are deliberately not recorded here; they go stale on every change). Property tests encode
   the mathematical invariants (shrinkage monotonicity, scale-invariance of the
   encoder, UP/DOWN symmetry of confluence, look-ahead safety, etc.).
 - **Tooling:** ESLint 9 + typescript-eslint. All dependencies exact-pinned (no
@@ -144,7 +150,9 @@ evaluation → persisted rows → a published JSON snapshot → the SPA.
   empty result, never a crash) so additive migrations and torn deploys are
   harmless.
 - **AI/Deterministic boundary:** LLM output is branded `LlmTagged<T>`; scoring
-  inputs are `Deterministic<T>`. A `ScoringInputGuard` + a standing import-boundary
+  inputs are `Deterministic<T>`. (`ScoringInputGuard` is a runtime guard exercised by
+  tests; production relies on the compile-time types plus the import-boundary test,
+  not a runtime call.) A `ScoringInputGuard` + a standing import-boundary
   test prevent any LLM value from reaching the probability/confidence/kill-gate
   paths.
 - **Look-ahead safety:** the `guard` module (`assertPastOnly`, `isMatured`,
@@ -181,7 +189,8 @@ following, in order:
    produces the `DashboardView` (the firing cards). Persisted to `firing_setups`.
 5. **Realized-outcome journal** + **signal scorecard**: reconcile prior
    predictions whose horizon has now matured, and record today's per-signal
-   directions (see §6, §8).
+   directions (see §5.10, §6). The per-run Confluence_Matrix is built ONCE
+   (`buildRunMatrix`) and shared by the scorecard and the `confluence` snapshot slice.
 6. **Display-only producers** (fail-safe, never block the run): Gemini rationale
    per firing pair, a whole-day AI note, and the third-party reference comparison.
 7. **Snapshot publish**: `buildDashboardSnapshot` assembles `dashboard.json`
@@ -282,6 +291,17 @@ and all-FLAT resolve to **FLAT** (so the pair does not fire).
 **Horizon selection** (`selectHorizon`): pick the horizon (1, 2, or 3) with the
 highest raw resolution rate; ties break toward the **shorter** horizon.
 
+> **In practice the system is horizon-1 only (decision R1, 2026-11-08).** The stores
+> hold matured outcomes for all three horizons, but `retrieve()` collapses them to ONE
+> representative record per analogue date - the smallest horizon - so every
+> horizon-aware consumer sees `n = 0` at horizons 2 and 3. Consequently a firing pair
+> always reports horizon 1, and when the horizon-1 rate is below 0.5 `selectHorizon`
+> lands on an empty horizon whose Earned_Confidence is exactly the 0.5 prior and whose
+> direction is FLAT - so that pair cannot fire. SL/TP and the excursion profile are
+> horizon-1 numbers. This is the documented, tested contract
+> (`src/retrieval/horizonContract.test.ts`); making 1/2/3 real would change
+> confidence, firing and the headline result and is a separate future spec.
+
 **ATR_14** (`computeAtr14`): the simple mean of True Range over the last 14 days
 (`TR = max(high−low, |high−prevClose|, |low−prevClose|)`). Note: a *simple* mean,
 not Wilder smoothing.
@@ -320,9 +340,10 @@ empty cards ⇒ a silent day.
 
 ### 5.8 The kill-gate / evaluation — `src/kill-gate/`
 
-Validates (out-of-sample) whether the pattern signal beats the baseline. Two
+Measures (out-of-sample) whether the pattern signal beats the baseline. Two
 stages, evaluated over walk-forward folds (a fold with < 30 firing dates is
-skipped):
+skipped). The thresholds below are the *former* pass/fail rules; they now survive only
+as the non-binding annotations on the report:
 
 - **Gate 1 (directional):** on the matched firing subset, `deltaPp =
   modelAccuracy − baselineAccuracy`; passes iff `≥ 30` samples **and** `deltaPp ≥
@@ -338,6 +359,10 @@ thresholds survive only as non-binding `annotations`, plus a deterministic 95%
 Wald CI on the accuracy delta (`z = 1.959963984540054`, conservative single-
 proportion SE at p=0.5, widening as n shrinks, LOW-N caveat below 30). Reports
 persist to `evaluation_reports`; a matching entry is appended to `RESEARCH-LOG.md`.
+
+The earlier PASS/CUT path (`composeGateVerdict`, the `gate_verdicts` tables, `ops/gate-run`
+and the staged-runner `backtest` stage) was **removed** in the codebase-housekeeping spec.
+Nothing in the live firing path ever consulted it; the report path shares its gate math.
 
 *(As a measured finding: the first OOS evaluation recorded model accuracy 0.4996 vs
 baseline 0.4871 — delta +1.24pp, CI excludes zero but below the 3pp bar — i.e. the
@@ -387,10 +412,18 @@ in the v7 snapshot `signalScorecard` slice and the SPA's per-strategy "Recorded:
 right X of Y (N pending)" line. It captures the non-replayable third_party signal
 that the replay-based `trackRecord` cannot.
 
+**Replay guard.** `third_party` is a LIVE external read (the provider's "latest"
+endpoint) and cannot be reconstructed for a past date. When the run's Decision_Date is
+not the live trading date (an explicit `RUN_DECISION_DATE` replay, see
+`isLiveDecisionDate`), the recorder omits ONLY that signal and logs
+`signal_scorecard.third_party_skipped`. The other five signals are pure functions of
+stored candles and replay correctly. The normal scheduled run is unaffected.
+
 ### 5.11 Intraday 4H validation (read-only enrichment) — `src/intraday-validation/`
 
 A small layer AROUND the immutable daily forecast, not a second forecasting system.
-A few hours after the daily run, a SEPARATE Job answers one narrow question: "does
+The next morning (08:00 Europe/London, roughly 13 hours after the 17:30 NY daily
+run), a SEPARATE Job answers one narrow question: "does
 the currently-forming 4H candle support or contradict the original daily direction?"
 It never reruns the pipeline, never writes a daily-path table, and never changes the
 original direction, Earned_Confidence, firing, or kill-gate. Any failure degrades to
@@ -494,11 +527,12 @@ code lands). High-level layout:
   `intradayMain.ts` (Job entry), `publishedSnapshot.ts`, `intradayValidationSlice.ts`.
 - *I/O & orchestration:* `ingestion/` (+ `ingestion/ohlcFeed/` provider chain),
   `scheduled-run/` (the Job entry + snapshot + slices), `storage/` (Supabase
-  adapters), `csv-loader/`, `staged-runner/`.
-- *AI (sole SDK-free LLM layer):* `llm/`, `rationale/`, `news-filter/`,
-  `external-signal/`.
+  adapters), `csv-loader/`, `staged-runner/` (the `backfill` stage and the
+  fold-building the evaluation report uses; its `backtest`/`forwardLook`/`runAll`
+  stages were removed with the verdict path).
+- *AI (sole SDK-free LLM layer):* `llm/`, `rationale/`, `external-signal/`.
 - *Ops entries (`src/ops/*`):* `candle-backfill/`, `freshness-verify/`,
-  `edge-eval/`, `evaluation-run/`, `gate-run/`, `outcome-resolution/`,
+  `edge-eval/`, `evaluation-run/`, `outcome-resolution/`,
   `secret-manager/`, `deploy-verify/`, `scheduler/`, `safety/`,
   `fx-writer-check/`, `confluence-calibration/`.
 - *Guards & meta:* `version-policy/`, `living-docs/`.
@@ -509,7 +543,7 @@ pure view-model builders, the only place display values are derived),
 `theme/`, `guards/` (structural purity + data-invariance tests).
 
 **Other roots:** `supabase/migrations/` (schema), `ops/` + `ops.config.json`
-(operational config + monitoring policies), `data/` (seed CSV candles),
+(operational config + monitoring policies), `data/` (seed CSV candles; repo-only, not shipped in the runtime image),
 `.github/workflows/` (CI + deploy), `scripts/` (version-policy).
 
 ---
@@ -517,8 +551,9 @@ pure view-model builders, the only place display values are derived),
 ## 8. Build, test, and CI/CD
 
 - **Local gate:** `make check` ≡ `npm run check` ≡ `eslint . && tsc --noEmit &&
-  vitest run`. The web app has its own gate (`cd web && npm run check` ≡ lint +
-  `tsc --noEmit && vite build` + `vitest run`).
+  vitest run`. The web app has its own gate: `make check-web` ≡
+  `cd web && npm run build && npm test` (`build` is `tsc --noEmit && vite build`).
+  There is no `check` script or linter in `web/`.
 - **CI** (`.github/workflows/ci.yml`): a `quality` job (backend lint / typecheck /
   tests / version-policy as distinct stages) and a `web` job (SPA build + tests),
   on every push/PR, no `continue-on-error`.
@@ -551,7 +586,7 @@ pure view-model builders, the only place display values are derived),
 ## 9. Operational model & live cloud
 
 - **Cadence:** one Cloud Run Job execution per trading day, triggered by Cloud
-  Scheduler at 17:00 NY. Each run is idempotent by Decision_Date (keyed upserts),
+  Scheduler at 17:30 NY (30 minutes after the 17:00 candle close). Each run is idempotent by Decision_Date (keyed upserts),
   so re-running a date overwrites rather than duplicates.
 - **Intraday cadence:** a second Cloud Run Job `intraday-validation-run` fires once per
   weekday at 08:00 Europe/London (Scheduler `intraday-validation-run-0800-uk`) and logs
@@ -561,6 +596,11 @@ pure view-model builders, the only place display values are derived),
   `intradayValidation` (the first version clobbered the daily slices; fixed 2026-11-06).
 - **Observability:** structured JSON logs (`scheduled_run.start`,
   `candle_freshness.*`, `scheduled_run.snapshot_written`, `scheduled_run.complete`).
+  Every step logs its duration as `scheduled_run.step_timing {step, durationMs,
+  outcome}` (observation only), and each fail-safe step that degrades logs a named
+  warning (`scheduled_run.*_failed`, `scheduled_run.pipeline_warning`,
+  `candle_freshness.encode_skipped`) so a degraded run is distinguishable from an empty
+  one.
   A log-based Cloud Monitoring alert fires on `candle_freshness.degraded`
   (`ops/monitoring/`).
 - **Manual run:** `gcloud run jobs execute scheduled-daily-run --region
@@ -629,6 +669,7 @@ Summarised; the authoritative, moving detail is in `docs/state/CHANGELOG.md`
 | `trader-edge-validation` (evidence layer: trade-sim/ledger/walk-forward/exposure) | Code-complete (Stages A–H), NOT deployed; no edge measured yet |
 | Signal Scorecard (per-signal predicted-vs-actual, schema v7) | DEPLOYED + live-verified |
 | `intraday-validation` (read-only 4H candle validation, schema v8) | DEPLOYED; manual runs live-verified (5 pairs, other slices byte-identical); first scheduled 08:00 fire and SPA card render not yet confirmed |
+| `codebase-housekeeping` (peer-review remediation: single `fires()`, verdict-path removal, redaction, docs) | Implemented locally, NOT deployed; behaviour-preserving except two intended, tested changes (replay guard, shared matrix) |
 
 **Open threads right now** (see NEXT-STEPS for detail): confirm the first scheduled
 intraday run (Mon 2026-11-09 08:00 London) and that the SPA renders the intraday card;
@@ -637,3 +678,79 @@ confirm the first signal-
 scorecard reconciliation and the web bundle rendering the "Recorded" line; the
 candle-freshness schedule-timing fix; deploy/measure `trader-edge-validation`; the
 analogue FLAT dead-band unit-mismatch decision.
+
+---
+
+## 12. Reading the numbers, known limitations and non-goals
+
+### 12.1 What Earned_Confidence means - and what it does not
+
+**It is** a shrunk historical resolution rate: among the (up to 200) most similar past
+chart shapes - within cosine distance 0.2, strictly earlier than the Decision_Date, with a
+fully matured outcome - the share that went on to move in the dominant direction at the
+selected horizon (a FLAT outcome counts against), pulled toward 0.5 by a fixed prior worth
+10 observations: `C = n/(n+10)·C_raw + 10/(n+10)·0.5`. The shrinkage is deliberate: the
+system does not treat a small historical sample as a reliable probability, so a thin
+neighbourhood cannot clear the firing line (0.55) on sample size alone.
+
+**It is not** (all deliberate, and why):
+- A calibrated probability that a trade wins. Calibration has not been measured (the
+  `calibration` slice is empty until the offline `edge-eval` is run).
+- A profit expectancy. SL/TP and net expectancy were removed from every UI surface because
+  daily bars cannot say which level is hit first; after-cost expectancy is near zero on the
+  measured edge.
+- Evidence of a large edge. The one out-of-sample evaluation recorded is model 0.4996 vs
+  baseline 0.4871 (+1.24pp, 95% CI [+0.66, +1.82]pp, n=28,470): a small, statistically
+  positive, practically marginal lead, recorded with no verdict (`RESEARCH-LOG.md`).
+- Information about news, regime, or costs. The vector is shape only (70 dimensions of
+  z-scored closes over 10/20/40 days).
+- A multi-day forecast with a chosen horizon. In practice it is horizon 1 (§5.4, R1).
+
+The 0.55 line is a *display gate*, not a trading signal. Two further unvalidated numbers
+exist and are always labelled so: the Confluence score ("strength is not a probability") and
+the intraday validation delta (a bounded, provisional adjustment).
+
+An open, documented question affects how far the headline comparison can be trusted: the
+analogue FLAT dead-band unit mismatch (`docs/state/RISKS.md`, finding 1).
+
+### 12.2 What the daily schedule means
+
+The Decision_Date is the label of the session being decided. The FX daily candle for day D
+closes at 17:00 America/New_York; the Job runs at 17:30 NY on weekdays, so it has just seen
+D's close and labels itself the **next** trading day (Friday -> Monday). Every feature uses
+only candles strictly BEFORE the label, so a stored row labelled X never used data from X
+or later. Providers sometimes publish the bar a little after the close, so the candle stage
+retries (default 3 x 120 s) and then proceeds on stored history, logging
+`candle_freshness.degraded`. The intraday Job runs at 08:00 Europe/London the next morning
+and uses fixed UTC 4H boundaries (00/04/08/12/16/20), so DST needs no special handling.
+
+### 12.3 Known limitations (intentional or accepted)
+
+- **A stale run still publishes.** If providers fail, the run evaluates on stored candles
+  and publishes normally (exit 0); the only in-band signal is the
+  `candle_freshness.degraded` ERROR event and its alert. A visible "data behind" banner is
+  a future consideration.
+- **The third-party reference is a live read.** The scheduled run reads FCS "latest" at
+  17:30 NY; a replay cannot reproduce it, so replays withhold it from the scorecard (§5.10).
+- **LLM rationale inputs are approximations.** `toNumericInputs` / `toAnalogueSummaries`
+  (`src/scheduled-run/displayOnly.ts`) derive `trendContext` from the direction and
+  synthesise a single "analogue" from the card's mean excursion, so the explanatory text
+  describes approximated values. Display-only; it can never affect a decision.
+- **One key, two roles.** `EXTERNAL_SIGNAL_API_KEY` is both the primary daily-candle source
+  (drives firing) and the display-only reference.
+- **The scorecard's `custom_pattern` row is the system's own call**, so the "six signals" are
+  not independent evidence.
+- **Conviction tiers are computed in the browser** (`web/src/pure/shapeConviction.ts`:
+  Lean, and an exact UP/DOWN tie -> Split) from the engine's status and weights; the
+  backend produces no such tiers.
+- **Dormant offline code remains** (trade-sim, ledger, performance, walk-forward,
+  exposure, provenance): the daily Job publishes their slices empty until an operator runs
+  `edge-eval`.
+
+### 12.4 Non-goals
+
+Automated or continuous trading; intraday forecasting (the 4H layer only validates the daily
+call); an LLM-computed probability, confidence or verdict; news as a signal; a server API
+or authenticated read path (the SPA reads one static JSON file); multi-user features; and
+any claim of validated profitability.
+

@@ -12,8 +12,12 @@ import {
   selectHorizon,
   type Horizon,
 } from "../confidence/index.js";
-import { composeGateVerdict, type FoldGateInput } from "../kill-gate/verdict.js";
-import { GATE1_SAMPLE_SIZE_FLOOR, type Gate1FiringSample } from "../kill-gate/types.js";
+import { composeEvaluationReport, type FoldGateInput } from "../kill-gate/verdict.js";
+import {
+  GATE1_SAMPLE_SIZE_FLOOR,
+  type EvaluationSplit,
+  type Gate1FiringSample,
+} from "../kill-gate/types.js";
 
 import {
   fetchReferenceForPair,
@@ -41,13 +45,25 @@ import { ok, type Result, type TradingDate } from "../guard/types.js";
 // provider interface and the ExternalReferenceSignal shape (23.4) and the
 // fail-safe path (23.5).
 //
-// The critical test runs the REAL deterministic-core scoring/verdict paths
+// The critical test runs the REAL deterministic-core scoring/evaluation paths
 // (Earned_Confidence / Direction_Class via src/confidence, and the two-stage
-// Kill_Gate verdict via src/kill-gate) with the external reference fetched and
-// present, and again with it entirely omitted, and asserts the computed
-// probability and Kill_Gate verdict are byte-for-byte identical.
+// Kill_Gate evaluation report `composeEvaluationReport` via src/kill-gate) with the
+// external reference fetched and present, and again with it entirely omitted, and
+// asserts the computed probability and Kill_Gate evaluation report are
+// byte-for-byte identical.
+//
+// (The legacy PASS/CUT `composeGateVerdict` oracle was retired in codebase-housekeeping
+// Task 5; `composeEvaluationReport` shares its gate math and is the live producer.)
+
 
 const DECISION_DATE: TradingDate = "2026-03-16";
+
+/** A fixed out-of-sample split; the report content is irrelevant, only its identity matters. */
+const SPLIT: EvaluationSplit = {
+  trainEnd: "2019-12-31",
+  testStart: "2020-01-01",
+  testEnd: "2020-12-31",
+};
 const FIXED_CLOCK: ExternalSignalClock = { now: () => "2026-03-16T12:00:00.000Z" };
 const CONFIG: ExternalSignalConfig = { provider: "boundary-provider", timeoutMs: 1_000 };
 
@@ -317,18 +333,18 @@ describe("boundary: including vs omitting the reference leaves scoring byte-for-
     );
   });
 
-  it("the Kill_Gate verdict is deeply identical with and without a fetched reference", async () => {
+  it("the Kill_Gate evaluation report is deeply identical with and without a fetched reference", async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.array(foldArb, { minLength: 1, maxLength: 6 }),
         seededReferenceArb,
         async (folds, seeded) => {
-          // (A) OMITTING the reference: compose the verdict from the folds only.
-          const verdictWithout = composeGateVerdict("boundary-config", folds);
+          // (A) OMITTING the reference: compose the report from the folds only.
+          const reportWithout = composeEvaluationReport("boundary-config", folds, SPLIT);
 
           // (B) INCLUDING the reference: fetch all five references at daily-run
-          // time, then compose the verdict from the SAME folds. The reference
-          // outcomes are computed but deliberately not passed into the verdict.
+          // time, then compose the report from the SAME folds. The reference
+          // outcomes are computed but deliberately not passed into the report.
           const provider = new InMemoryExternalSignalProvider("boundary-provider", {
             EURUSD: seeded,
             GBPUSD: seeded,
@@ -336,10 +352,10 @@ describe("boundary: including vs omitting the reference leaves scoring byte-for-
           const references = await fetchAllReferences(provider, DECISION_DATE, CONFIG, FIXED_CLOCK);
           expect(references).toHaveLength(5); // fetched beside the run, never fed in
 
-          const verdictWith = composeGateVerdict("boundary-config", folds);
+          const reportWith = composeEvaluationReport("boundary-config", folds, SPLIT);
 
-          // Byte-for-byte (structurally deep-equal) identical verdict + metrics.
-          expect(verdictWith).toStrictEqual(verdictWithout);
+          // Byte-for-byte (structurally deep-equal) identical report + metrics.
+          expect(reportWith).toStrictEqual(reportWithout);
         },
       ),
       { numRuns: 100 },

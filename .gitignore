@@ -10,3 +10,7 @@ coverage/
 
 # fx_writer BYO signing key (local-only, never commit)
 ops/fx-writer-key/
+
+# CLI scratch / cache directories (link metadata, deploy caches) - never source
+supabase/.temp/
+web/.firebase/

@@ -13,9 +13,11 @@ npm install
 npm run dev
 ```
 
-`npm run dev` starts the Vite dev server. The SPA fetches the same-origin static
-`dashboard.json` snapshot (`loadSnapshot()` in `src/api/snapshot.ts`); for local work place a
-`dashboard.json` in the served root (or point the dev server at a copy). The rest of the app
+`npm run dev` starts the Vite dev server. The SPA fetches ONE static `dashboard.json` snapshot
+(`loadSnapshot()` in `src/api/snapshot.ts`). The URL is `VITE_SNAPSHOT_URL`, baked in at build
+time: the deployed bundle points at the public GCS bucket (cross-origin), while an unset value
+falls back to the same-origin `/dashboard.json`, which is what local dev and preview use - place a
+copy in the served root. The format is documented in `../docs/DASHBOARD-SNAPSHOT-CONTRACT.md`. The rest of the app
 is served as a single-page application.
 
 Other scripts:

@@ -108,18 +108,19 @@ authoritative export surface):
 - `baseline/` — Weekly-trend-follow baseline (the null hypothesis to beat).
 - `confidence/` — Earned confidence with sample-size shrinkage, ATR-scaled FLAT
   band, horizon (1/2/3-day) selection.
-- `kill-gate/` — Two-stage kill-gate: Gate 1 (directional ≥ 3pp over baseline),
-  Gate 2 (risk-adjusted MFE/MAE after friction); walk-forward verdict
-  composition; `GateVerdictStore` port. As of `simplify-to-cloud-minimal`
-  tasks 1-2, a human-read `EvaluationReport` path is the ACTIVE evaluation
-  write path: `composeEvaluationReport()` reuses the unchanged gate math but
-  emits metrics + a deterministic Wald CI + non-binding `annotations` and NO
-  `verdict` field; `evaluateAndRecordReport()` persists it via the new
-  `EvaluationReportStore` (`evaluation_reports` table, no verdict column) and
-  appends a verdict-free RESEARCH-LOG entry. The legacy
-  `composeGateVerdict`/`GateVerdict` PASS/CUT path + `gate_verdicts` table
-  survive DORMANT (still wired into `src/staged-runner/`, `src/ops/gate-run/`,
-  `web/`) and are dropped in Phase 4 (task 5).
+- `kill-gate/` — Two-stage measurement: Gate 1 (directional, vs the baseline),
+  Gate 2 (risk-adjusted MFE/MAE after friction), walk-forward fold construction.
+  The ACTIVE evaluation write path is a human-read `EvaluationReport`:
+  `composeEvaluationReport()` pools the qualifying folds and emits metrics + a
+  deterministic Wald CI + non-binding `annotations` and NO `verdict` field;
+  `evaluateAndRecordReport()` persists it via `EvaluationReportStore`
+  (`evaluation_reports` table, no verdict column) and appends a verdict-free
+  RESEARCH-LOG entry. **The legacy PASS/CUT path (`composeGateVerdict`, `GateVerdict`,
+  `GateVerdictStore`, `persistGateVerdict`, the `gate_verdicts` adapter,
+  `ops/gate-run`) was REMOVED in `codebase-housekeeping` (2026-11-08).** The four
+  guard tests that proved "LLM / confluence / third-party / journaling cannot change the
+  Kill_Gate" now use `composeEvaluationReport` as their oracle.
+  (`LivingDocs.appendVerdict/appendCut` remain in `living-docs/` but have no caller.)
 - `llm/` — Role-gated, provenance-tagged LLM interface + `ScoringInputGuard`.
   The v1 production backend `geminiProvider.ts` (Vertex AI `generateContent`
   over built-in `fetch`, ADC/metadata bearer token, no SDK) implements the
@@ -130,8 +131,6 @@ authoritative export surface):
   reasoning and truncate short display text; the daily run sets `thinkingBudget:0`
   + `maxOutputTokens:1024`, and a `MAX_TOKENS` finish logs a secret-free
   `gemini.generation_truncated` warning.
-- `news-filter/` — Calendar ingestion, LLM risk flag, deterministic
-  suppression with fail-safe.
 - `rationale/` — Display-only signal rationale + pattern description, plus
   `dailyCommentary.ts` (`generateDailyCommentary`): a whole-day display-only AI
   note produced every trading day (fired or not) as an LLM-path liveness signal.
@@ -226,8 +225,11 @@ authoritative export surface):
   fired or not, fail-safe) via `src/rationale/dailyCommentary.ts`; the web
   `shapeDailyNote.ts` + `DailyNote.tsx` render it in the Setups panel as the
   LLM-path liveness signal (`generated:false` → explicit "unavailable" marker).
-- `csv-loader/`, `staged-runner/` — CSV backfill import + backfill/backtest/
-  forward-look staged runner.
+- `csv-loader/`, `staged-runner/` — CSV backfill import + the retained staged-runner
+  pieces: `backfill()`, `hasBacktestData()` and `buildFoldInputs()` (the fold construction
+  `ops/evaluation-run` feeds to `composeEvaluationReport`). The `backtest` (verdict),
+  `forwardLook` and `runAll` stages were removed 2026-11-08. `testHelpers.ts` keeps the
+  in-memory deps builder and seeding helpers.
 - `storage/` — Supabase config + REST client + adapters (candle, vector,
   analogue, evaluation-report, trade-ledger, frozen-baseline, signal-prediction,
   view-persister stores). `signalPredictionStore.ts` (signal-scorecard,
@@ -240,7 +242,9 @@ authoritative export surface):
   surviving write-shape types moved to `displayOnlyTypes.ts`. (The gate-verdict
   and feature-registry stores were removed in earlier simplify phases.)
 - `ops/` — Operational tooling: `safety/` (gcloud runner + safety guard),
-  `secret-manager/`, `deploy-verify/`, `scheduler/`, `gate-run/`, `seed-run/`,
+  `secret-manager/`, `deploy-verify/`, `scheduler/`, `seed-run/` (operator tool; its
+  Cloud Run deploy surface was removed 2026-11-08, the `csv-loader` library and `data/*.csv`
+  stay),
   `evaluation-run/` (the one-shot first-OOS-evaluation entrypoint added by
   `simplify-to-cloud-minimal` task 2.2 - composes + records an `EvaluationReport`
   over a fixed committed OOS split). `candle-backfill/` (added by
@@ -280,4 +284,32 @@ dated scorecard for all six signals, beside the replay-based `record` line),
 `ops/` + `ops.config.json` (operational config, including the
 `Data_Source_Role` decision that CSV is backfill-only), `.github/workflows/`
 (CI + deploy), `data/` (seed CSV candle files).
+
+## Added or changed by `codebase-housekeeping` (2026-11-08)
+
+- `dashboard/dashboard.ts` - `fires(evaluation, threshold)` is exported and is the ONLY
+  definition of the firing rule. Callers: `dailyRun`, `persistFiringSetups`, the snapshot's
+  `pairEvaluationRows`, the daily-note input (`displayOnly.ts`) and
+  `walk-forward/pipelineForecastRegenerator.ts`. `createDashboard` was removed (no caller).
+- `guard/tradingDate.ts` - `previousCalendarDate()` (shared; four private copies removed).
+- `scheduled-run/warn.ts` - `warnEvent()` / `errorMessage()`: the one secret-free structured
+  warning used by every fail-safe step (ten private copies removed; log lines unchanged).
+- `scheduled-run/stepTiming.ts` - `timed()`: logs `scheduled_run.step_timing` per step; observation
+  only, re-throws the identical error.
+- `scheduled-run/confluenceSlice.ts` - `buildRunMatrix()` builds the per-run Confluence_Matrix
+  ONCE; `sliceFromRunMatrix()` projects it to the wire slice; `buildConfluenceSlice()` can take
+  a prebuilt `run`. `signalScorecardStep.ts` no longer builds its own matrix - it receives the
+  shared one (`SignalScorecardStepDeps.run`).
+- `scheduled-run/config.ts` - `isLiveDecisionDate()`; with `signalScorecardStep`'s
+  `recordThirdParty` and `recordPredictions(..., { excludeStrategyIds })` it implements the
+  replay guard (the live-only `third_party` signal is not recorded for a replayed date).
+- `ingestion/redactSecrets.ts` - `redactSecrets()`; applied in all five provider clients'
+  failure constructors (FCS x2, Twelve Data x2, Massive) because each puts its API key in the
+  request URL.
+- `encoder/encodeStoredCandles.ts` - `encodeDatesIntoVectors(..., onSkip)` reports skipped dates.
+- `pipeline/types.ts` - `PipelineDeps.onWarn`: observer for a degraded display-only step.
+- `retrieval/horizonContract.test.ts` - pins the horizon-1-only behaviour (decision R1).
+- Removed: `src/news-filter/` (no importer), `src/scaffold.test.ts` / `SCAFFOLD_READY`, the
+  legacy verdict path (see `kill-gate/` above), `ops/seed-job.config.json`, the `recharts`
+  dependency, tracked `supabase/.temp/` and `web/.firebase/`.
 

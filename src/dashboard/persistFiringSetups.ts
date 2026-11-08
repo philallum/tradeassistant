@@ -42,7 +42,7 @@ import type { Pair } from "../ingestion/types.js";
 import { PAIRS } from "../ingestion/types.js";
 import type { TradingDate } from "../guard/types.js";
 import type { DirectionClass } from "../retrieval/types.js";
-import type { PairEvaluation } from "./dashboard.js";
+import { fires, type PairEvaluation } from "./dashboard.js";
 import { DEFAULT_DASHBOARD_CONFIG, type DashboardConfig, type DashboardView } from "./types.js";
 
 /**
@@ -189,10 +189,7 @@ function classifyPair(
 
   // (2) Did the pair satisfy both firing conditions? If not → not_fired (the
   // explicit "no trade" observation, Requirement 3.5).
-  const wouldFire =
-    evaluation.direction !== "FLAT" &&
-    evaluation.earnedConfidence >= confidenceThreshold;
-  if (!wouldFire) {
+  if (!fires(evaluation, confidenceThreshold)) {
     return { surfaced: false, reason: "not_fired" };
   }
 

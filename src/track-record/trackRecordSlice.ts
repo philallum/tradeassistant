@@ -13,6 +13,7 @@
 // `EMPTY_TRACK_RECORD`. A secret-free warning names only the slice and message.
 
 import type { TradingDate } from "../guard/types.js";
+import { previousCalendarDate } from "../guard/tradingDate.js";
 import { PAIRS, type CandleStore, type Pair } from "../ingestion/types.js";
 import { buildStrategyBundle } from "../scheduled-run/confluenceSlice.js";
 import {
@@ -34,6 +35,7 @@ import {
   type PairCandles,
   type PatternOutcomeInput,
 } from "./strategyRecord.js";
+import { warnEvent } from "../scheduled-run/warn.js";
 
 const SLICE_NAME = "track_record" as const;
 
@@ -56,21 +58,26 @@ export interface TrackRecordSliceDeps {
 }
 
 function defaultWarn(slice: string, err: unknown): void {
-  const message = err instanceof Error ? err.message : String(err);
-  console.warn(JSON.stringify({ event: "scheduled_run.track_record_failed", slice, message }));
+  warnEvent("scheduled_run.track_record_failed", { slice }, err);
 }
 
-function dayBefore(date: TradingDate): TradingDate {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().slice(0, 10);
-}
-
-/** Run `work` but give up after `ms`, resolving to `fallback`. Always clears its timer. */
-async function withDeadline<T>(work: Promise<T>, ms: number, fallback: T): Promise<T> {
+/**
+ * Run `work` but give up after `ms`, resolving to `fallback`. Always clears its timer.
+ * `onTimeout` is called (once) if - and only if - the deadline wins the race, so a
+ * deadline-truncated result is reportable rather than looking like "no data".
+ */
+async function withDeadline<T>(
+  work: Promise<T>,
+  ms: number,
+  fallback: T,
+  onTimeout?: () => void,
+): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<T>((resolve) => {
-    timer = setTimeout(() => resolve(fallback), ms);
+    timer = setTimeout(() => {
+      onTimeout?.();
+      resolve(fallback);
+    }, ms);
   });
   try {
     return await Promise.race([work, deadline]);
@@ -94,7 +101,7 @@ export async function buildTrackRecordSlice(
 
     // Candles strictly before the Decision_Date, per pair, failures isolated.
     const start = windowStartDate(deps.decisionDate, HISTORY_WINDOW_DAYS);
-    const end = dayBefore(deps.decisionDate);
+    const end = previousCalendarDate(deps.decisionDate);
     const loaded = await Promise.all(
       PAIRS.map(async (pair: Pair): Promise<PairCandles | null> => {
         try {
@@ -118,6 +125,7 @@ export async function buildTrackRecordSlice(
     let rangeForecast: readonly SnapshotRangeRecordRow[] = [];
     if (deps.forecast !== undefined && rangeLookbackDays > 0) {
       try {
+        const rangeDeadlineMs = deps.rangeDeadlineMs ?? DEFAULT_RANGE_REPLAY_DEADLINE_MS;
         rangeForecast = await withDeadline(
           replayRangeRecords({
             decisionDate: deps.decisionDate,
@@ -125,8 +133,15 @@ export async function buildTrackRecordSlice(
             inputs,
             forecast: deps.forecast,
           }),
-          deps.rangeDeadlineMs ?? DEFAULT_RANGE_REPLAY_DEADLINE_MS,
+          rangeDeadlineMs,
           [],
+          // An empty range forecast caused by the deadline must not look like "no forecasts".
+          () => {
+            warn(
+              `${SLICE_NAME}:range`,
+              new Error(`range replay exceeded the ${String(rangeDeadlineMs)}ms deadline; range track record omitted`),
+            );
+          },
         );
       } catch (err) {
         warn(`${SLICE_NAME}:range`, err);

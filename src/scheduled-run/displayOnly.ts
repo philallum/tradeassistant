@@ -40,7 +40,7 @@ import type {
   AnalogueSummary,
   DailyCommentaryInput,
 } from "../rationale/index.js";
-import { DEFAULT_CONFIDENCE_THRESHOLD } from "../dashboard/index.js";
+import { DEFAULT_CONFIDENCE_THRESHOLD, fires } from "../dashboard/index.js";
 import {
   fetchAllReferences,
   toReferenceDisplays,
@@ -53,11 +53,18 @@ import type {
   ReferenceComparisonWrite,
   DailyNoteWrite,
 } from "../storage/supabase/index.js";
+import { warnEvent } from "./warn.js";
 
 /** The collaborators the daily display-only producer needs. All optional. */
 export interface DisplayOnlyDeps {
   /** The LLM gateway for rationale / labels. Omit to skip AI generation. */
   readonly llm?: LlmInterface;
+  /**
+   * The Confidence_Threshold the daily note reports against. Defaults to
+   * `DEFAULT_CONFIDENCE_THRESHOLD`; the production run uses the default dashboard config,
+   * so this only differs when a caller threads a custom `DashboardConfig` through.
+   */
+  readonly confidenceThreshold?: number;
   /** The third-party reference provider. Omit to skip the cross-reference. */
   readonly externalProvider?: ExternalSignalProvider;
   /** External-signal config (timeout etc.). Required only with a provider. */
@@ -206,16 +213,16 @@ async function buildDailyNote(
     return undefined;
   }
 
+  const confidenceThreshold = deps.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
   const input: DailyCommentaryInput = {
     decisionDate,
-    confidenceThreshold: DEFAULT_CONFIDENCE_THRESHOLD,
+    confidenceThreshold,
     pairs: evaluations.map((ev) => ({
       pair: ev.pair,
       direction: ev.direction,
       earnedConfidence: ev.earnedConfidence,
       choppiness: ev.choppiness,
-      fired:
-        ev.direction !== "FLAT" && ev.earnedConfidence >= DEFAULT_CONFIDENCE_THRESHOLD,
+      fired: fires(ev, confidenceThreshold),
     })),
   };
 
@@ -230,18 +237,12 @@ async function buildDailyNote(
 
 /** Structured, secret-free warning for a daily-note producer failure. */
 function logDailyNoteWarning(err: unknown): void {
-  const message = err instanceof Error ? err.message : String(err);
-  console.warn(
-    JSON.stringify({ event: "scheduled_run.display_warning", producer: "daily_note", message }),
-  );
+  warnEvent("scheduled_run.display_warning", { producer: "daily_note" }, err);
 }
 
 /** Structured, secret-free warning for a per-pair display producer failure. */
 function logDisplayWarning(producer: string, pair: Pair, err: unknown): void {
-  const message = err instanceof Error ? err.message : String(err);
-  console.warn(
-    JSON.stringify({ event: "scheduled_run.display_warning", producer, pair, message }),
-  );
+  warnEvent("scheduled_run.display_warning", { producer, pair }, err);
 }
 
 /**

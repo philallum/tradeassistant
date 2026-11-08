@@ -61,6 +61,7 @@ import {
 } from "./publishedSnapshot.js";
 import { makeGcsSnapshotSink } from "./gcsSnapshotSink.js";
 import { resolveAccessTokenProvider } from "./accessToken.js";
+import { warnEvent } from "./warn.js";
 
 /** Env var carrying the intraday 4H provider API key (reuses Twelve Data's key). */
 export const INTRADAY_API_KEY_ENV = "TWELVE_DATA_API_KEY" as const;
@@ -79,11 +80,14 @@ interface FiringSetupReadRow {
  * FALLBACK read of the per-pair daily prediction from `firing_setups` (used only
  * when the published snapshot is unreadable). It holds FIRED pairs only, so it gives
  * partial coverage. READ-ONLY; converts the stored `[0,1]` confidence to percentage
- * points `[0,100]` (rounded to 2 dp). Returns `[]` fail-safe on any read error.
+ * points `[0,100]` (rounded to 2 dp). Returns `[]` fail-safe on any read error; the
+ * error is reported through the optional `onError` so an empty result caused by a failed
+ * read is distinguishable from "no fired setups".
  */
 export async function loadOriginalsFromFiringSetups(
   client: SupabaseRestClient,
   decisionDate: TradingDate,
+  onError?: (err: unknown) => void,
 ): Promise<readonly OriginalPrediction[]> {
   try {
     const rows = await client.select<FiringSetupReadRow>(
@@ -101,7 +105,8 @@ export async function loadOriginalsFromFiringSetups(
       });
     }
     return out;
-  } catch {
+  } catch (err) {
+    onError?.(err);
     return [];
   }
 }
@@ -144,8 +149,7 @@ export interface IntradayJobResult {
 }
 
 function defaultWarn(collaborator: string, err: unknown): void {
-  const message = err instanceof Error ? err.message : String(err);
-  console.warn(JSON.stringify({ event: "intraday_validation.startup_warning", collaborator, message }));
+  warnEvent("intraday_validation.startup_warning", { collaborator }, err);
 }
 
 /**
@@ -186,7 +190,11 @@ export async function runIntradayValidationJob(
   const loadPublished =
     deps.loadPublished ?? (() => fetchPublishedSnapshot(deps.config.dashboardSnapshotBucket));
   const loadFallbackOriginals =
-    deps.loadFallbackOriginals ?? ((d: TradingDate) => loadOriginalsFromFiringSetups(client, d));
+    deps.loadFallbackOriginals ??
+    ((d: TradingDate) =>
+      loadOriginalsFromFiringSetups(client, d, (err) => {
+        warn("firing_setups_fallback", err);
+      }));
 
   // The published daily snapshot is BOTH the source of the original prediction
   // (every evaluated pair) AND the base the republish key-replaces.

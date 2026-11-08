@@ -32,7 +32,7 @@
 // both trees is audited against SUPPORTED_MAJOR_CEILINGS (defined in
 // src/version-policy/audit.js). A pin whose major exceeds its ceiling fails CI
 // loud. These ceilings are the durable record of deliberately-held majors
-// (TS7 blocked upstream; React 19 / recharts 3 deferred migrations; @types/node
+// (TS7 blocked upstream; React 19 deferred migration; @types/node
 // tracking the Node 22 line) and MUST stay consistent with the Dependabot
 // `ignore:` rules in .github/dependabot.yml.
 

@@ -93,6 +93,39 @@ describe("recordPredictions", () => {
     await recordPredictions(store, matrix);
     expect(store.size()).toBe(6);
   });
+
+  it("records ALL six signals by default (the normal run is unchanged)", async () => {
+    const store = new InMemorySignalPredictionStore();
+    const rows = await recordPredictions(
+      store,
+      matrixWith("2026-11-05", ["UP", "DOWN", "UP", "DOWN", "UP", "DOWN"]),
+    );
+    expect(rows.map((r) => r.strategyId).sort()).toEqual([...STRATEGY_IDS].sort());
+    expect(rows.some((r) => r.strategyId === "third_party")).toBe(true);
+  });
+
+  it("excludeStrategyIds withholds ONLY the named signal; the other five are recorded unchanged", async () => {
+    const withAll = new InMemorySignalPredictionStore();
+    const without = new InMemorySignalPredictionStore();
+    const matrix = matrixWith("2026-11-05", ["UP", "DOWN", "FLAT", "UP", "DOWN", "UP"]);
+
+    const allRows = await recordPredictions(withAll, matrix);
+    const rows = await recordPredictions(without, matrix, { excludeStrategyIds: ["third_party"] });
+
+    expect(rows.some((r) => r.strategyId === "third_party")).toBe(false);
+    expect(without.size()).toBe(5);
+    // The five signals that ARE recorded are byte-identical to the unrestricted recording.
+    expect(rows).toEqual(allRows.filter((r) => r.strategyId !== "third_party"));
+  });
+
+  it("an empty exclusion list behaves exactly like no option", async () => {
+    const matrix = matrixWith("2026-11-05", ["UP", "DOWN", "FLAT", "UP", "DOWN", "UP"]);
+    const a = await recordPredictions(new InMemorySignalPredictionStore(), matrix);
+    const b = await recordPredictions(new InMemorySignalPredictionStore(), matrix, {
+      excludeStrategyIds: [],
+    });
+    expect(b).toEqual(a);
+  });
 });
 
 describe("reconcileOutcomes", () => {

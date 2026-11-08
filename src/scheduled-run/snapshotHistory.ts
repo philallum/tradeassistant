@@ -31,6 +31,7 @@ import type {
   SnapshotHistory,
   SnapshotRealizedOutcomeRow,
 } from "./snapshot.js";
+import { warnEvent } from "./warn.js";
 
 /** How many days of candles/analogue history to carry per pair (recent window). */
 export const HISTORY_WINDOW_DAYS = 400 as const;
@@ -45,10 +46,7 @@ export interface SnapshotHistoryOptions {
 
 /** Secret-free structured warning for a slice that failed to load. */
 function warnSlice(slice: string, err: unknown): void {
-  const message = err instanceof Error ? err.message : String(err);
-  console.warn(
-    JSON.stringify({ event: "scheduled_run.snapshot_history_slice_failed", slice, message }),
-  );
+  warnEvent("scheduled_run.snapshot_history_slice_failed", { slice }, err);
 }
 
 /** Run `load`, returning `fallback` (and logging) on any failure — never throws. */

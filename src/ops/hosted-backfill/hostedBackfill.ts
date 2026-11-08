@@ -8,7 +8,7 @@
 // encoding, or storage logic — it only WIRES the existing pieces and reads the
 // coverage summary back.
 //
-// Everything is injectable (stores, fetch, dataDir, config, docs, loader) so the
+// Everything is injectable (stores, fetch, dataDir, config) so the
 // seam is unit-testable WITHOUT a live network; the defaults resolve the hosted
 // Supabase connection and the repo `data/` directory for the live run (task
 // 10.3). The Supabase `Secret_Key` is never logged or echoed (spec Req 7.6).
@@ -21,18 +21,8 @@ import { PAIRS } from "../../ingestion/types.js";
 import type { PerPairCoverage } from "../../ingestion/types.js";
 import { OhlcIngestion } from "../../ingestion/ohlcIngestion.js";
 import { CsvLoader } from "../../csv-loader/csvLoader.js";
-import { LivingDocs } from "../../living-docs/livingDocs.js";
-import { FsDocStore } from "../../living-docs/fsDocStore.js";
 import { backfill } from "../../staged-runner/stagedRunner.js";
 import type { StagedRunnerDeps } from "../../staged-runner/types.js";
-import {
-  InMemoryGateVerdictStore,
-  type GateVerdictStore,
-} from "../../kill-gate/types.js";
-import type {
-  PairEvaluationLoader,
-  DashboardViewPersister,
-} from "../../scheduled-run/scheduledRun.js";
 import type { ScheduledRunConfig } from "../../scheduled-run/config.js";
 import { loadScheduledRunConfig } from "../../scheduled-run/config.js";
 import { buildSupabaseStores } from "../../storage/supabase/index.js";
@@ -71,14 +61,6 @@ function defaultDataDir(): string {
 }
 
 /**
- * A no-op {@link PairEvaluationLoader}. The Backfill_Stage never calls the
- * evaluation loader (that is the Forward_Look_Stage's collaborator), but
- * {@link StagedRunnerDeps} requires the field; this default keeps the seam
- * backfill-only without wiring the full pipeline. It is never invoked here.
- */
-const noopEvaluationLoader: PairEvaluationLoader = () => Promise.resolve([]);
-
-/**
  * Injectable collaborators for {@link runHostedBackfill}. Every field is
  * optional with a hosted/default resolution so the seam runs live with no
  * arguments, yet a unit test can inject in-memory/stub collaborators to exercise
@@ -104,19 +86,6 @@ export interface HostedBackfillDeps {
   readonly fetchImpl?: typeof fetch;
   /** The data directory holding the CSV_Candle_Files. Defaults to repo `data/`. */
   readonly dataDir?: string;
-  /** Living-Docs writer (used by later stages). Defaults to a repo FsDocStore. */
-  readonly docs?: LivingDocs;
-  /** Kill-gate config id recorded on verdicts (unused by backfill). */
-  readonly configId?: string;
-  /**
-   * GateVerdictStore PORT (unused by backfill); defaults to an in-memory
-   * reference since the Backfill_Stage never persists a verdict.
-   */
-  readonly gateVerdictStore?: GateVerdictStore;
-  /** Evaluation loader (unused by backfill); defaults to a no-op. */
-  readonly loadEvaluations?: PairEvaluationLoader;
-  /** Optional view persister (unused by backfill). */
-  readonly persistView?: DashboardViewPersister;
 }
 
 /**
@@ -127,8 +96,8 @@ export interface HostedBackfillDeps {
  *
  * This re-implements NO ingestion/encoding/storage logic — it only assembles a
  * {@link StagedRunnerDeps} from existing pieces (the three Supabase stores plus
- * a {@link CsvLoader}/{@link OhlcIngestion} wired to the hosted `candleStore`,
- * the data dir, a {@link LivingDocs}, and the config) and calls the existing
+ * a {@link CsvLoader}/{@link OhlcIngestion} wired to the hosted `candleStore`
+ * and the data dir) and calls the existing
  * free `backfill` function. Collaborators are injectable so this is
  * unit-testable without a live network (task 10.1); the LIVE run against hosted
  * Supabase is task 10.3.
@@ -157,7 +126,6 @@ export async function runHostedBackfill(
   const csvLoader = new CsvLoader(ingestion);
 
   const dataDir = deps.dataDir ?? defaultDataDir();
-  const docs = deps.docs ?? new LivingDocs(new FsDocStore());
 
   const runnerDeps: StagedRunnerDeps = {
     csvLoader,
@@ -165,13 +133,7 @@ export async function runHostedBackfill(
     candleStore: stores.candleStore,
     vectorStore: stores.vectorStore,
     analogueStore: stores.analogueStore,
-    gateVerdictStore: deps.gateVerdictStore ?? new InMemoryGateVerdictStore(),
     dataDir,
-    docs,
-    config,
-    loadEvaluations: deps.loadEvaluations ?? noopEvaluationLoader,
-    ...(deps.persistView !== undefined ? { persistView: deps.persistView } : {}),
-    configId: deps.configId ?? "hosted-backfill",
   };
 
   // Run the EXISTING Backfill_Stage with Data_Source_Role = "backfill"

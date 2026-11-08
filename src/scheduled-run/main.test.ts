@@ -23,15 +23,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { dailyRun, type PairEvaluation } from "../dashboard/index.js";
 import type { DashboardView } from "../dashboard/index.js";
 import type { Confidence } from "../confidence/types.js";
 import type { SupabaseConfig } from "../storage/supabaseConfig.js";
 import { makePersistView } from "./main.js";
+import type { RunMatrix } from "./confluenceSlice.js";
 import {
   EMPTY_CONFLUENCE,
+  EMPTY_SIGNAL_SCORECARD,
   EMPTY_TRACK_RECORD,
   type DashboardSnapshot,
   type SnapshotConfluenceSlice,
@@ -349,5 +351,190 @@ describe("makePersistView — track-record wiring is fail-safe and firing-neutra
   it("carries the real track-record slice through when the step succeeds", async () => {
     const ok = await run("succeed");
     expect(ok.snapshot?.trackRecord).toEqual(ok.record);
+  });
+});
+
+// --- the per-run Confluence_Matrix is built ONCE and shared (codebase-housekeeping Task 9) -----
+
+describe("makePersistView - the confluence matrix is built once and shared", () => {
+  const DECISION_DATE = "2024-03-15";
+  const SUPABASE: SupabaseConfig = { target: "local", url: "http://unused", key: "unused" };
+
+  const evaluation: PairEvaluation = {
+    pair: "EURUSD",
+    direction: "UP",
+    earnedConfidence: 0.9 as Confidence,
+    horizon: 2,
+    excursionProfile: { favorablePips: 40, adversePips: 15 },
+    stopLossPips: 15,
+    takeProfitPips: 40,
+    choppiness: 0.8,
+    rationale: "r",
+    analogueLabels: ["a"],
+  };
+
+  /** A recognisable sentinel: only identity matters to these tests. */
+  const SHARED: RunMatrix = {
+    matrix: { decisionDate: DECISION_DATE, config: {} as never, pairs: [] },
+    failedPairs: new Set(),
+  };
+
+  async function drive(buildMatrix: () => Promise<RunMatrix | null>) {
+    const evaluations = [evaluation];
+    const view = dailyRun(DECISION_DATE, evaluations);
+    const seenByConfluence: Array<RunMatrix | null> = [];
+    const seenByScorecard: Array<RunMatrix | null> = [];
+    const warnings: string[] = [];
+    let snapshotWritten = false;
+
+    const persist = makePersistView({
+      cached: { get: () => evaluations },
+      displayDeps: {},
+      snapshotSink: undefined,
+      persist: () => Promise.resolve(),
+      buildDisplay: () => Promise.resolve(undefined),
+      loadHistory: () => Promise.resolve({}),
+      buildEdge: () => Promise.resolve({}),
+      buildMatrix,
+      buildConfluence: (_s, _v, _e, _d, run) => {
+        seenByConfluence.push(run);
+        return Promise.resolve(EMPTY_CONFLUENCE);
+      },
+      runScorecard: (_s, _v, _e, _d, run) => {
+        seenByScorecard.push(run);
+        return Promise.resolve();
+      },
+      buildScorecard: () => Promise.resolve(EMPTY_SIGNAL_SCORECARD),
+      buildTrackRecord: () => Promise.resolve(EMPTY_TRACK_RECORD),
+      writeSnapshot: () => {
+        snapshotWritten = true;
+        return Promise.resolve(true);
+      },
+      warn: (collaborator, err) => {
+        warnings.push(`${collaborator}:${err instanceof Error ? err.message : String(err)}`);
+      },
+    });
+    await persist(view, SUPABASE);
+    return { seenByConfluence, seenByScorecard, warnings, snapshotWritten };
+  }
+
+  it("builds the matrix exactly once and hands the SAME object to the confluence slice and the scorecard", async () => {
+    const buildMatrix = vi.fn(() => Promise.resolve<RunMatrix | null>(SHARED));
+
+    const out = await drive(buildMatrix);
+
+    expect(buildMatrix).toHaveBeenCalledTimes(1);
+    expect(out.seenByConfluence).toHaveLength(1);
+    expect(out.seenByScorecard).toHaveLength(1);
+    expect(out.seenByConfluence[0]).toBe(SHARED);
+    expect(out.seenByScorecard[0]).toBe(SHARED);
+    expect(out.warnings).toEqual([]);
+  });
+
+  it("when the matrix cannot be built, both consumers get null, it is warned once, and the run still publishes", async () => {
+    const out = await drive(() => Promise.reject(new Error("matrix boom")));
+
+    expect(out.seenByConfluence).toEqual([null]);
+    expect(out.seenByScorecard).toEqual([null]);
+    expect(out.warnings).toEqual(["confluence_matrix:matrix boom"]);
+    expect(out.snapshotWritten).toBe(true);
+  });
+});
+
+// --- per-step timing is observation only (codebase-housekeeping Task 10) ----------------------
+
+describe("makePersistView - per-step timing is observation only", () => {
+  const DECISION_DATE = "2024-03-15";
+  const SUPABASE: SupabaseConfig = { target: "local", url: "http://unused", key: "unused" };
+
+  const evaluation: PairEvaluation = {
+    pair: "EURUSD",
+    direction: "UP",
+    earnedConfidence: 0.9 as Confidence,
+    horizon: 2,
+    excursionProfile: { favorablePips: 40, adversePips: 15 },
+    stopLossPips: 15,
+    takeProfitPips: 40,
+    choppiness: 0.8,
+    rationale: "r",
+    analogueLabels: ["a"],
+  };
+
+  async function drive(options: { confluenceThrows: boolean; withTiming: boolean }) {
+    const evaluations = [evaluation];
+    const view = dailyRun(DECISION_DATE, evaluations);
+    const timingLines: Array<{ step: string; outcome: string }> = [];
+    const warnings: string[] = [];
+    let snapshot: DashboardSnapshot | undefined;
+
+    const persist = makePersistView({
+      cached: { get: () => evaluations },
+      displayDeps: {},
+      snapshotSink: undefined,
+      persist: () => Promise.resolve(),
+      buildDisplay: () => Promise.resolve(undefined),
+      loadHistory: () => Promise.resolve({}),
+      buildEdge: () => Promise.resolve({}),
+      buildMatrix: () => Promise.resolve(null),
+      buildConfluence: () => {
+        if (options.confluenceThrows) throw new Error("confluence boom");
+        return Promise.resolve(EMPTY_CONFLUENCE);
+      },
+      runScorecard: () => Promise.resolve(),
+      buildScorecard: () => Promise.resolve(EMPTY_SIGNAL_SCORECARD),
+      buildTrackRecord: () => Promise.resolve(EMPTY_TRACK_RECORD),
+      writeSnapshot: (snap) => {
+        snapshot = snap;
+        return Promise.resolve(true);
+      },
+      warn: (collaborator, err) => {
+        warnings.push(`${collaborator}:${err instanceof Error ? err.message : String(err)}`);
+      },
+      ...(options.withTiming
+        ? {
+            timing: {
+              log: (e: object) => {
+                const { step, outcome } = e as { step: string; outcome: string };
+                timingLines.push({ step, outcome });
+              },
+            },
+          }
+        : { timing: { log: () => {} } }),
+    });
+    await persist(view, SUPABASE);
+    return { timingLines, warnings, snapshot };
+  }
+
+  it("emits one timing line per step, in run order", async () => {
+    const out = await drive({ confluenceThrows: false, withTiming: true });
+
+    expect(out.timingLines.map((l) => l.step)).toEqual([
+      "persist_firing_setups",
+      "display_only",
+      "confluence_matrix",
+      "signal_scorecard",
+      "snapshot_history",
+      "edge_slices",
+      "confluence_slice",
+      "track_record",
+      "signal_scorecard_slice",
+      "write_snapshot",
+    ]);
+    expect(out.timingLines.every((l) => l.outcome === "ok")).toBe(true);
+  });
+
+  it("a throwing step is timed as an error AND still handled by its existing fail-safe", async () => {
+    const out = await drive({ confluenceThrows: true, withTiming: true });
+
+    expect(out.timingLines.find((l) => l.step === "confluence_slice")?.outcome).toBe("error");
+    expect(out.warnings).toEqual(["confluence_slice:confluence boom"]);
+    expect(out.snapshot?.confluence).toEqual(EMPTY_CONFLUENCE); // run still publishes
+  });
+
+  it("timing changes nothing about the published snapshot", async () => {
+    const timed = await drive({ confluenceThrows: false, withTiming: true });
+    const untimed = await drive({ confluenceThrows: false, withTiming: false });
+
+    expect(timed.snapshot).toEqual(untimed.snapshot);
   });
 });

@@ -90,7 +90,7 @@ export interface BlockedScoringInput {
  * Recorder PORT for blocked scoring inputs (Requirement 2.6; Design boundary
  * rules). The guard depends only on this port, never on storage directly —
  * mirroring the storage/recorder-port pattern used across the codebase (e.g.
- * `RoleRejectionRecorder`, `GateVerdictStore`). A real adapter can persist
+ * `RoleRejectionRecorder`, `EvaluationReportStore`). A real adapter can persist
  * to an audit sink; the in-memory reference implementation keeps the guard
  * testable offline.
  */

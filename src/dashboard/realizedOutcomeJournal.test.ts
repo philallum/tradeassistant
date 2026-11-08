@@ -40,10 +40,17 @@ import type {
 } from "../retrieval/types.js";
 import { earnedConfidence, classify, selectHorizon } from "../confidence/index.js";
 import type { Horizon } from "../confidence/types.js";
-import { composeGateVerdict, type FoldGateInput } from "../kill-gate/index.js";
-import type { Gate1FiringSample } from "../kill-gate/index.js";
+import { composeEvaluationReport, type FoldGateInput } from "../kill-gate/index.js";
+import type { EvaluationSplit, Gate1FiringSample } from "../kill-gate/index.js";
 
 const DECISION_DATE = "2024-03-15" as TradingDate;
+
+/** A fixed out-of-sample split; only the report's identity across conditions matters. */
+const SPLIT: EvaluationSplit = {
+  trainEnd: "2023-12-31",
+  testStart: "2024-01-01",
+  testEnd: "2024-12-31",
+};
 
 // ---------------------------------------------------------------------------
 // Fixtures / helpers
@@ -398,11 +405,11 @@ describe("scoring boundary: journal never feeds scoring (Requirement 25.4)", () 
     expect(journalStore.size()).toBe(1);
   });
 
-  it("the Kill_Gate verdict is byte-for-byte identical with and without journaling", async () => {
+  it("the Kill_Gate evaluation report is byte-for-byte identical with and without journaling", async () => {
     const fold = foldInput();
 
-    // Verdict computed BEFORE journaling.
-    const verdictBefore = composeGateVerdict("cfg-eurusd", [fold]);
+    // Report computed BEFORE journaling.
+    const reportBefore = composeEvaluationReport("cfg-eurusd", [fold], SPLIT);
 
     // Record a journal entry.
     const journalStore = new InMemoryRealizedOutcomeStore();
@@ -414,11 +421,11 @@ describe("scoring boundary: journal never feeds scoring (Requirement 25.4)", () 
       { forwardOutcomes: new Map([["EURUSD", forwardOutcome({ d2: "UP" })]]) },
     );
 
-    // Verdict computed AFTER, on the SAME fold inputs.
-    const verdictAfter = composeGateVerdict("cfg-eurusd", [fold]);
+    // Report computed AFTER, on the SAME fold inputs.
+    const reportAfter = composeEvaluationReport("cfg-eurusd", [fold], SPLIT);
 
-    // Deep equality: verdict, gate metrics, and per-fold results all identical.
-    expect(verdictAfter).toEqual(verdictBefore);
+    // Deep equality: every measured metric and annotation identical.
+    expect(reportAfter).toEqual(reportBefore);
     expect(journalStore.size()).toBe(1);
   });
 
@@ -426,7 +433,7 @@ describe("scoring boundary: journal never feeds scoring (Requirement 25.4)", () 
     const nb = neighborhood();
     const horizon = selectHorizon(nb);
     const confidenceRef = earnedConfidence(nb, horizon);
-    const verdictRef = composeGateVerdict("cfg", [foldInput()]);
+    const reportRef = composeEvaluationReport("cfg", [foldInput()], SPLIT);
 
     await fc.assert(
       fc.asyncProperty(
@@ -443,7 +450,7 @@ describe("scoring boundary: journal never feeds scoring (Requirement 25.4)", () 
 
           // Recording a prediction leaves scoring identical.
           expect(earnedConfidence(nb, horizon)).toBe(confidenceRef);
-          expect(composeGateVerdict("cfg", [foldInput()])).toEqual(verdictRef);
+          expect(composeEvaluationReport("cfg", [foldInput()], SPLIT)).toEqual(reportRef);
         },
       ),
       { numRuns: 100 },

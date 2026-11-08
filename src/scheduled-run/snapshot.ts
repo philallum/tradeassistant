@@ -23,7 +23,7 @@
 
 import type { DashboardView } from "../dashboard/index.js";
 import type { PairEvaluation } from "../dashboard/index.js";
-import { DEFAULT_CONFIDENCE_THRESHOLD } from "../dashboard/index.js";
+import { DEFAULT_CONFIDENCE_THRESHOLD, fires } from "../dashboard/index.js";
 import type {
   DailyNoteWrite,
   DisplayOnlyWrite,
@@ -703,7 +703,7 @@ export function pairEvaluationRows(
     direction: ev.direction,
     horizon: ev.horizon,
     earned_confidence: ev.earnedConfidence,
-    fired: ev.direction !== "FLAT" && ev.earnedConfidence >= confidenceThreshold,
+    fired: fires(ev, confidenceThreshold),
     choppiness: ev.choppiness,
     ...(ev.expectedRange !== undefined
       ? {

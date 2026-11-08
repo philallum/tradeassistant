@@ -192,9 +192,7 @@ export function collectSpecs(pkg, options = {}) {
  *     (typescript-eslint#12518).
  *   - @types/node (<=22): match the Node 22 engine line (.nvmrc / engines.node).
  *   - react / react-dom / @types/react / @types/react-dom (<=18): React 19 is a
- *     deferred migration; recharts 2 peer accepts React 16/17/18 only.
- *   - recharts (<=2): recharts 3 changes the Tooltip `Formatter` type (breaking
- *     API change) — deferred migration.
+ *     deliberately deferred migration.
  *
  * @type {{ readonly [name: string]: number }}
  */
@@ -205,7 +203,6 @@ export const SUPPORTED_MAJOR_CEILINGS = {
   "react-dom": 18,
   "@types/react": 18,
   "@types/react-dom": 18,
-  recharts: 2,
 };
 
 /**

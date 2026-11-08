@@ -8,8 +8,8 @@ import type { SupportedMajorCeilings, VersionSpec } from "./versionPolicy.js";
 
 // Supported-major CEILING audit (CHANGE 2 of the dependency-upgrade-policy
 // hardening). These ceilings are the durable, CI-enforced record of which
-// major upgrades are deliberately held (TS7 blocked upstream, React 19 /
-// recharts 3 deferred migrations, @types/node tracking the Node 22 line). They
+// major upgrades are deliberately held (TS7 blocked upstream, the React 19
+// deferred migration, @types/node tracking the Node 22 line). They
 // MUST stay consistent with the Dependabot `ignore:` rules in
 // .github/dependabot.yml.
 
@@ -23,7 +23,7 @@ describe("auditCeilings — unit", () => {
   const policy = new VersionPolicyCheck();
 
   it("passes a spec exactly at its ceiling", () => {
-    const result = policy.auditCeilings([spec("recharts", "2.12.7")]);
+    const result = policy.auditCeilings([spec("react", "18.3.1")]);
     expect(result.ok).toBe(true);
     expect(result.violations).toHaveLength(0);
   });
@@ -34,13 +34,13 @@ describe("auditCeilings — unit", () => {
   });
 
   it("fails a spec whose major exceeds its ceiling", () => {
-    const result = policy.auditCeilings([spec("recharts", "3.0.0")]);
+    const result = policy.auditCeilings([spec("@types/node", "23.0.0", "devDependencies")]);
     expect(result.ok).toBe(false);
     expect(result.violations).toHaveLength(1);
-    expect(result.violations[0]?.name).toBe("recharts");
-    expect(result.violations[0]?.major).toBe(3);
-    expect(result.violations[0]?.ceiling).toBe(2);
-    expect(result.violations[0]?.reason).toBe("exceeds-supported-major (<=2)");
+    expect(result.violations[0]?.name).toBe("@types/node");
+    expect(result.violations[0]?.major).toBe(23);
+    expect(result.violations[0]?.ceiling).toBe(22);
+    expect(result.violations[0]?.reason).toBe("exceeds-supported-major (<=22)");
   });
 
   it("ignores packages absent from the ceilings map", () => {
@@ -84,7 +84,6 @@ describe("auditCeilings — unit", () => {
       "react-dom": 18,
       "@types/react": 18,
       "@types/react-dom": 18,
-      recharts: 2,
     });
   });
 });

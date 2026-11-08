@@ -1,34 +1,24 @@
 // StagedRunner — backfill / backtest / forward-look over existing modules (Requirement 2).
 //
-// Wires three sequential stages in dependency order. Each stage delegates
-// exclusively to existing module APIs — NO module logic is re-implemented:
+// What remains of the StagedRunner after the legacy PASS/CUT verdict path was removed
+// (codebase-housekeeping Task 5). Everything here delegates to existing module APIs;
+// NO module logic is re-implemented:
 //
-//   backfill    → CsvLoader.loadAll → OhlcIngestion.ingest (via CsvLoader)
-//                 → encodePatternVector → PatternVectorStore.upsertVector
-//   backtest    → walkForwardFolds → composeGateVerdict → logGateVerdict
-//   forwardLook → runScheduledDaily (which internally calls runDailyPipeline)
+//   backfill          → CsvLoader.loadAll → OhlcIngestion.ingest (via CsvLoader)
+//                       → encodePatternVector → PatternVectorStore.upsertVector
+//   hasBacktestData   → the evaluation-report prerequisite check (candles + vectors)
+//   buildFoldInputs   → the fold construction `src/ops/evaluation-run/main.ts` feeds to
+//                       `composeEvaluationReport` (the live measurement producer)
 //
-// Abort-on-missing-prerequisite (Requirement 2.7): a stage aborts with
-// `ok: false` + `missingPrerequisite` when required stored data is absent,
-// leaving stored data unchanged and preventing subsequent stages from running.
+// The former `backtest` (composeGateVerdict + persistGateVerdict), `forwardLook` and
+// `runAll` stages had no production caller left and were removed with `ops/gate-run`.
 
 import { PAIRS } from "../ingestion/types.js";
 import type { TradingDate } from "../guard/types.js";
 import { encodeAllForPair } from "../encoder/encodeStoredCandles.js";
 import { walkForwardFolds } from "../kill-gate/walkForward.js";
-import {
-  composeGateVerdict,
-  logGateVerdict,
-  persistGateVerdict,
-  type FoldGateInput,
-} from "../kill-gate/verdict.js";
-import type {
-  Gate1FiringSample,
-  GateVerdictSplit,
-} from "../kill-gate/types.js";
-import { SupabaseRestError } from "../storage/supabase/client.js";
-import { compareTradingDates } from "../guard/tradingDate.js";
-import type { WalkForwardFold } from "../kill-gate/types.js";
+import type { FoldGateInput } from "../kill-gate/verdict.js";
+import type { Gate1FiringSample, WalkForwardFold } from "../kill-gate/types.js";
 import type {
   AnalogueRecord,
   ForwardOutcome,
@@ -51,8 +41,7 @@ import type {
   StoredPatternVector,
 } from "../encoder/types.js";
 import { InMemoryPatternVectorStore } from "../encoder/types.js";
-import { runScheduledDaily } from "../scheduled-run/scheduledRun.js";
-import type { StageName, StageResult, StagedRunnerDeps } from "./types.js";
+import type { StageResult, StagedRunnerDeps } from "./types.js";
 import type { DataSourceRole } from "./types.js";
 
 /**
@@ -108,10 +97,9 @@ export async function hasBacktestData(
  * Build the per-fold {@link FoldGateInput}s (and the underlying walk-forward
  * folds) from the stored candles / pattern vectors / matured analogue outcomes.
  *
- * This is the SHARED fold-construction the verdict path (`composeGateVerdict`)
- * and the evaluation-report path (`composeEvaluationReport`) both consume, so
- * both see byte-identical inputs — the reframe changes only the OUTPUT type, not
- * the Measurement_Engine inputs (simplify-to-cloud-minimal Requirement 1.1). It
+ * This is the fold-construction the evaluation-report path
+ * (`composeEvaluationReport`) consumes. (Historically it was shared with the legacy
+ * `composeGateVerdict` path, removed in codebase-housekeeping Task 5.) It
  * re-implements NO gate math: it only reads stored rows and maps them to the
  * fold-input shape the composers expect.
  *
@@ -378,222 +366,4 @@ export async function buildFoldInputs(deps: StagedRunnerDeps): Promise<{
   }
 
   return { foldInputs, allFolds };
-}
-
-/**
- * Backtest stage (Requirement 2.3, 2.4, 2.7):
- *   1. Check that candles and pattern vectors are present (prerequisite).
- *   2. Call `walkForwardFolds(pair, history)` for all pairs, build
- *      `FoldGateInput[]` from stored data, then call `composeGateVerdict`.
- *   3. Append the verdict to RESEARCH-LOG.md via `logGateVerdict`.
- *   4. Abort with `ok: false` + `missingPrerequisite` if no data is available.
- *
- * NOTE (simplify-to-cloud-minimal): this verdict-path stage is RETAINED and
- * unchanged in behaviour — its backing `gate_verdicts` table is only dropped in
- * Phase 4. The ACTIVE evaluation write path is now the report path
- * (`src/ops/evaluation-run/main.ts` → `evaluateAndRecordReport`), which composes
- * an {@link composeEvaluationReport} from the SAME {@link buildFoldInputs} and
- * records it with NO verdict (Requirement 8.2).
- */
-export async function backtest(
-  deps: StagedRunnerDeps,
-): Promise<StageResult> {
-  // Prerequisite: at least one pair must have stored candles and vectors.
-  if (!(await hasBacktestData(deps))) {
-    return {
-      ok: false,
-      missingPrerequisite:
-        "backtest: no candles or pattern vectors stored — run backfill first",
-    };
-  }
-
-  // Build the per-fold gate inputs from stored data (shared with the evaluation
-  // report path, which composes an EvaluationReport from the SAME inputs).
-  const { foldInputs, allFolds } = await buildFoldInputs(deps);
-
-  // Compose the verdict across all folds and append to RESEARCH-LOG.md.
-  const verdict = composeGateVerdict(deps.configId, foldInputs);
-  await logGateVerdict(deps.docs, verdict);
-
-  // Persist the verdict through the injected GateVerdictStore IN ADDITION to the
-  // Research_Log append (persistence is additive — the log is preserved). The
-  // Data_Split bounds are derived from the walk-forward fold bounds already
-  // constructed above: `testStart` from the earliest fold's test window,
-  // `testEnd` from the latest fold's test window, and `trainEnd` from the
-  // train/test boundary of that earliest fold (every fold satisfies
-  // `trainEnd < testStart`). `composeGateVerdict` remains the sole verdict
-  // producer — nothing is recomputed here.
-  const split = deriveGateVerdictSplit(allFolds);
-  if (split !== null) {
-    // A persist rejection is surfaced with the affected configId (spec Req 2.6):
-    // it is NOT swallowed and the stage does NOT return `{ ok: true }` as though
-    // the verdict were recorded.
-    try {
-      await persistGateVerdict(deps.gateVerdictStore, verdict, split);
-    } catch (err) {
-      throw withConfigIdContext(err, deps.configId);
-    }
-  }
-
-  return { ok: true };
-}
-
-/**
- * Augment a {@link persistGateVerdict} failure with the affected `configId` so
- * the surfaced error identifies which config's verdict failed to persist (spec
- * Req 2.6). A {@link SupabaseRestError} is already secret-free (it never carries
- * the Supabase key); it is re-raised with the `configId` appended to its message
- * while preserving its `status` and `table`. Any other error is wrapped in an
- * `Error` naming the `configId`, chaining the original via `cause`. In all cases
- * the failure propagates — it is never swallowed.
- */
-function withConfigIdContext(err: unknown, configId: string): unknown {
-  if (err instanceof SupabaseRestError) {
-    if (err.message.includes(`config_id=${configId}`)) {
-      // The adapter already named this config — do not double-annotate.
-      return err;
-    }
-    return new SupabaseRestError(
-      `${err.message} (config_id=${configId})`,
-      err.status,
-      err.table,
-    );
-  }
-  return new Error(
-    `Failed to persist gate verdict for config_id=${configId}`,
-    { cause: err },
-  );
-}
-
-/**
- * Derive the {@link GateVerdictSplit} recorded alongside a persisted verdict
- * from the walk-forward fold bounds constructed in the Backtest_Stage.
- *
- * The out-of-sample set is the union of the test windows, so:
- *   - `testStart` is the earliest fold's `testStart` (earliest test boundary),
- *   - `testEnd`   is the latest fold's `testEnd` (latest test boundary),
- *   - `trainEnd`  is the earliest fold's `trainEnd` — the train/test split
- *                 boundary adjacent to the earliest test window
- *                 (`trainEnd < testStart` holds for every fold).
- *
- * Returns `null` when no folds were constructed (e.g. histories too short for a
- * single full train/test span), in which case there is no split to record.
- */
-function deriveGateVerdictSplit(
-  folds: readonly WalkForwardFold[],
-): GateVerdictSplit | null {
-  if (folds.length === 0) return null;
-
-  let earliest = folds[0]!;
-  let latest = folds[0]!;
-  for (const fold of folds) {
-    if (compareTradingDates(fold.testStart, earliest.testStart) < 0) {
-      earliest = fold;
-    }
-    if (compareTradingDates(fold.testEnd, latest.testEnd) > 0) {
-      latest = fold;
-    }
-  }
-
-  return {
-    trainEnd: earliest.trainEnd,
-    testStart: earliest.testStart,
-    testEnd: latest.testEnd,
-  };
-}
-
-/**
- * ForwardLook stage (Requirement 2.5, 2.7):
- *   Call `runScheduledDaily(config, { loadEvaluations, persistView })` for the
- *   current/most-recent matured Decision_Date. Aborts with `ok: false` +
- *   `missingPrerequisite` if vectors or matured outcomes are missing.
- *
- *   Does NOT duplicate the pipeline or `dailyRun` firing logic (Requirement 2.5).
- */
-export async function forwardLook(
-  deps: StagedRunnerDeps,
-): Promise<StageResult> {
-  // Prerequisite: at least one pair must have stored vectors.
-  let hasVectors = false;
-  for (const pair of PAIRS) {
-    const vectors = await deps.vectorStore.getVectorsByAsset(pair);
-    if (vectors.length > 0) {
-      hasVectors = true;
-      break;
-    }
-  }
-  if (!hasVectors) {
-    return {
-      ok: false,
-      missingPrerequisite:
-        "forwardLook: no pattern vectors stored — run backfill first",
-    };
-  }
-
-  // Prerequisite: at least one pair must have matured analogue outcomes.
-  let hasMaturedOutcomes = false;
-  for (const pair of PAIRS) {
-    const outcomes = await deps.analogueStore.getMaturedOutcomes(
-      pair,
-      deps.config.decisionDate,
-    );
-    if (outcomes.length > 0) {
-      hasMaturedOutcomes = true;
-      break;
-    }
-  }
-  if (!hasMaturedOutcomes) {
-    return {
-      ok: false,
-      missingPrerequisite:
-        "forwardLook: no matured analogue outcomes stored — run backfill and wait for outcomes to mature",
-    };
-  }
-
-  // Delegate to the exact shared runScheduledDaily path — no forked logic here
-  // (Requirement 2.5). The firing / pipeline logic lives entirely in
-  // runScheduledDaily → runDailyPipeline → dailyRun.
-  const scheduledDeps = deps.persistView !== undefined
-    ? { loadEvaluations: deps.loadEvaluations, persistView: deps.persistView }
-    : { loadEvaluations: deps.loadEvaluations };
-
-  await runScheduledDaily(deps.config, scheduledDeps);
-
-  return { ok: true };
-}
-
-/**
- * Composed ordered run: backfill → backtest → forwardLook (Requirement 2.6, 2.9).
- *
- * Each stage consumes the prior stage's stored output. The run stops at the
- * first failed stage so no subsequent stage runs on incomplete stored data.
- * Returns the name of the stage that failed (or undefined on full success).
- */
-export async function runAll(
-  deps: StagedRunnerDeps,
-  role: DataSourceRole,
-): Promise<{
-  readonly stages: ReadonlyArray<{
-    readonly stage: StageName;
-    readonly result: StageResult;
-  }>;
-}> {
-  const results: Array<{ stage: StageName; result: StageResult }> = [];
-
-  const backfillResult = await backfill(deps, role);
-  results.push({ stage: "backfill", result: backfillResult });
-  if (!backfillResult.ok) {
-    return { stages: results };
-  }
-
-  const backtestResult = await backtest(deps);
-  results.push({ stage: "backtest", result: backtestResult });
-  if (!backtestResult.ok) {
-    return { stages: results };
-  }
-
-  const forwardLookResult = await forwardLook(deps);
-  results.push({ stage: "forwardLook", result: forwardLookResult });
-
-  return { stages: results };
 }

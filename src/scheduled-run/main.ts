@@ -24,7 +24,7 @@
 
 import { fileURLToPath } from "node:url";
 
-import { loadScheduledRunConfig } from "./config.js";
+import { isLiveDecisionDate, loadScheduledRunConfig } from "./config.js";
 import type { PairEvaluationLoader, DashboardViewPersister } from "./scheduledRun.js";
 import { runScheduledDaily } from "./scheduledRun.js";
 import {
@@ -68,7 +68,7 @@ import { runSignalScorecardStep } from "./signalScorecardStep.js";
 import { buildSignalScorecardSlice } from "./signalScorecardSlice.js";
 import { SupabaseTradeLedgerStore } from "../storage/supabase/tradeLedgerStore.js";
 import { buildEdgeSlices } from "./edgeSlices.js";
-import { buildConfluenceSlice } from "./confluenceSlice.js";
+import { buildConfluenceSlice, buildRunMatrix, type RunMatrix } from "./confluenceSlice.js";
 import { evaluatePair } from "../pipeline/dailyPipeline.js";
 import { DEFAULT_PIPELINE_CONFIG } from "../pipeline/types.js";
 import {
@@ -77,6 +77,8 @@ import {
   buildTrackRecordSlice,
   memoizeMaturedOutcomes,
 } from "../track-record/index.js";
+import { warnEvent } from "./warn.js";
+import { timed, type TimedOptions } from "./stepTiming.js";
 
 /** Env var: trading-day replay window for the per-strategy track record. */
 export const TRACK_RECORD_LOOKBACK_ENV = "TRACK_RECORD_LOOKBACK_DAYS" as const;
@@ -108,7 +110,12 @@ export function nonNegativeIntFromEnv(
  * is wired into the pipeline here.
  */
 export const loadEvaluations: PairEvaluationLoader = (decisionDate, supabase) => {
-  return makePipelineLoader(buildSupabaseStores(supabase))(decisionDate, supabase);
+  return makePipelineLoader({
+    ...buildSupabaseStores(supabase),
+    onWarn: (step, pair, err) => {
+      warnEvent("scheduled_run.pipeline_warning", { step, pair }, err);
+    },
+  })(decisionDate, supabase);
 };
 
 /**
@@ -221,10 +228,7 @@ async function resolveSnapshotSink(
 
 /** Structured, secret-free warning for an optional-collaborator wiring failure. */
 function logStartupWarning(collaborator: string, err: unknown): void {
-  const message = err instanceof Error ? err.message : String(err);
-  console.warn(
-    JSON.stringify({ event: "scheduled_run.startup_warning", collaborator, message }),
-  );
+  warnEvent("scheduled_run.startup_warning", { collaborator }, err);
 }
 
 /**
@@ -253,12 +257,6 @@ export interface FreshenCandlesDeps {
 const DEFAULT_FRESHNESS_RETRY_ATTEMPTS = 3;
 /** Seconds to wait between freshness attempts (> FCS's 60s batch memo). */
 const DEFAULT_FRESHNESS_RETRY_DELAY_SECONDS = 120;
-
-function nonNegativeInt(raw: string | undefined, fallback: number): number {
-  if (raw === undefined || raw.trim() === "") return fallback;
-  const n = Number(raw);
-  return Number.isInteger(n) && n >= 0 ? n : fallback;
-}
 
 const realSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -316,12 +314,12 @@ export async function freshenCandles(
     // while any pair is still behind. The total wait stays well inside the
     // Job's task timeout. Env overrides: CANDLE_FRESHNESS_RETRY_ATTEMPTS,
     // CANDLE_FRESHNESS_RETRY_DELAY_SECONDS (0 attempts disables the retry).
-    const retryAttempts = nonNegativeInt(
+    const retryAttempts = nonNegativeIntFromEnv(
       env.CANDLE_FRESHNESS_RETRY_ATTEMPTS,
       DEFAULT_FRESHNESS_RETRY_ATTEMPTS,
     );
     const retryDelayMs =
-      nonNegativeInt(
+      nonNegativeIntFromEnv(
         env.CANDLE_FRESHNESS_RETRY_DELAY_SECONDS,
         DEFAULT_FRESHNESS_RETRY_DELAY_SECONDS,
       ) * 1000;
@@ -452,12 +450,27 @@ export interface PersistViewDeps {
     view: DashboardView,
     evaluations: readonly PairEvaluation[],
   ) => Promise<Awaited<ReturnType<typeof buildEdgeSlices>>>;
-  /** Build the v5 confluence slice. Defaults to {@link buildConfluenceSlice} over Supabase. */
+  /**
+   * Build the per-run Confluence_Matrix ONCE. Defaults to {@link buildRunMatrix} over
+   * Supabase. The result is shared with the confluence slice and the Signal Scorecard so
+   * they cannot disagree about a run's inputs. `null` = it could not be built.
+   */
+  readonly buildMatrix?: (
+    supabase: SupabaseConfigArg,
+    view: DashboardView,
+    evaluations: readonly PairEvaluation[],
+    displayOnly: DisplayOnlyWrite | undefined,
+  ) => Promise<RunMatrix | null>;
+  /**
+   * Build the v5 confluence slice. Defaults to {@link buildConfluenceSlice} over Supabase,
+   * projecting the shared `run` matrix rather than building a second one.
+   */
   readonly buildConfluence?: (
     supabase: SupabaseConfigArg,
     view: DashboardView,
     evaluations: readonly PairEvaluation[],
     displayOnly: DisplayOnlyWrite | undefined,
+    run: RunMatrix | null,
   ) => Promise<Awaited<ReturnType<typeof buildConfluenceSlice>>>;
   /** Build the v6 track-record slice. Defaults to {@link buildTrackRecordSlice} over Supabase. */
   readonly buildTrackRecord?: (
@@ -480,6 +493,7 @@ export interface PersistViewDeps {
     view: DashboardView,
     evaluations: readonly PairEvaluation[],
     displayOnly: DisplayOnlyWrite | undefined,
+    run: RunMatrix | null,
   ) => Promise<void>;
   /**
    * Build the v7 recorded `signalScorecard` snapshot slice from the persisted
@@ -492,6 +506,12 @@ export interface PersistViewDeps {
   ) => Promise<Awaited<ReturnType<typeof buildSignalScorecardSlice>>>;
   /** Secret-free warning sink. Defaults to {@link logStartupWarning}. */
   readonly warn?: (collaborator: string, err: unknown) => void;
+  /**
+   * Where each step's timing line goes (and its clock). Defaults to a structured
+   * `console.log` of `scheduled_run.step_timing`. Observation only - it never changes a
+   * step's result or error.
+   */
+  readonly timing?: TimedOptions;
 }
 
 /** The Supabase connection argument the persister receives (alias for readability). */
@@ -533,14 +553,24 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
         now: new Date(),
       });
     });
+  const buildMatrix =
+    deps.buildMatrix ??
+    ((supabase, view, evaluations, displayOnly) =>
+      buildRunMatrix({
+        decisionDate: view.decisionDate,
+        evaluations,
+        displayOnly,
+        candleStore: buildSupabaseStores(supabase).candleStore,
+      }));
   const buildConfluence =
     deps.buildConfluence ??
-    ((supabase, view, evaluations, displayOnly) =>
+    ((supabase, view, evaluations, displayOnly, run) =>
       buildConfluenceSlice({
         decisionDate: view.decisionDate,
         evaluations,
         displayOnly,
         candleStore: buildSupabaseStores(supabase).candleStore,
+        run,
       }));
   const buildTrackRecord =
     deps.buildTrackRecord ??
@@ -571,13 +601,14 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
   const writeSnapshot = deps.writeSnapshot ?? writeDashboardSnapshot;
   const runScorecard =
     deps.runScorecard ??
-    ((supabase, view, evaluations, displayOnly) =>
+    ((supabase, view, _evaluations, _displayOnly, run) =>
       runSignalScorecardStep({
         decisionDate: view.decisionDate,
         store: new SupabaseSignalPredictionStore(new SupabaseRestClient(supabase)),
-        evaluations,
-        displayOnly,
         candleStore: buildSupabaseStores(supabase).candleStore,
+        run,
+        // The third_party signal is a LIVE read; withhold it on a replayed Decision_Date.
+        recordThirdParty: isLiveDecisionDate(view.decisionDate),
       }));
   const buildScorecard =
     deps.buildScorecard ??
@@ -586,16 +617,34 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
         store: new SupabaseSignalPredictionStore(new SupabaseRestClient(supabase)),
       }));
 
+  /** Time one step (log-only; the step's value and any error pass through unchanged). */
+  const time = <T>(step: string, work: () => Promise<T>): Promise<T> =>
+    timed(step, work, deps.timing ?? {});
+
   return async (view: DashboardView, supabase) => {
     // The persisted DB rows are the source of truth and are written FIRST.
-    await persist(view, supabase);
+    await time("persist_firing_setups", () => persist(view, supabase));
 
     let displayOnly: DisplayOnlyWrite | undefined;
     try {
-      displayOnly = await buildDisplay(view, deps.cached.get(), deps.displayDeps);
+      displayOnly = await time("display_only", () =>
+        buildDisplay(view, deps.cached.get(), deps.displayDeps),
+      );
     } catch (err) {
       warn("display_build", err);
       displayOnly = undefined;
+    }
+
+    // Build the per-run Confluence_Matrix ONCE and share it with the Signal Scorecard (below)
+    // and the confluence slice. Fail-safe: if it cannot be built both consumers degrade
+    // (nothing recorded / empty slice) and the failure is warned once, here.
+    let run: RunMatrix | null = null;
+    try {
+      run = await time("confluence_matrix", () =>
+        buildMatrix(supabase, view, deps.cached.get(), displayOnly),
+      );
+    } catch (err) {
+      warn("confluence_matrix", err);
     }
 
     // Signal Scorecard (signal-scorecard feature): a separate, fail-safe,
@@ -608,7 +657,9 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
     // snapshot (Scoring isolation). `runSignalScorecardStep` never throws; the
     // extra try/catch is belt-and-braces so a defect here cannot fail the run.
     try {
-      await runScorecard(supabase, view, deps.cached.get(), displayOnly);
+      await time("signal_scorecard", () =>
+        runScorecard(supabase, view, deps.cached.get(), displayOnly, run),
+      );
     } catch (err) {
       warn("signal_scorecard", err);
     }
@@ -628,7 +679,7 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
     // fail-safe per slice: a slice that cannot load degrades to an empty array
     // and never breaks the run (see `loadSnapshotHistory`). `buildDashboardSnapshot`
     // merges today's produced view on TOP of the historical firing setups.
-    const history = await loadHistory(supabase, view);
+    const history = await time("snapshot_history", () => loadHistory(supabase, view));
     // Per-pair run-completion readout (schema v2): carry EVERY evaluated pair —
     // fired or not — so a silent (no-fire) day shows a credible "run evaluated
     // all five pairs" summary instead of a bare "no data" notice. The full
@@ -641,7 +692,7 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
     // with a secret-free log). Only the output artifact grows; firing is untouched.
     let edge: Awaited<ReturnType<typeof buildEdgeSlices>> = {};
     try {
-      edge = await buildEdge(supabase, view, deps.cached.get());
+      edge = await time("edge_slices", () => buildEdge(supabase, view, deps.cached.get()));
     } catch (err) {
       warn("edge_slices", err);
     }
@@ -657,7 +708,9 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
     // persisted rows (Requirement 10.6).
     let confluence: Awaited<ReturnType<typeof buildConfluenceSlice>> | undefined;
     try {
-      confluence = await buildConfluence(supabase, view, deps.cached.get(), displayOnly);
+      confluence = await time("confluence_slice", () =>
+        buildConfluence(supabase, view, deps.cached.get(), displayOnly, run),
+      );
     } catch (err) {
       warn("confluence_slice", err);
     }
@@ -667,7 +720,7 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
     // fail the run or disturb the persisted rows.
     let trackRecord: Awaited<ReturnType<typeof buildTrackRecordSlice>> | undefined;
     try {
-      trackRecord = await buildTrackRecord(supabase, view, history);
+      trackRecord = await time("track_record", () => buildTrackRecord(supabase, view, history));
     } catch (err) {
       warn("track_record", err);
     }
@@ -677,7 +730,7 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
     // default and can never fail the run or disturb the persisted rows.
     let signalScorecard: Awaited<ReturnType<typeof buildSignalScorecardSlice>> | undefined;
     try {
-      signalScorecard = await buildScorecard(supabase);
+      signalScorecard = await time("signal_scorecard_slice", () => buildScorecard(supabase));
     } catch (err) {
       warn("signal_scorecard_slice", err);
     }
@@ -692,7 +745,7 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
       trackRecord,
       signalScorecard,
     );
-    await writeSnapshot(snapshot, deps.snapshotSink);
+    await time("write_snapshot", () => writeSnapshot(snapshot, deps.snapshotSink));
   };
 }
 
@@ -733,7 +786,7 @@ async function main(): Promise<void> {
   // to the most recent Completed_Trading_Day BEFORE `runScheduledDaily` reads it.
   // Fail-safe (R4.1): a stage error is caught inside `freshenCandles` and the run
   // proceeds on existing history.
-  await freshenCandles(config);
+  await timed("freshen_candles", () => freshenCandles(config));
 
   const displayDeps = await buildDisplayDeps(config);
   const cached = cachingLoader(loadEvaluations);
@@ -753,7 +806,10 @@ async function main(): Promise<void> {
 
   const persistView = makePersistView({ cached, displayDeps, snapshotSink });
 
-  const result = await runScheduledDaily(config, { loadEvaluations: cached.loader, persistView });
+  // Total of: the deterministic pipeline + persistView (whose steps are each timed above).
+  const result = await timed("pipeline_and_persist_total", () =>
+    runScheduledDaily(config, { loadEvaluations: cached.loader, persistView }),
+  );
 
   console.log(
     JSON.stringify({

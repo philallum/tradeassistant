@@ -1,8 +1,70 @@
 # Strategic Decisions
 
-> Satellite of PROJECT-STATE.md (§6). Append-only log of durable architecture/design decisions and why.
+> Satellite of PROJECT-STATE.md. The log of durable architecture/design decisions and why.
+>
+> **How to read this file.** Entries are kept (never deleted) so the reasoning survives, but the
+> file is **not strictly chronological**: the most recent entries were added at the top, older
+> ones follow in the order they were written, and a few later entries sit at the bottom. When a
+> later entry changes an earlier one, the earlier bullet is usually NOT edited - so use the
+> **Decision Index** below to see what is still in force, and read the entry itself for the why.
 
-## 6. Strategic decisions
+## Decision Index
+
+Status is taken from the log's own later entries and from the 2026-11-08 peer review. "Active"
+means the decision is still how the system works; "Superseded" names what replaced it. Where an
+entry mixes a live decision with a stale detail, the Note column says which part is stale.
+
+| Date | Decision | Status | Note |
+| --- | --- | --- | --- |
+| 2026-11-08 | Codebase housekeeping: horizon-1-only contract, single `fires()`, verdict-path removal, replay guard, shared confluence matrix | **Active** | New (first entry below). |
+| 2026-11-06 | Intraday 4H validation is a separate read-only Job | Active | Republish must key-replace only `intradayValidation` (see the data contract). |
+| 2026-11-06 | Confluence: a zero score is always `NEUTRAL` | Active | |
+| 2026-11-05 | PROJECT-STATE.md is a comprehensive reference (not a thin entry point) | Active | Supersedes the 2026-11-03 "thin" half of the living-docs split. |
+| 2026-11-05 | Signal Scorecard records all six signals by dated persistence | Active | Third-party is withheld on a replayed date (2026-11-08). |
+| 2026-11-04 | Dashboard simplification (SL/TP removed from the UI; expected candle size; one pair navigator; conviction tiers) | Active | Conflict threshold is now 0.5 (was 0.6). |
+| 2026-11-04 | Decision_Date is the NEXT trading day for a run at/after the 17:00 NY close (Option B) | Active | Scheduler is now 17:30 NY (2026-11-06). |
+| 2026-11-03 | Mobile redesign: single-window card at every width; tab bar removed | Active | |
+| 2026-11-03 | Mobile redesign: All_Pairs_Strip for cross-pair comparison | Active | |
+| 2026-11-03 | Mobile redesign: invalid-URL message is best-effort | Active | |
+| 2026-11-03 | Living-docs split into a thin PROJECT-STATE + satellites | **Partly superseded** | "Thin" superseded by 2026-11-05; the satellite split stands. |
+| 2026-10-07 | `fx_writer` uses a BYO imported ES256 signing key | Active | |
+| - | Dimensional minimalism / gate-first build order | Active (principle) | The "kill-gate" is now an evaluation report with no verdict. |
+| - | AI division of labor (scoring is AI-free) | Active | Enforced by types and guard tests; see 2026-11-08 for the re-pointed oracles. |
+| - | Kill-gate reframe landed by addition, not rename | **Superseded 2026-11-08** | The legacy PASS/CUT path it retained was removed. |
+| - | Supabase scoped-write credential (`pipeline_writer`) | **Superseded** | Replaced by `fx_writer` (2026-10-07, and the Option A cutover entry). |
+| - | RLS + least privilege (`pipeline_writer`) | **Superseded** | Public-read model: no RLS, public select, `fx_writer` write. |
+| - | Serving separation / read-proxy | **Superseded** | The read-proxy was deleted; the SPA reads a static snapshot (Public_Read_Path entries). |
+| - | Live Cloud Execution Protocol | Active | |
+| - | Automated, keyless, path-filtered deploys | Active | Now also redeploys the intraday Job. |
+| - | CSV is backfill, not a feed | Active | The seed Job's deploy surface was removed 2026-11-08; the CSV library stays. |
+| - | Display-only producers via `fetch`, not SDKs | Active | |
+| - | Living docs stay live via two hooks + the in-code writer | Active | Hook prompts describe an older PROJECT-STATE layout - see RISKS. |
+| - | Operator deployment constraints; the three refining decisions | Active | |
+| - | Gate_Auto_Block and suppressors REMOVED; Phase 3 complexity removal | Active (history) | The firing rule is the single `fires()` predicate. |
+| - | Write_Credential cutover (Option A); Phase 4 schema reduction; hosted schema reconcile (`...006`) | Active (history) | |
+| - | Public_Read_Path = static JSON snapshot, realised as a public GCS bucket | Active | |
+| - | Phase 6 deploy simplification; Audit §14 recommendations actioned | Active (history) | |
+| - | OOS evaluation: honest model prediction + in-memory retrieval; first evaluation run inside the Cloud Run Job | Active | |
+| - | Candle freshness via a provider fallback chain | Active | |
+| - | Incremental CI/CD delivery cadence | Active | Operator merges `dev` -> `main`. |
+| - | Supported-major dependency ceilings in CI; React 19 / TS 7 deferred | Active | The recharts ceiling was removed with the dependency (2026-11-08). |
+| - | Dashboard "All pairs" cross-pair detail; silent no-fire day readout; daily AI note liveness signal | **Partly superseded** | The "All pairs" state and tab bar are gone (2026-11-03/04); the readout and note remain. |
+
+## Entries
+
+- **Codebase housekeeping after the 2026-11-08 peer review: same behaviour, less complexity, honest docs (spec `codebase-housekeeping`).** A full senior-developer review found the code in good shape and the *documentation* the main debt. The decisions, each approved by the operator:
+  - **Horizon-1 only, documented, not changed (R1).** `retrieve()` returns one record per analogue date (the smallest horizon), so horizons 2 and 3 are never populated and a firing pair always reports horizon 1. Rejected: (b) removing the dormant 1/2/3 selection (closes off real multi-horizon, touches `selectHorizon` and its property tests) and (c) making all three horizons real (changes confidence, firing and the headline +1.24pp result; not housekeeping). The behaviour is pinned by `src/retrieval/horizonContract.test.ts`; real multi-horizon is a separate future spec.
+  - **Replay guard for the live third-party read (R2).** FCS `/forex/latest` is a live value, so recording it under a replayed `RUN_DECISION_DATE` would score today's value against an old date. On a non-live Decision_Date (`isLiveDecisionDate`) the scorecard omits ONLY `third_party` and logs `signal_scorecard.third_party_skipped`. The normal scheduled run is byte-identical.
+  - **One firing predicate.** `fires(evaluation, threshold)` in `src/dashboard/dashboard.ts` is the only definition; persistence, the snapshot's `pairEvaluations`, the daily-note input and the walk-forward regenerator call it (five copies existed and had drifted in how they obtained the threshold).
+  - **The legacy PASS/CUT verdict path is removed.** `composeGateVerdict`, `GateVerdict`, `GateVerdictStore`, `persistGateVerdict`, the Supabase `gate_verdicts` adapter, `ops/gate-run` and the staged-runner `backtest`/`forwardLook`/`runAll` stages had no production caller (the live write path is `composeEvaluationReport` -> `evaluation_reports`). Kept: `staged-runner` `backfill`/`buildFoldInputs`/`hasBacktestData` (used by `ops/hosted-backfill` and `ops/evaluation-run`), `composeEvaluationReport`, `gate1`, `gate2`, `walkForward`, and `LivingDocs.appendVerdict/appendCut` (now unused by code; left for a later decision). **The four boundary tests that used `composeGateVerdict` as their oracle were re-pointed to `composeEvaluationReport` BEFORE the removal** so the "LLM / confluence / third-party / journaling cannot change the Kill_Gate" guarantee never lapsed; a temporary mutation confirmed all four still fail on a leak.
+  - **Seed job: deploy surface only.** `ops/seed-job.config.json` and the Dockerfile `data/` copy were removed; `csv-loader` and `data/*.csv` stay for the operator backfill tools and tests. Deleting the orphaned Cloud Run Jobs/images/service accounts is an operator checklist in `docs/RUNBOOK.md`, never an agent action.
+  - **The per-run Confluence_Matrix is built once** (`buildRunMatrix`) and shared by the `confluence` slice and the Signal Scorecard. They had two independent assemblers that already differed (one warned on a failed candle load, the other dropped the pair silently).
+  - **Silent skips now speak.** Every fail-safe step that degrades logs a named, secret-free event (`candle_freshness.encode_skipped`, `scheduled_run.pipeline_warning`, the track-record deadline, the intraday fallback read). Provider failure messages are redacted (`src/ingestion/redactSecrets.ts`) because every candle client puts its API key in the request URL.
+  - **Per-step timing is logged first; no optimisation yet.** Candle history is read many times per run, but nothing has been measured, so memoisation is deferred until `scheduled_run.step_timing` shows it matters.
+  - **`ops/scheduler-job.config.json` and the keep-list manifest now say `30 17 * * 1-5`**, matching the operator-confirmed live cron (2026-11-06); they had still said `0 17`.
+  - **Not changed (deliberately):** the firing rule and 0.55 threshold, shrinkage constants, look-ahead guards, sequential pair evaluation, fail-safe reads, the `buildDashboardSnapshot` signature, `makePipelineLoader`, exact dependency pins and the version-policy audit.
+  - **Deferred:** real multi-horizon, candle-store memoisation, a visible "data behind" banner, moving the Lean/Split conviction tiers server-side, a web linter, and removing the dormant offline evidence layer.
+
 - **Intraday 4H validation is a SEPARATE read-only Job, not a daily-pipeline step (2026-11-06, `intraday-validation` feature, from a reviewed plan).** The ask: a few hours after the immutable daily prediction, check whether the currently-forming 4H candle supports or contradicts the original daily direction — WITHOUT a second forecasting system and without touching the daily engine. Key decisions, each confirmed with the operator during planning: (1) a SEPARATE ~08:00-UK Cloud Run Job (second Scheduler trigger) that reads back the persisted daily prediction, computes validation, and republishes `dashboard.json` — the 17:00-NY daily Job is byte-unchanged (an isolation regression test enforces it). (2) Twelve Data is the SOLE intraday 4H provider (reuses `TWELVE_DATA_API_KEY`) via a NEW isolated client, because all three existing OHLC adapters hard-code the daily timeframe and floor to a UTC day — so a 4H path is genuinely new code, kept entirely out of the daily ingestion/provider-chain. (3) The forming bar is derived from the FIXED UTC 4H boundaries (00/04/08/12/16/20) with a staleness guard, NOT a fixed offset, so UK/NY DST is handled automatically. (4) Produce validation STATE plus a BOUNDED, symmetric, deterministic confidence delta (±10pp, five states), displayed as an "unvalidated adjustment" — explicitly NOT a calibrated probability ("strength is not a probability"); the original Earned_Confidence is stored untouched and the delta/current stored separately. (5) Validate EVERY pair's deterministic direction (incl. FLAT→NOT_APPLICABLE), so a silent day still shows a validation state. (6) Thresholds (0.25/0.5 body-to-range, 0.66/0.34 price position) and delta magnitudes are PROVISIONAL and centralized for a future evidence-based tune; the features are persisted so usefulness can be MEASURED later before any accuracy claim. Everything fails safe: any provider/data/write failure degrades to "validation unavailable" with the daily forecast byte-identical. Implemented following the project's additive-migration + storage-port + append-LAST-snapshot-slice + pure-shaper patterns; schema bumped to v8.
 
 - **PROJECT-STATE.md repurposed from a thin entry point into a comprehensive project reference (2026-11-05, operator request; SUPERSEDES the "keep it thin" part of the 2026-11-03 living-docs-split decision below).** The 2026-11-03 split made PROJECT-STATE.md a thin pointer (STATE block + a few sections + links) with all durable prose in `docs/state/` satellites. The operator now wants PROJECT-STATE.md itself to be the single shareable document that gives someone a complete, accurate understanding of the system (tech stack, architecture, the real calculations/formulas, data model, ops) to onboard from and plan enhancements against. Decision: keep the satellite split for LIVE CHURN (CODE-MAP per-module detail, DECISIONS, RISKS, NEXT-STEPS, CHANGELOG remain the auto-updated homes, linked not duplicated) BUT expand PROJECT-STATE.md's body into a durable reference (architecture-at-a-glance, daily-run flow, a "how the calculations work" section with verbatim formulas/constants, data model, how-to-extend patterns). The machine-managed STATE block is unchanged and still the ONLY region the Living-Docs Writer / `update-living-docs` hook touches (markers verified unique), so automation and the new reference coexist. Tradeoff accepted: the new prose includes a few hand-maintained durable facts (schema version, deployed specs, deploy-secret list) that must be refreshed on a schema bump / new spec — flagged in the document's own preamble. This does not re-bloat the STATE `Summary:` line (per-turn narrative still goes to CHANGELOG).

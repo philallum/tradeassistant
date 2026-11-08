@@ -285,7 +285,7 @@ export const FRICTION_PENALTY_PIPS: Readonly<Record<Pair, number>> = {
 
 /**
  * Result of a single Gate 2 (risk-adjusted) evaluation on a fold, matching the
- * `gate2` shape in the design's FoldVerdict/GateVerdict. The metrics are the
+ * `gate2` shape in the design. The metrics are the
  * excursion-weighted hit metric of each side AFTER Friction_Penalty deduction;
  * `margin = modelRiskAdj - baselineRiskAdj` and Gate 2 passes iff `margin >= 0`.
  * (Requirements 11.7, 11.8; Design Component 7)
@@ -305,176 +305,6 @@ export interface Gate2Result {
 }
 
 // ===========================================================================
-// Walk-Forward Verdict Composition (Task 6.5).
-//
-// Requirements 11.2, 11.9, 11.10, 11.11, 11.13, 19, 5.4, 5.5, 12.1;
-// Design Component 7 (FoldVerdict / GateVerdict).
-//
-// Composition combines Gate 1 (matched-subset directional) and Gate 2
-// (risk-adjusted MFE/MAE) per walk-forward fold into a single config-level
-// verdict. A config PASSES iff it passes BOTH gates on EVERY qualifying fold
-// (matched-firing subset ≥30-sample floor); folds below the floor are SKIPPED
-// and recorded and excluded from the pass/fail determination; a single failing
-// qualifying fold makes the verdict CUT (Requirements 11.13, 19.3, 19.5).
-//
-// Appended as a separate block to avoid edit conflicts with the parallel Gate 1
-// / Gate 2 tasks; do not fold these into the definitions above.
-// ===========================================================================
-
-/**
- * The verdict for a single walk-forward fold. Shape follows Design Component 7:
- * `{ foldIndex, sampleSize, skipped, gate1, gate2, verdict }`.
- *
- * `skipped` is true when the matched-firing subset on this fold's test window is
- * below the {@link GATE1_SAMPLE_SIZE_FLOOR} (30) — such folds are recorded but
- * excluded from the pass/fail determination (Requirement 19.5). Gate 2 is only
- * evaluated after Gate 1 passes on that fold (Requirement 11.8), so on a fold
- * that fails or skips Gate 1 the Gate 2 result is not-evaluated.
- */
-export interface FoldVerdict {
-  readonly foldIndex: number;
-  /** Matched-firing-subset size on this fold's out-of-sample test window. */
-  readonly sampleSize: number;
-  /** True when `sampleSize < 30` (below floor); excluded from pass/fail. */
-  readonly skipped: boolean;
-  readonly gate1: Gate1Result;
-  readonly gate2: Gate2Result;
-  /**
-   * Per-fold verdict: PASS iff (not skipped) and both gates passed; otherwise
-   * CUT. A skipped fold is recorded as CUT for the field's type but is excluded
-   * from the aggregate pass/fail — inspect `skipped` to distinguish.
-   */
-  readonly verdict: "PASS" | "CUT";
-}
-
-/**
- * The accuracy-versus-baseline and risk-adjusted-versus-baseline metrics
- * emitted with every verdict and auto-appended to the Research_Log
- * (Requirement 11.11). Aggregated over the union of qualifying test folds.
- */
-export interface GateMetrics {
-  /** Number of qualifying (non-skipped) folds folded into the aggregate. */
-  readonly qualifyingFolds: number;
-  /** Number of folds skipped below the ≥30-sample floor (Req 19.5). */
-  readonly skippedFolds: number;
-  /** Total folds evaluated. */
-  readonly totalFolds: number;
-  /** Accuracy-vs-baseline: model minus baseline directional accuracy (Req 11.11). */
-  readonly accuracyVsBaseline: number;
-  /** Risk-adjusted-vs-baseline: model minus baseline risk-adjusted metric (Req 11.11). */
-  readonly riskAdjustedVsBaseline: number;
-}
-
-/**
- * The aggregate config-level verdict across all walk-forward folds. Shape
- * follows Design Component 7:
- * `{ configId, foldVerdicts, gate1, gate2, sampleSize, verdict, metrics }`.
- *
- * Aggregate `gate1`/`gate2` are computed over the UNION of qualifying test
- * folds (out-of-sample only; Requirements 11.2, 11.3). `verdict` is PASS iff
- * every qualifying fold passed both gates (Requirements 11.13, 19.3); a single
- * failing qualifying fold => CUT.
- */
-export interface GateVerdict {
-  readonly configId: string;
-  /** Per-fold verdicts + metrics (Requirements 11.13, 19.3, 19.4). */
-  readonly foldVerdicts: readonly FoldVerdict[];
-  /** Aggregate Gate 1 over the union of qualifying test folds. */
-  readonly gate1: Gate1Result;
-  /** Aggregate Gate 2 over the union of qualifying test folds. */
-  readonly gate2: Gate2Result;
-  /** Total matched-firing subset size across qualifying folds (Req 11.5). */
-  readonly sampleSize: number;
-  /** PASS iff every qualifying fold passes both gates (Req 11.13, 19.3). */
-  readonly verdict: "PASS" | "CUT";
-  readonly metrics: GateMetrics;
-}
-
-/**
- * Storage PORT for the aggregate `gate_verdicts` row plus its per-fold
- * `gate_fold_verdicts` rows (keyed by `(verdict_id, fold_index)`), mirroring the
- * shared Supabase schema. Follows the same compute/storage separation as
- * {@link WalkForwardFoldStore} (Requirement 17.1).
- */
-export interface GateVerdictStore {
-  /**
-   * Persist an aggregate verdict and all of its per-fold verdicts atomically,
-   * returning the generated `verdict_id`. Each call records a new verdict row
-   * (verdicts are an append-only research history, Requirement 5.2).
-   */
-  persistVerdict(
-    verdict: GateVerdict,
-    split: GateVerdictSplit,
-  ): Promise<PersistVerdictReport>;
-
-  /** Read back a persisted aggregate verdict by its `verdict_id`, or null. */
-  getVerdict(verdictId: string): Promise<PersistedGateVerdict | null>;
-}
-
-/**
- * The Data_Split bounds recorded alongside an aggregate verdict, matching the
- * `gate_verdicts` columns `split_train_end`, `split_test_start`,
- * `split_test_end`, and the optional `selected_horizon`.
- */
-export interface GateVerdictSplit {
-  readonly trainEnd: TradingDate;
-  readonly testStart: TradingDate;
-  readonly testEnd: TradingDate;
-  /** The selected Horizon (1|2|3), when a horizon was chosen for this config. */
-  readonly selectedHorizon?: 1 | 2 | 3;
-}
-
-/** Outcome of a {@link GateVerdictStore.persistVerdict} call. */
-export interface PersistVerdictReport {
-  readonly verdictId: string;
-  /** Number of per-fold rows written to `gate_fold_verdicts`. */
-  readonly foldRows: number;
-}
-
-/** A verdict read back from a {@link GateVerdictStore}, carrying its id + split. */
-export interface PersistedGateVerdict {
-  readonly verdictId: string;
-  readonly verdict: GateVerdict;
-  readonly split: GateVerdictSplit;
-}
-
-/**
- * In-memory reference implementation of {@link GateVerdictStore}.
- *
- * Mirrors the `gate_verdicts` / `gate_fold_verdicts` schema: each verdict is
- * assigned a fresh id and its per-fold rows are stored keyed by
- * `(verdictId, foldIndex)`. Append-only, matching the Research_Log semantics.
- * Ids are generated deterministically from an internal counter so tests are
- * reproducible without pulling in a UUID dependency.
- */
-export class InMemoryGateVerdictStore implements GateVerdictStore {
-  private seq = 0;
-  private readonly verdicts = new Map<string, PersistedGateVerdict>();
-
-  persistVerdict(
-    verdict: GateVerdict,
-    split: GateVerdictSplit,
-  ): Promise<PersistVerdictReport> {
-    this.seq += 1;
-    const verdictId = `verdict-${this.seq}`;
-    this.verdicts.set(verdictId, { verdictId, verdict, split });
-    return Promise.resolve({
-      verdictId,
-      foldRows: verdict.foldVerdicts.length,
-    });
-  }
-
-  getVerdict(verdictId: string): Promise<PersistedGateVerdict | null> {
-    return Promise.resolve(this.verdicts.get(verdictId) ?? null);
-  }
-
-  clear(): void {
-    this.seq = 0;
-    this.verdicts.clear();
-  }
-}
-
-// ===========================================================================
 // Evaluation Report (simplify-to-cloud-minimal, Requirement 1; Design C1).
 //
 // Reframes the two-stage Kill_Gate from an automatic PASS/CUT verdict into a
@@ -489,8 +319,8 @@ export class InMemoryGateVerdictStore implements GateVerdictStore {
 // `margin >= 0` thresholds survive only as `annotations.*` flags that annotate,
 // but never hide, suppress, or block any displayed data (Requirement 1.5).
 //
-// Appended as a separate block to avoid edit conflicts with the retained
-// GateVerdict definitions above; do not fold these into the definitions above.
+// (The legacy PASS/CUT `GateVerdict` / `GateVerdictStore` types that preceded this block
+// were removed in codebase-housekeeping Task 5.)
 // ===========================================================================
 
 /**
@@ -571,8 +401,7 @@ export interface EvaluationAnnotations {
 /**
  * The structured output of the Measurement_Engine for one configuration over
  * the Out_Of_Sample_Test — a set of metrics with uncertainty intended for human
- * interpretation (Requirement 1.2; Design C1). It replaces the {@link GateVerdict}
- * on the evaluation path and carries **NO** `verdict`/`PASS`/`CUT`/`KILL` field
+ * interpretation (Requirement 1.2; Design C1). It is the evaluation output and carries **NO** `verdict`/`PASS`/`CUT`/`KILL` field
  * (Requirement 1.3).
  *
  * All fields are measured deterministically from the pooled matched firing
@@ -605,13 +434,12 @@ export interface EvaluationReport {
 
 /**
  * Storage PORT for the `evaluation_reports` table (simplify-to-cloud-minimal
- * Requirement 1.3, 8.2; design C4 / Data Models). The successor to
- * {@link GateVerdictStore} on the evaluation write path: it persists a measured
- * {@link EvaluationReport} and reads one back by its generated id.
+ * Requirement 1.3, 8.2; design C4 / Data Models). The evaluation write path:
+ * it persists a measured {@link EvaluationReport} and reads one back by its
+ * generated id.
  *
- * The {@link EvaluationReport} already carries its {@link EvaluationSplit}, so —
- * unlike {@link GateVerdictStore.persistVerdict} — no separate split argument is
- * needed. Each call records a NEW report row (reports are an append-only
+ * The {@link EvaluationReport} already carries its {@link EvaluationSplit}, so no
+ * separate split argument is needed. Each call records a NEW report row (reports are an append-only
  * research history, mirroring the Research_Log). It carries NO verdict in any
  * form (Requirement 1.3).
  */
@@ -632,8 +460,7 @@ export interface EvaluationReportStore {
  * Mirrors the `evaluation_reports` schema: each report is assigned a fresh id
  * and stored by that id. Append-only, matching the Research_Log semantics. Ids
  * are generated deterministically from an internal counter (`report-1`,
- * `report-2`, …) so tests are reproducible without a UUID dependency — the same
- * convention {@link InMemoryGateVerdictStore} uses for its verdict ids.
+ * `report-2`, …) so tests are reproducible without a UUID dependency.
  */
 export class InMemoryEvaluationReportStore implements EvaluationReportStore {
   private seq = 0;

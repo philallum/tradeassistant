@@ -15,6 +15,7 @@ import {
   type SnapshotIntradayValidationRow,
   type SnapshotIntradayValidationSlice,
 } from "./snapshot.js";
+import { warnEvent } from "./warn.js";
 
 const SLICE_NAME = "intraday_validation" as const;
 
@@ -28,10 +29,7 @@ export interface IntradayValidationSliceDeps {
 }
 
 function defaultWarn(slice: string, err: unknown): void {
-  const message = err instanceof Error ? err.message : String(err);
-  console.warn(
-    JSON.stringify({ event: "scheduled_run.intraday_validation_slice_failed", slice, message }),
-  );
+  warnEvent("scheduled_run.intraday_validation_slice_failed", { slice }, err);
 }
 
 /**
