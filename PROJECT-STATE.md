@@ -29,7 +29,7 @@
 <!-- BEGIN STATE -->
 - **Phase:** v1 feature-complete and LIVE. `multi-strategy-confluence-engine`, Signal Scorecard and `intraday-validation` (snapshot schema v8) are all LIVE; the intraday republish bug is fixed, deployed and live-verified. Delivery cadence: operator merges dev->main to deploy; agent builds/verifies locally.
 - **Updated:** 2026-11-06
-- **Summary:** After the fix deployed (PR #63), the live `dashboard.json` was restored by a daily Job run and a manual intraday run validated all 5 pairs with every other slice byte-identical. The 08:00 Europe/London trigger is resumed; its first scheduled fire (Mon 2026-11-09) is the next thing to check. Intraday thresholds/delta stay provisional and unvalidated.
+- **Summary:** After the fix deployed (PR #63), the live `dashboard.json` was restored by a daily Job run and a manual intraday run validated all 5 pairs with every other slice byte-identical. The 08:00 Europe/London trigger is resumed; its first scheduled fire (Mon 2026-11-09) is the next thing to check. A new `deploy.yml` step (written locally, not yet merged/run) will keep the intraday Job on the current image. Intraday thresholds/delta stay provisional and unvalidated.
 <!-- END STATE -->
 
 ---
@@ -85,8 +85,11 @@ The authoritative design and task breakdowns live in `PROJECT-PLAN.md` and under
   migrations under `supabase/migrations/`.
 - **Cloud (GCP, project `trade-assistant-508806`, region `europe-west1`):** a
   Cloud Run **Job** runs the scheduled daily refresh; Cloud Scheduler triggers it
-  (`0 17 * * *` America/New_York — see RISKS re: the close-time publication-lag
-  issue); Secret Manager holds all runtime secrets; Cloud Build + Artifact
+  (`30 17 * * 1-5` America/New_York as observed live 2026-11-06 — see RISKS re: the
+  close-time publication-lag issue). A SECOND, separate Cloud Run Job
+  (`intraday-validation-run`, same image, `intradayMain` entrypoint) is triggered by
+  its own Scheduler job at `0 8 * * 1-5` Europe/London (§5.11); Secret Manager holds
+  all runtime secrets; Cloud Build + Artifact
   Registry build SHA-pinned images; CI authenticates keylessly via Workload
   Identity Federation / OIDC (no stored SA key).
 - **Serving / UI:** a React + Vite + TypeScript SPA (`web/`) on Firebase Hosting,
@@ -96,8 +99,10 @@ The authoritative design and task breakdowns live in `PROJECT-PLAN.md` and under
   browser — the former read-proxy was deleted.
 - **External providers (keys in Secret Manager, read at runtime):** OHLC market
   data (FCS, Twelve Data, Massive — a fallback chain), a third-party reference
-  signal (FCS), and Google Vertex AI (Gemini) for the display-only LLM layer. All
-  are **data/LLM inputs only** — never scoring inputs.
+  signal (FCS), Twelve Data `interval=4h` for the intraday validation layer (a
+  separate isolated client, not part of the chain), and Google Vertex AI (Gemini)
+  for the display-only LLM layer. All are **data/LLM inputs only** — never scoring
+  inputs.
 
 ---
 
@@ -382,6 +387,55 @@ in the v7 snapshot `signalScorecard` slice and the SPA's per-strategy "Recorded:
 right X of Y (N pending)" line. It captures the non-replayable third_party signal
 that the replay-based `trackRecord` cannot.
 
+### 5.11 Intraday 4H validation (read-only enrichment) — `src/intraday-validation/`
+
+A small layer AROUND the immutable daily forecast, not a second forecasting system.
+A few hours after the daily run, a SEPARATE Job answers one narrow question: "does
+the currently-forming 4H candle support or contradict the original daily direction?"
+It never reruns the pipeline, never writes a daily-path table, and never changes the
+original direction, Earned_Confidence, firing, or kill-gate. Any failure degrades to
+"validation unavailable" with the daily forecast untouched.
+
+- **Flow** (`src/scheduled-run/intradayMain.ts`, Cloud Run Job `intraday-validation-run`,
+  Scheduler `0 8 * * 1-5` Europe/London): read the PUBLISHED `dashboard.json`
+  (`publishedSnapshot.ts`, public GCS read) → take every evaluated pair's original
+  direction + confidence from its `pairEvaluations` (fired or not; falls back to fired
+  `firing_setups` only if unreadable) → fetch the forming 4H bar per pair → classify →
+  persist to `intraday_validations` → republish the SAME snapshot with ONLY the
+  `intradayValidation` key (+ schemaVersion) replaced. It SKIPS the republish if there is
+  no readable snapshot for the Decision_Date, so it can never publish a degraded file.
+- **4H data:** `src/ingestion/intradayFeed/twelveDataIntraday.ts` calls Twelve Data
+  `/time_series?interval=4h&timezone=UTC` (key `TWELVE_DATA_API_KEY`), keeping the full
+  intraday timestamp (the daily adapters floor to a UTC day and cannot serve 4H). It is
+  fail-safe (typed secret-free errors) and sits OUTSIDE `OhlcFeedProvider` / the chain.
+- **Forming bar** (`formingBar.ts`): 4H bars sit on fixed UTC boundaries
+  (00/04/08/12/16/20). The forming bar at `now` is the one with `open ≤ now < open+4h`;
+  a provider bar that does not match is treated as stale → unavailable. No fixed UTC
+  offset, so UK/NY daylight saving is automatic.
+- **Features** (`features.ts`, pip-agnostic ratios): `range = high−low`,
+  `body = current−open`, `bodyToRange = |body|/range`, `upperWick`, `lowerWick`,
+  `pricePositionInRange = (current−low)/range`. Zero range / non-finite OHLC degrade
+  safely (never NaN).
+- **Classification** (`classify.ts`, provisional UNVALIDATED `THRESHOLDS`): body
+  direction vs the original direction D; `bodyToRange < 0.25` → NEUTRAL; same direction
+  → SUPPORTS, or STRONGLY_SUPPORTS when `bodyToRange ≥ 0.5` AND price near the favourable
+  extreme (`≥0.66` for UP, `≤0.34` for DOWN) AND a favourable-side rejection wick;
+  opposite direction → CONTRADICTS / STRONGLY_CONTRADICTS symmetrically; FLAT original →
+  NOT_APPLICABLE. Each result carries a plain-language reason.
+- **Confidence delta:** STRONGLY_SUPPORTS +10, SUPPORTS +5, NEUTRAL 0, CONTRADICTS −5,
+  STRONGLY_CONTRADICTS −10 percentage points (bounded, symmetric);
+  `currentConfidence = clamp(original + delta, 0, 100)`. The original confidence is
+  stored untouched and the delta/current are separate fields. This is a deterministic
+  display adjustment, NOT a calibrated probability ("strength is not a probability"); the
+  slice and UI label it `unvalidated`. Whether it adds value is to be MEASURED from the
+  stored features/outcomes before any claim.
+- **Dashboard:** `web/src/pure/shapeIntradayValidation.ts` + `IntradayValidationCard`
+  render a compact block beside the original forecast (observed time, status, current
+  confidence labelled "unvalidated adjustment", change in pp) or "Intraday validation
+  unavailable". Note the daily run republishes with an empty `intradayValidation`, so the
+  slice clears at each daily run and refills at ~08:00 next morning (history persists in
+  `intraday_validations`).
+
 ---
 
 ## 6. Data model (Supabase Postgres + pgvector)
@@ -399,6 +453,7 @@ data) with INSERT/UPDATE restricted to the single `fx_writer` write role. The
 | `firing_setups` | One row per pair per Decision_Date: the firing decision (direction, horizon, confidence, SL/TP, surfaced flag). |
 | `realized_outcomes` | Predicted-vs-actual journal for fired setups, filled once the horizon matures. |
 | `signal_predictions` | The six-signal daily direction scorecard (predicted today, reconciled next session). |
+| `intraday_validations` | Written ONLY by the separate intraday Job: per `(decision_date, pair)` a snapshot of the original direction/confidence, the forming 4H OHLC + derived features, and the validation state / bounded delta / current confidence / reason. Migration `20260916000010`. Not read by the daily run. |
 | `evaluation_reports` | Human-read kill-gate evaluation reports (no verdict column). |
 
 Additive, offline/ops-only tables (code-complete, fail-safe adapters, not yet
@@ -408,12 +463,13 @@ earlier phases (`gate_verdicts`, `signal_rationale`, `external_reference_compari
 etc.) survive in migration history but are superseded — treat the list above as the
 live set and check `docs/state/CODE-MAP.md` before relying on any other.
 
-**The published artifact** is `dashboard.json` (schema **v7**), assembled by
+**The published artifact** is `dashboard.json` (schema **v8**), assembled by
 `src/scheduled-run/snapshot.ts` from today's view plus history read back from the
 rows above. Slices: `firingSetups`, `pairEvaluations`, `realizedOutcomes`,
 `analogueOutcomes`, `candles`, `aiRationale`, `dailyCommentary`,
 `externalComparison`, `evaluationReports`, `confluence` (v5), `trackRecord` (v6),
-`signalScorecard` (v7), plus the offline-evidence slices (`tradeLedgerSummary`,
+`signalScorecard` (v7), `intradayValidation` (v8, filled by the separate intraday Job),
+plus the offline-evidence slices (`tradeLedgerSummary`,
 `calibration`, `exposure`, `provenance`, `validationStatus`). The web side parses
 it leniently (`web/src/api/snapshot.ts`): an absent/malformed slice degrades to its
 empty value, so schema bumps are backward/forward compatible.
@@ -432,6 +488,10 @@ code lands). High-level layout:
 - *Evidence layer (offline, trader-edge-validation):* `trade-sim/`,
   `trade-ledger/`, `performance/`, `walk-forward/`, `exposure/`, `provenance/`,
   `range-forecast/`, `track-record/`.
+- *Intraday validation (read-only enrichment, §5.11):* `intraday-validation/`
+  (pure features / classify / formingBar / store port / runValidation),
+  `ingestion/intradayFeed/` (isolated Twelve Data 4H client), and in `scheduled-run/`:
+  `intradayMain.ts` (Job entry), `publishedSnapshot.ts`, `intradayValidationSlice.ts`.
 - *I/O & orchestration:* `ingestion/` (+ `ingestion/ohlcFeed/` provider chain),
   `scheduled-run/` (the Job entry + snapshot + slices), `storage/` (Supabase
   adapters), `csv-loader/`, `staged-runner/`.
@@ -473,7 +533,11 @@ pure view-model builders, the only place display values are derived),
   secret via `--set-secrets <name>:latest`). The seven secrets:
   `external-signal-api-key`, `twelve-data-api-key`, `massive-api-key`,
   `supabase-key` (= the `fx_writer` credential), `supabase-publishable-key`,
-  `supabase-url`, `supabase-pooler-url`. **Frontend** → web gate →
+  `supabase-url`, `supabase-pooler-url`. The same workflow then also runs
+  `gcloud run jobs deploy` for `intraday-validation-run` (same SHA-pinned image, entrypoint
+  `dist/scheduled-run/intradayMain.js`, only the Twelve Data + Supabase secrets, fail-fast on
+  an empty `DASHBOARD_SNAPSHOT_BUCKET`) so it cannot go stale — written and validated
+  locally, not yet exercised by a real run. **Frontend** → web gate →
   `firebase deploy --only hosting` (same keyless WIF identity, ADC — no stored
   token). **Delivery cadence:** the operator merges `dev` → `main` to deploy; the
   agent builds and verifies locally but does not deploy.
@@ -489,6 +553,12 @@ pure view-model builders, the only place display values are derived),
 - **Cadence:** one Cloud Run Job execution per trading day, triggered by Cloud
   Scheduler at 17:00 NY. Each run is idempotent by Decision_Date (keyed upserts),
   so re-running a date overwrites rather than duplicates.
+- **Intraday cadence:** a second Cloud Run Job `intraday-validation-run` fires once per
+  weekday at 08:00 Europe/London (Scheduler `intraday-validation-run-0800-uk`) and logs
+  `intraday_validation.start|complete` (`validated`, `unavailable`, `republished`). Manual
+  run: `gcloud run jobs execute intraday-validation-run --region europe-west1 --wait`.
+  Hazard: it republishes `dashboard.json`, so run it only on an image that key-replaces
+  `intradayValidation` (the first version clobbered the daily slices; fixed 2026-11-06).
 - **Observability:** structured JSON logs (`scheduled_run.start`,
   `candle_freshness.*`, `scheduled_run.snapshot_written`, `scheduled_run.complete`).
   A log-based Cloud Monitoring alert fires on `candle_freshness.degraded`
@@ -499,11 +569,12 @@ pure view-model builders, the only place display values are derived),
 - **Operational-safety protocol:** live-cloud actions (manual Job runs, migrations,
   IAM/secret changes, backfills) are operator-approved, never autonomous. Secrets
   are referenced by name only and never logged.
-- **Known live issue:** the Scheduler fires at the exact 17:00 NY candle close and
-  the in-Job retry window (~6 min) can expire before OHLC providers publish the
-  day's bar, producing a benign-but-noisy `candle_freshness.degraded` alert that
-  the next run clears. Root-caused; fix (shift schedule to ~17:30 NY + widen
-  retry) pending — see RISKS / NEXT-STEPS.
+- **Resolved (2026-11-06, operator-confirmed):** the Scheduler used to fire at the
+  exact 17:00 NY candle close, so the in-Job retry window (~6 min) could expire before
+  OHLC providers published the day's bar, causing a recurring `candle_freshness.degraded`
+  alert. Moving the schedule to `30 17 * * 1-5` America/New_York fixed it. (Whether the
+  Job retry env vars were also widened was not checked; the operator reports the schedule
+  shift alone resolved it.) The optional alert-softening idea remains in NEXT-STEPS.
 
 ---
 
@@ -557,8 +628,12 @@ Summarised; the authoritative, moving detail is in `docs/state/CHANGELOG.md`
 | `mobile-dashboard-single-window` (SPA single-window refactor) | Complete locally |
 | `trader-edge-validation` (evidence layer: trade-sim/ledger/walk-forward/exposure) | Code-complete (Stages A–H), NOT deployed; no edge measured yet |
 | Signal Scorecard (per-signal predicted-vs-actual, schema v7) | DEPLOYED + live-verified |
+| `intraday-validation` (read-only 4H candle validation, schema v8) | DEPLOYED; manual runs live-verified (5 pairs, other slices byte-identical); first scheduled 08:00 fire and SPA card render not yet confirmed |
 
-**Open threads right now** (see NEXT-STEPS for detail): confirm the first signal-
+**Open threads right now** (see NEXT-STEPS for detail): confirm the first scheduled
+intraday run (Mon 2026-11-09 08:00 London) and that the SPA renders the intraday card;
+exercise the new deploy.yml step that keeps the intraday Job on the current image;
+confirm the first signal-
 scorecard reconciliation and the web bundle rendering the "Recorded" line; the
 candle-freshness schedule-timing fix; deploy/measure `trader-edge-validation`; the
 analogue FLAT dead-band unit-mismatch decision.
