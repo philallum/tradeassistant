@@ -98,8 +98,12 @@ export interface PairEvaluation {
  * is not surfaced as a directional card. There is no suppression step: the
  * former Gate_Auto_Block and news suppressor have been removed, so firing is a
  * pure function of the deterministic direction and Earned_Confidence.
+ *
+ * This is the SINGLE definition of the firing rule. Every consumer that needs to know
+ * whether a pair "fired" (persistence, the snapshot's per-pair rows, the daily-note input,
+ * the walk-forward regenerator) calls this function; do not re-implement it.
  */
-function fires(evaluation: PairEvaluation, confidenceThreshold: number): boolean {
+export function fires(evaluation: PairEvaluation, confidenceThreshold: number): boolean {
   return (
     evaluation.direction !== "FLAT" &&
     evaluation.earnedConfidence >= confidenceThreshold
@@ -157,61 +161,18 @@ export function dailyRun(
     byPair.set(evaluation.pair, evaluation);
   }
 
-  // Stage 1: per-pair firing decision, iterated in the canonical PAIRS order
-  // so the resulting order (and thus the view) is deterministic.
-  const firing: FiringSetup[] = [];
-  const firingEvaluations = new Map<Pair, PairEvaluation>();
+  // Per-pair firing decision, iterated in the canonical PAIRS order so the resulting
+  // order (and thus the view) is deterministic. No suppressor runs - the
+  // Currency_Concentration_Guard (Requirement 3.3) and Choppiness_Guard (Requirement
+  // 3.1) have been removed - so every firing pair becomes a card. Empty => silent
+  // (Requirement 16.2).
+  const cards: FiringCard[] = [];
   for (const pair of PAIRS) {
     const evaluation = byPair.get(pair);
     if (evaluation && fires(evaluation, config.confidenceThreshold)) {
-      firing.push(toFiringSetup(evaluation));
-      firingEvaluations.set(pair, evaluation);
+      cards.push(toFiringCard(toFiringSetup(evaluation), evaluation));
     }
   }
 
-  // Stage 2: render the firing setups. No suppressor runs — the
-  // Currency_Concentration_Guard (Requirement 3.3) and Choppiness_Guard
-  // (Requirement 3.1) have been removed — so every firing pair becomes a card.
-  // Empty ⇒ silent (Requirement 16.2).
-  const cards: FiringCard[] = firing.map((setup) => {
-    const evaluation = firingEvaluations.get(setup.pair);
-    // `evaluation` is always present: every firing pair recorded its evaluation
-    // above. The fallback keeps the render total and satisfies the type-checker
-    // without inventing display text.
-    return evaluation
-      ? toFiringCard(setup, evaluation)
-      : toFiringCard(setup, {
-          ...setup,
-          choppiness: 0,
-          rationale: "",
-          analogueLabels: [],
-        });
-  });
-
   return { decisionDate, cards };
-}
-
-/**
- * The Dashboard as the Component 11 interface object (Requirement 16). Binds an
- * optional configuration; `dailyRun` takes the Decision_Date and the per-pair
- * evaluations produced by the compute pipeline (task 11.1).
- */
-export interface Dashboard {
-  dailyRun(
-    decisionDate: TradingDate,
-    evaluations: readonly PairEvaluation[],
-  ): DashboardView;
-}
-
-/**
- * Construct a {@link Dashboard} bound to a configuration (Requirement 16.4). The
- * Confidence_Threshold is configurable and tunable against the Kill_Gate
- * backtest.
- */
-export function createDashboard(config: DashboardConfig = DEFAULT_DASHBOARD_CONFIG): Dashboard {
-  return {
-    dailyRun(decisionDate, evaluations) {
-      return dailyRun(decisionDate, evaluations, config);
-    },
-  };
 }

@@ -15,6 +15,7 @@
 
 import type { PipelineConfig, PipelineStores } from "../pipeline/types.js";
 import { evaluatePair } from "../pipeline/dailyPipeline.js";
+import { fires } from "../dashboard/dashboard.js";
 import { PAIRS, type Pair } from "../ingestion/types.js";
 import type { TradingDate } from "../guard/types.js";
 import type { LedgerForecast } from "../trade-ledger/buildTradeLedger.js";
@@ -55,9 +56,7 @@ export function pipelineForecastRegenerator(
       const dates = await oosTradingDates(stores, pair, outOfSample);
       for (const decisionDate of dates) {
         const evaluation = await evaluatePair(pair, decisionDate, stores, config);
-        const fired =
-          evaluation.direction !== "FLAT" &&
-          evaluation.earnedConfidence >= params.confidenceThreshold;
+        const fired = fires(evaluation, params.confidenceThreshold);
         forecasts.push({
           strategyId,
           pair,

@@ -50,6 +50,19 @@ export function formatTradingDate(date: Date): TradingDate {
 }
 
 /**
+ * The previous CALENDAR date (UTC) of a `YYYY-MM-DD` date - a calendar step, NOT a
+ * trading-day step (Monday maps to Sunday). Used to bound reads that must stay
+ * strictly BEFORE a Decision_Date: stores take an inclusive `endDate`, so loading up
+ * to the day before the Decision_Date keeps every candle strictly earlier. The
+ * strategies' own `assertPastOnly` still guards look-ahead on top of this.
+ */
+export function previousCalendarDate(date: TradingDate): TradingDate {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
  * Returns true if the day is a weekday (Monday to Friday, UTC day 1..5).
  * Saturday (6) and Sunday (0) are non-trading days.
  */

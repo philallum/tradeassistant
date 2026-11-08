@@ -1,5 +1,19 @@
 # Trading Assistant — Partner Brief
 
+> **Historical document - partly out of date (banner added 2026-11-08).** This brief explains the
+> *idea* well and is still a useful read for a new trader, but the dashboard it describes has changed.
+> For the current behaviour see [`PROJECT-STATE.md`](../PROJECT-STATE.md), especially
+> [section 12](../PROJECT-STATE.md#12-reading-the-numbers-known-limitations-and-non-goals). Out of date:
+>
+> - **The five-tab layout** (Setups, Pattern & Outcomes, Gate, AI, Third-party). The tab bar was removed;
+>   the UI is a single-window card per pair with an All-pairs strip.
+> - **Stop-loss / take-profit** shown on cards. Removed from every UI surface.
+> - **"A suppression list ... the dashboard tells you why."** There are no suppressors any more: a pair
+>   fires if its direction is not FLAT and its earned confidence is at least 0.55, otherwise the day is
+>   silent for that pair.
+> - **"Around 5pm New York time."** The scheduled run is at **17:30** New York, Monday to Friday.
+> - **Horizon.** The brief speaks of a 1-3 day horizon; in practice the system is horizon-1 only.
+
 A plain-language walkthrough of what this platform is, how it finds signals, what it produces each day, and what you'll see on the dashboard. Written for a trader coming on board to help shape the signal and the UI. No code or architecture here — just how it behaves and what it shows.
 
 ---

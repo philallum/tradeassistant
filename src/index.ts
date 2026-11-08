@@ -1,14 +1,12 @@
 // FX Daily Pattern Trading Assistant.
 //
 // Deterministic TypeScript core (authoritative) with isolated Python
-// statistical cross-checks. This entry point is intentionally minimal at the
-// scaffold stage; feature modules are added in later tasks under src/.
+// statistical cross-checks. This entry point only re-exports the feature modules
+// under src/.
 //
 // Compute / storage / serving separation (Requirement 17): the module layout
 // below keeps compute and storage independent of any serving layer.
 
-/** Placeholder scaffold marker. Replaced by real modules in later tasks. */
-export const SCAFFOLD_READY = true;
 
 // Look-Ahead Safety Guard Primitive (Requirement 4).
 export * from "./guard/index.js";
@@ -28,9 +26,6 @@ export * from "./baseline/index.js";
 // LLM_Interface — role-gated, provenance-tagged AI gateway (Requirement 2).
 export * from "./llm/index.js";
 
-// News Filter — calendar ingestion, LLM risk flag, deterministic suppression,
-// and the feed fail-safe (Requirement 14).
-export * from "./news-filter/index.js";
 
 // Signal Rationale & Pattern Description (Requirement 15). Display-only,
 // outward edge of the AI / Deterministic boundary.
@@ -55,7 +50,7 @@ export * from "./scheduled-run/index.js";
 
 // End-to-End Daily-Run Pipeline — the single deterministic path wiring
 // ingestion → encoder → retrieval → resolver → confidence → kill-gate →
-// news filter → risk boundaries → dashboard (task 11.1;
+// risk boundaries → dashboard (task 11.1;
 // Requirements 16.1, 16.7, 17.1, 3.1).
 export * from "./pipeline/index.js";
 

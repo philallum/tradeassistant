@@ -1,5 +1,22 @@
 # FX Daily Pattern Trading Assistant — Project Plan
 
+> **Historical document - partly superseded (banner added 2026-11-08).** This is the original
+> greenfield plan. It is kept because its rationale (and `LESSONS.md`) still stand, but parts of
+> the *design* no longer describe the system. For the system **as built** read
+> [`PROJECT-STATE.md`](PROJECT-STATE.md). Specifically superseded:
+>
+> - **PASS/CUT kill-gate verdict** as the rule that lets a signal surface (Section 2 "Kill-gate", Task 6, Task 9). The live
+>   firing rule is a single predicate (`fires()`: direction not FLAT and confidence >= 0.55) and the
+>   two-stage measurement is now a human-read evaluation report with no verdict (PROJECT-STATE 5.7-5.8).
+> - **The news / economic-calendar no-trade filter** (Section 4, Task 8). It was de-scoped and its code
+>   (`src/news-filter/`) was removed. News is not an input to anything.
+> - **Task 7, feature discovery through the gate.** Not pursued; the model is shape-only.
+> - **Multi-horizon selection** (Section 2 "Horizon"). In practice the system is horizon-1 only (PROJECT-STATE 5.4).
+> - **"Local-first" delivery.** The system runs as a Cloud Run Job publishing a static `dashboard.json`
+>   to a public bucket, read by a Firebase-hosted SPA.
+> - **Per-trade stop-loss / take-profit** as a displayed output. Removed from every UI surface because
+>   daily bars cannot say which level is hit first.
+
 > Self-contained plan for a greenfield personal trading assistant. Written to be dropped into a fresh Kiro project with no prior context. It restates its own rationale, defines every term concretely, specifies the stack, and designs the AI role in from the start.
 
 ## 0. Context & Hard-Won Lessons (read first — this replaces any prior-project knowledge)

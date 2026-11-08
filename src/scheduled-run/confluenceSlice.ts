@@ -26,6 +26,7 @@
 // admit any provenance / LLM field (Requirement 11.10).
 
 import type { TradingDate } from "../guard/types.js";
+import { previousCalendarDate } from "../guard/tradingDate.js";
 import { PAIRS, type Pair, type CandleStore } from "../ingestion/types.js";
 import type { PairEvaluation } from "../dashboard/dashboard.js";
 import type { ExternalReferenceSignal } from "../external-signal/types.js";
@@ -53,6 +54,7 @@ import {
   type SnapshotConfluenceStrategyId,
 } from "./snapshot.js";
 import { HISTORY_WINDOW_DAYS, windowStartDate } from "./snapshotHistory.js";
+import { warnEvent } from "./warn.js";
 
 /**
  * The collaborators {@link buildConfluenceSlice} needs. All read-only; the slice
@@ -72,6 +74,24 @@ export interface ConfluenceSliceDeps {
   readonly env?: NodeJS.ProcessEnv;
   /** Secret-free warning sink (defaults to a structured `console.warn`). */
   readonly warn?: (slice: string, err: unknown) => void;
+  /**
+   * An already-built per-run matrix (see {@link buildRunMatrix}) to project instead of
+   * building a second one. `null` means "the matrix could not be built" and yields the
+   * empty slice. Omit to have this call build its own (the standalone behaviour).
+   */
+  readonly run?: RunMatrix | null;
+}
+
+/**
+ * The per-run Confluence_Matrix plus the Pairs whose candle load FAILED (as opposed to
+ * returning zero candles). The daily run builds this ONCE and hands the same value to both
+ * consumers - the `confluence` snapshot slice and the Signal Scorecard recorder - so the two
+ * can never disagree about a run's inputs.
+ */
+export interface RunMatrix {
+  readonly matrix: ConfluenceMatrix;
+  /** Pairs whose candle load threw; their cells are all-unavailable. */
+  readonly failedPairs: ReadonlySet<Pair>;
 }
 
 /** The slice name carried in every warning log. */
@@ -82,20 +102,7 @@ const SLICE_NAME = "confluence" as const;
  * (no keys, env values, or config dumps) (Requirement 10.6).
  */
 function defaultWarn(slice: string, err: unknown): void {
-  const message = err instanceof Error ? err.message : String(err);
-  console.warn(JSON.stringify({ event: "scheduled_run.confluence_slice_failed", slice, message }));
-}
-
-/**
- * Decrement a `YYYY-MM-DD` date by one calendar day (UTC). The store's `endDate`
- * is inclusive, so loading up to the day BEFORE the Decision_Date keeps every
- * candle strictly before it; the strategies' own `assertPastOnly` still guards
- * look-ahead on top of this (Design "9. Snapshot wiring").
- */
-function dayBefore(date: TradingDate): TradingDate {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().slice(0, 10);
+  warnEvent("scheduled_run.confluence_slice_failed", { slice }, err);
 }
 
 /** Map an engine {@link ConfluenceConfig} weights record to the wire record. */
@@ -198,7 +205,7 @@ async function loadCandlesByPair(
   warn: (slice: string, err: unknown) => void,
 ): Promise<Map<Pair, PairConfluenceInput["candles"] | null>> {
   const windowStart = windowStartDate(decisionDate, HISTORY_WINDOW_DAYS);
-  const endDate = dayBefore(decisionDate);
+  const endDate = previousCalendarDate(decisionDate);
 
   const entries = await Promise.all(
     PAIRS.map(async (pair): Promise<[Pair, PairConfluenceInput["candles"] | null]> => {
@@ -216,22 +223,133 @@ async function loadCandlesByPair(
 }
 
 /**
- * Build the v5 `confluence` slice for a daily run. NEVER throws (Requirement
- * 10.6).
+ * Build the per-run {@link RunMatrix} for the Decision_Date. This is the single place the
+ * Confluence_Matrix is assembled (engine config, strategy bundle, per-Pair candles, the
+ * `custom_pattern` evaluation and the display-only third-party reference).
  *
  * Steps:
  *   1. Resolve the engine config from the environment via
  *      {@link confluenceConfigFromEnv}; a parse failure (or a rejected engine
  *      config) falls back to the engine DEFAULTS with a secret-free warning.
  *   2. Load each Pair's candles (strictly before the Decision_Date). A per-Pair
- *      load failure becomes that Pair's all-unavailable `candles_unavailable`
- *      cells (Requirement 10.4); other Pairs continue.
+ *      load failure is WARNED (secret-free) and recorded in `failedPairs`; that Pair
+ *      gets all-unavailable cells (Requirement 10.4) and other Pairs continue.
  *   3. Read the per-Pair third-party `reference`s from `displayOnly.comparisons`.
  *   4. Run {@link buildConfluenceMatrix} for the single shared Decision_Date
- *      (Requirement 10.7) and map the result with {@link toSnapshotConfluence}.
+ *      (Requirement 10.7).
  *
- * Any failure outside the per-Pair candle handling logs the slice name and
- * `err.message` only and returns {@link EMPTY_CONFLUENCE}, so the run and every
+ * Returns `null` (after a secret-free warning) when the engine or strategy bundle cannot
+ * be constructed. May throw only on an unexpected defect; callers wrap it fail-safe.
+ */
+export async function buildRunMatrix(deps: ConfluenceSliceDeps): Promise<RunMatrix | null> {
+  const warn = deps.warn ?? defaultWarn;
+
+  // 1. Resolve config from env, falling back to defaults on any problem.
+  const envConfig = confluenceConfigFromEnv(deps.env ?? process.env);
+  let engineResult = createConfluenceEngine(envConfig.ok ? envConfig.value : undefined);
+  if (!envConfig.ok) {
+    warn(SLICE_NAME, new Error(`invalid confluence config; using defaults: ${envConfig.error.message}`));
+    engineResult = createConfluenceEngine();
+  } else if (!engineResult.ok) {
+    // A valid parse that still produces an out-of-range engine config: log and
+    // fall back to the defaults rather than failing the slice.
+    warn(SLICE_NAME, new Error(`invalid confluence config; using defaults: ${engineResult.error.message}`));
+    engineResult = createConfluenceEngine();
+  }
+  if (!engineResult.ok) {
+    // The default engine config cannot be invalid; this is defensive only.
+    warn(SLICE_NAME, new Error(engineResult.error.message));
+    return null;
+  }
+  const engine = engineResult.value;
+
+  const strategies = buildStrategyBundle();
+  if (strategies === null) {
+    warn(SLICE_NAME, new Error("strategy bundle construction failed"));
+    return null;
+  }
+
+  // 3. Index the display-only third-party references by Pair.
+  const referenceByPair = new Map<Pair, ExternalReferenceSignal | null>();
+  for (const comparison of deps.displayOnly?.comparisons ?? []) {
+    referenceByPair.set(comparison.pair as Pair, comparison.reference);
+  }
+
+  // 2. Load candles per Pair with isolated failure handling.
+  const candlesByPair = await loadCandlesByPair(deps.candleStore, deps.decisionDate, warn);
+
+  // Index the deterministic evaluations by Pair for the custom_pattern cell.
+  const evaluationByPair = new Map<Pair, PairEvaluation>();
+  for (const evaluation of deps.evaluations) {
+    evaluationByPair.set(evaluation.pair, evaluation);
+  }
+
+  // Assemble one input per Pair, in canonical PAIRS order. A failed candle load (null) is
+  // recorded in `failedPairs` and left out of the inputs (absent input => INSUFFICIENT_DATA).
+  const failedPairs = new Set<Pair>();
+  const inputs: PairConfluenceInput[] = [];
+  for (const pair of PAIRS) {
+    const candles = candlesByPair.get(pair);
+    if (candles === null || candles === undefined) {
+      failedPairs.add(pair);
+      continue;
+    }
+    inputs.push({
+      pair,
+      candles,
+      evaluation: evaluationByPair.get(pair),
+      thirdParty: referenceByPair.get(pair),
+    });
+  }
+
+  // 4. Build the matrix for the single shared Decision_Date.
+  const matrix = buildConfluenceMatrix({
+    decisionDate: deps.decisionDate,
+    inputs,
+    strategies,
+    engine,
+  });
+  return { matrix, failedPairs };
+}
+
+/**
+ * Project a {@link RunMatrix} to the v5 wire slice. `null` (the matrix could not be built)
+ * yields {@link EMPTY_CONFLUENCE}. A Pair whose candle load FAILED (as opposed to returning
+ * zero candles) gets all-unavailable `candles_unavailable` cells (Requirement 10.4): the
+ * matrix already returns an INSUFFICIENT_DATA Pair for it (absent input => zero candles), so
+ * only the cell reasons need overriding to name the load failure specifically. Pure.
+ */
+export function sliceFromRunMatrix(run: RunMatrix | null): SnapshotConfluenceSlice {
+  if (run === null) {
+    return EMPTY_CONFLUENCE;
+  }
+  const slice = toSnapshotConfluence(run.matrix);
+  if (run.failedPairs.size === 0) {
+    return slice;
+  }
+  const pairs = slice.pairs.map((pairSlice): SnapshotConfluencePair => {
+    if (!run.failedPairs.has(pairSlice.pair as Pair)) {
+      return pairSlice;
+    }
+    const cells = STRATEGY_IDS.map(
+      (id): SnapshotConfluenceCell => ({
+        strategyId: id,
+        available: false,
+        reason: "candles_unavailable",
+      }),
+    );
+    return { ...pairSlice, cells };
+  });
+  return { ...slice, pairs };
+}
+
+/**
+ * Build the v5 `confluence` slice for a daily run. NEVER throws (Requirement 10.6).
+ *
+ * Projects `deps.run` when the caller already built the matrix (the daily run builds it once
+ * and shares it with the Signal Scorecard); otherwise builds its own via
+ * {@link buildRunMatrix}. Any failure outside the per-Pair candle handling logs the slice
+ * name and `err.message` only and returns {@link EMPTY_CONFLUENCE}, so the run and every
  * other slice are unaffected.
  */
 export async function buildConfluenceSlice(
@@ -240,101 +358,8 @@ export async function buildConfluenceSlice(
   const warn = deps.warn ?? defaultWarn;
 
   try {
-    // 1. Resolve config from env, falling back to defaults on any problem.
-    const envConfig = confluenceConfigFromEnv(deps.env ?? process.env);
-    let engineResult = createConfluenceEngine(
-      envConfig.ok ? envConfig.value : undefined,
-    );
-    if (!envConfig.ok) {
-      warn(SLICE_NAME, new Error(`invalid confluence config; using defaults: ${envConfig.error.message}`));
-      engineResult = createConfluenceEngine();
-    } else if (!engineResult.ok) {
-      // A valid parse that still produces an out-of-range engine config: log and
-      // fall back to the defaults rather than failing the slice.
-      warn(SLICE_NAME, new Error(`invalid confluence config; using defaults: ${engineResult.error.message}`));
-      engineResult = createConfluenceEngine();
-    }
-    if (!engineResult.ok) {
-      // The default engine config cannot be invalid; this is defensive only.
-      warn(SLICE_NAME, new Error(engineResult.error.message));
-      return EMPTY_CONFLUENCE;
-    }
-    const engine = engineResult.value;
-
-    const strategies = buildStrategyBundle();
-    if (strategies === null) {
-      warn(SLICE_NAME, new Error("strategy bundle construction failed"));
-      return EMPTY_CONFLUENCE;
-    }
-
-    // 3. Index the display-only third-party references by Pair.
-    const referenceByPair = new Map<Pair, ExternalReferenceSignal | null>();
-    for (const comparison of deps.displayOnly?.comparisons ?? []) {
-      referenceByPair.set(comparison.pair as Pair, comparison.reference);
-    }
-
-    // 2. Load candles per Pair with isolated failure handling.
-    const candlesByPair = await loadCandlesByPair(
-      deps.candleStore,
-      deps.decisionDate,
-      warn,
-    );
-
-    // Index the deterministic evaluations by Pair for the custom_pattern cell.
-    const evaluationByPair = new Map<Pair, PairEvaluation>();
-    for (const evaluation of deps.evaluations) {
-      evaluationByPair.set(evaluation.pair, evaluation);
-    }
-
-    // Assemble one input per Pair. A failed candle load (null) is left to the
-    // per-Pair fallback below; otherwise build the normal matrix input.
-    const failedPairs = new Set<Pair>();
-    const inputs: PairConfluenceInput[] = [];
-    for (const pair of PAIRS) {
-      const candles = candlesByPair.get(pair);
-      if (candles === null || candles === undefined) {
-        failedPairs.add(pair);
-        continue;
-      }
-      inputs.push({
-        pair,
-        candles,
-        evaluation: evaluationByPair.get(pair),
-        thirdParty: referenceByPair.get(pair),
-      });
-    }
-
-    // 4. Build the matrix for the single shared Decision_Date and map to wire.
-    const matrix = buildConfluenceMatrix({
-      decisionDate: deps.decisionDate,
-      inputs,
-      strategies,
-      engine,
-    });
-    const slice = toSnapshotConfluence(matrix);
-
-    // A Pair whose candle load FAILED (as opposed to returning zero candles)
-    // gets all-unavailable `candles_unavailable` cells (Requirement 10.4). The
-    // matrix already returns an INSUFFICIENT_DATA Pair for it (absent input ⇒
-    // zero candles), so only the cell reasons need overriding to name the load
-    // failure specifically.
-    if (failedPairs.size === 0) {
-      return slice;
-    }
-    const pairs = slice.pairs.map((pairSlice): SnapshotConfluencePair => {
-      if (!failedPairs.has(pairSlice.pair as Pair)) {
-        return pairSlice;
-      }
-      const cells = STRATEGY_IDS.map(
-        (id): SnapshotConfluenceCell => ({
-          strategyId: id,
-          available: false,
-          reason: "candles_unavailable",
-        }),
-      );
-      return { ...pairSlice, cells };
-    });
-    return { ...slice, pairs };
+    const run = deps.run !== undefined ? deps.run : await buildRunMatrix(deps);
+    return sliceFromRunMatrix(run);
   } catch (err) {
     // Any failure outside the per-Pair candle handling: log secret-free and
     // return the empty slice so the run still publishes dashboard.json (Req 10.6).

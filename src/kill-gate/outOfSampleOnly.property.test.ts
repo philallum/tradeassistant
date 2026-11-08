@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { composeGateVerdict, type FoldGateInput } from "./verdict.js";
+import { composeEvaluationReport, type FoldGateInput } from "./verdict.js";
 import { walkForwardFolds, outOfSampleTestRanges } from "./walkForward.js";
-import { GATE1_SAMPLE_SIZE_FLOOR } from "./types.js";
+import { GATE1_SAMPLE_SIZE_FLOOR, type EvaluationSplit } from "./types.js";
 import type { Gate1FiringSample } from "./types.js";
 import type { WalkForwardConfig, WalkForwardFold } from "./types.js";
 import type { ForwardOutcome, DirectionClass } from "../retrieval/types.js";
@@ -15,6 +15,13 @@ import {
   isTradingDay,
 } from "../guard/tradingDate.js";
 import { PAIRS } from "../ingestion/types.js";
+
+/** A fixed out-of-sample split label for the report; the property reads only `sampleSize`. */
+const SPLIT: EvaluationSplit = {
+  trainEnd: "2019-12-31",
+  testStart: "2020-01-01",
+  testEnd: "2020-12-31",
+};
 
 // Feature: fx-daily-pattern-assistant, Property 18: For all Kill_Gate verdicts, every date contributing to the scored metrics belongs to the Out_Of_Sample_Test partition.
 //
@@ -196,7 +203,7 @@ describe("Property 18: out-of-sample-only verdicts", () => {
             };
           });
 
-          const verdict = composeGateVerdict("config-p18", foldInputs);
+          const verdict = composeEvaluationReport("config-p18", foldInputs, SPLIT);
 
           // The set of dates that actually contributed to the aggregate metrics.
           const scored = scoredDecisionDates(foldInputs);

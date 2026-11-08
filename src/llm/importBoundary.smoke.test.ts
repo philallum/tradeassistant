@@ -149,10 +149,9 @@ describe("LLM import boundary (Requirement 2.4)", () => {
 
     // Consumers known to require LLM access — each MUST reach it via the
     // LLM_Interface barrel, never a provider SDK.
-    const llmConsumers = [
-      join(SRC_ROOT, "news-filter", "newsFilter.ts"),
-      join(SRC_ROOT, "rationale", "rationale.ts"),
-    ].filter((f) => files.includes(f));
+    const llmConsumers = [join(SRC_ROOT, "rationale", "rationale.ts")].filter((f) =>
+      files.includes(f),
+    );
 
     // Guard against the fixture drifting: if the modules move, fail loudly.
     expect(llmConsumers.length).toBeGreaterThan(0);

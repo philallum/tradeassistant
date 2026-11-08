@@ -368,6 +368,42 @@ describe("buildTrackRecordSlice", () => {
     expect(slice.strategies.length).toBeGreaterThan(0); // strategy records still publish
   });
 
+  it("REPORTS a deadline-truncated range replay instead of looking like 'no forecasts'", async () => {
+    const warnings: Array<{ slice: string; message: string }> = [];
+    await buildTrackRecordSlice({
+      decisionDate,
+      candleStore: await store(),
+      realizedOutcomes: [],
+      strategies: bundle("UP"),
+      lookbackDays: 5,
+      rangeLookbackDays: 5,
+      rangeDeadlineMs: 20,
+      forecast: () => new Promise(() => undefined),
+      warn: (slice, err) =>
+        warnings.push({ slice, message: err instanceof Error ? err.message : String(err) }),
+    });
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.slice).toBe("track_record:range");
+    expect(warnings[0]?.message).toContain("20ms deadline");
+  });
+
+  it("does not report a deadline when the range replay finishes in time", async () => {
+    const warnings: string[] = [];
+    await buildTrackRecordSlice({
+      decisionDate,
+      candleStore: await store(),
+      realizedOutcomes: [],
+      strategies: bundle("UP"),
+      lookbackDays: 5,
+      rangeLookbackDays: 5,
+      forecast: () => Promise.resolve(null),
+      warn: (slice) => warnings.push(slice),
+    });
+
+    expect(warnings).toEqual([]);
+  });
+
   it("EMPTY_TRACK_RECORD is the well-formed default", () => {
     expect(EMPTY_TRACK_RECORD).toEqual({ lookbackDays: 0, strategies: [], rangeForecast: [] });
   });

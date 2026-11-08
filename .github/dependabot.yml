@@ -88,9 +88,8 @@ updates:
       # engines.node ">=22.0.0 <23.0.0"). Hold below major 23.
       - dependency-name: "@types/node"
         versions: [">=23"]
-      # React 19 is a deliberate deferred migration; the recharts 2 peer accepts
-      # React 16/17/18 only. react and react-dom must move together, so both are
-      # held below major 19 until the migration is scheduled.
+      # React 19 is a deliberate deferred migration. react and react-dom must move
+      # together, so both are held below major 19 until the migration is scheduled.
       - dependency-name: "react"
         versions: [">=19"]
       - dependency-name: "react-dom"
@@ -100,10 +99,6 @@ updates:
         versions: [">=19"]
       - dependency-name: "@types/react-dom"
         versions: [">=19"]
-      # recharts 3 changes the Tooltip `Formatter` type (breaking API change,
-      # TS2322 in the chart components) — deferred migration. Hold below major 3.
-      - dependency-name: "recharts"
-        versions: [">=3"]
 
   # Keep GitHub Actions used by CI/deploy workflows current.
   - package-ecosystem: github-actions

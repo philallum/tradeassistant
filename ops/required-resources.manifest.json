@@ -16,7 +16,7 @@
   "cloudSchedulerJobs": [
     {
       "name": "scheduled-daily-run-session-close",
-      "schedule": "0 17 * * 1-5",
+      "schedule": "30 17 * * 1-5",
       "timeZone": "America/New_York",
       "triggers": "scheduled-daily-run",
       "invokerServiceAccount": "scheduler-invoker@trade-assistant-508806.iam.gserviceaccount.com",

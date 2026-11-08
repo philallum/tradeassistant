@@ -22,6 +22,7 @@
 import { PAIRS, type Pair } from "../ingestion/types.js";
 import type { Candle, TradingDate } from "../guard/types.js";
 import { isMatured } from "../guard/lookAheadGuard.js";
+import { previousCalendarDate } from "../guard/tradingDate.js";
 import { computeAtr14 } from "../confidence/atr.js";
 import { deriveExpectedRange } from "../range-forecast/expectedRange.js";
 import type { ExpectedRange } from "../range-forecast/types.js";
@@ -150,7 +151,9 @@ export async function evaluatePair(
   // observation, not a hidden one.
   const narrative = await Promise.resolve(narrativeResolver(pair, decisionDate));
 
-  const nonFiring = (
+  // Builds the PairEvaluation for every outcome of this function (firing or not): the
+  // firing decision itself is made later, by `fires()` in the dashboard.
+  const buildEvaluation = (
     direction: DirectionClass,
     horizon: Horizon,
     confidence: Confidence,
@@ -175,7 +178,7 @@ export async function evaluatePair(
 
   // Not enough history to encode a shape → represent as a non-firing FLAT pair.
   if (window.length === 0) {
-    return nonFiring("FLAT", 1, 0.5 as Confidence, { favorablePips: 0, adversePips: 0 }, null, null);
+    return buildEvaluation("FLAT", 1, 0.5 as Confidence, { favorablePips: 0, adversePips: 0 }, null, null);
   }
 
   // Step 1 (cont.): encode the query Pattern_Vector (encoder enforces the guard).
@@ -217,7 +220,7 @@ export async function evaluatePair(
     deps,
   );
 
-  return nonFiring(direction, horizon, confidence, profile, stopLossPips, takeProfitPips, expectedRange);
+  return buildEvaluation(direction, horizon, confidence, profile, stopLossPips, takeProfitPips, expectedRange);
 }
 
 /**
@@ -239,7 +242,11 @@ async function forecastExpectedRange(
     const stored = await deps.analogueStore.getMaturedOutcomes(pair, decisionDate);
     const history = stored.filter((a) => isMatured(a.decisionDate, a.horizon, decisionDate));
     return deriveExpectedRange(neighborhood, history, horizon, pair, computeAtr14(window));
-  } catch {
+  } catch (err) {
+    // Display-only and fail-safe: no forecast. The notice is reported (not logged here -
+    // the pipeline is pure) so a store error is not indistinguishable from "too little
+    // history to forecast".
+    deps.onWarn?.("expected_range", pair, err);
     return null;
   }
 }
@@ -271,15 +278,3 @@ export async function runDailyPipeline(
 /** rawResolutionRate is re-exported for callers that want the raw score alongside. */
 export { rawResolutionRate };
 
-/**
- * The previous calendar date (YYYY-MM-DD) — used to bound the trailing candle
- * window strictly before the Decision_Date. This is a calendar step, not a
- * trading-day step: the CandleStore only holds trading days, so stepping back
- * one calendar day and filtering `date <= priorDate` reliably excludes the
- * Decision_Date itself while retaining every prior trading day.
- */
-function previousCalendarDate(date: TradingDate): TradingDate {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().slice(0, 10);
-}

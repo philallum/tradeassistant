@@ -22,6 +22,7 @@
 import { encodeDatesIntoVectors } from "../encoder/encodeStoredCandles.js";
 import type { PatternVectorStore } from "../encoder/types.js";
 import { compareTradingDates } from "../guard/tradingDate.js";
+import { errorMessage } from "./warn.js";
 import type { TradingDate } from "../guard/types.js";
 import type { OhlcIngestion } from "../ingestion/ohlcIngestion.js";
 import type { CandleStore, IngestReport, Pair, RawCandle } from "../ingestion/types.js";
@@ -220,7 +221,19 @@ async function processPair(
   // dates are those now stored in `(preRunLatest, target]`; encoding reads a
   // trailing window STRICTLY BEFORE each date (look-ahead safe via the helper).
   const newlyCovered = await datesToEncode(deps, pair, preRunLatest, target);
-  await encodeDatesIntoVectors(deps.candleStore, deps.vectorStore, pair, newlyCovered);
+  const log = deps.logger ?? defaultLogger;
+  await encodeDatesIntoVectors(
+    deps.candleStore,
+    deps.vectorStore,
+    pair,
+    newlyCovered,
+    undefined,
+    // A date whose vector could not be stored lowers this pair's analogue pool, so it is
+    // surfaced (names/dates/message only) rather than skipped silently.
+    (date, err) => {
+      log({ event: "candle_freshness.encode_skipped", pair, date, message: errorMessage(err) });
+    },
+  );
 
   const latestDate = await latestStored(deps, pair);
   return {

@@ -206,7 +206,7 @@ export interface RoleRejection {
 /**
  * Recorder PORT for role rejections (Requirement 2.5, 17.1). The LLM_Interface
  * depends only on this port, never on storage directly — mirroring the
- * storage-port pattern used across the codebase (e.g. `GateVerdictStore`,
+ * storage-port pattern used across the codebase (e.g. `EvaluationReportStore`,
  * `DocStore`). A real adapter can persist to the `role_rejections` audit sink;
  * the in-memory reference implementation keeps the interface testable offline.
  */

@@ -29,6 +29,7 @@ import {
   type SnapshotValidationStatus,
 } from "./snapshot.js";
 import { HISTORY_WINDOW_DAYS, windowStartDate } from "./snapshotHistory.js";
+import { warnEvent } from "./warn.js";
 
 /** The system's Strategy_Source id in the ledger. */
 const SYSTEM_STRATEGY_ID = "system";
@@ -48,8 +49,7 @@ export interface EdgeSliceDeps {
 }
 
 function defaultWarn(slice: string, err: unknown): void {
-  const message = err instanceof Error ? err.message : String(err);
-  console.warn(JSON.stringify({ event: "scheduled_run.edge_slice_failed", slice, message }));
+  warnEvent("scheduled_run.edge_slice_failed", { slice }, err);
 }
 
 /** Wire form of a summary: JSON has no Infinity, so an infinite profit factor is `null`. */

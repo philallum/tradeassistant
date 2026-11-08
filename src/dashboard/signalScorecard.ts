@@ -172,6 +172,12 @@ export class InMemorySignalPredictionStore implements SignalPredictionStore {
   }
 }
 
+/** Options for {@link recordPredictions}. */
+export interface RecordPredictionsOptions {
+  /** Signals whose cells must NOT be recorded for this call. */
+  readonly excludeStrategyIds?: readonly StrategyId[];
+}
+
 /**
  * Record one row per AVAILABLE signal cell in the per-run Confluence_Matrix,
  * keyed by (decisionDate, pair, strategyId), carrying the signal's suggested
@@ -187,13 +193,21 @@ export class InMemorySignalPredictionStore implements SignalPredictionStore {
  *
  * Idempotent: re-running the same Decision_Date upserts the same keys.
  *
+ * `options.excludeStrategyIds` omits whole signals from this recording (their cells are
+ * simply not written). The daily run uses it to withhold `third_party` on a REPLAYED
+ * Decision_Date: that signal is a LIVE external read that cannot be reconstructed for a
+ * past date, so recording it under a replayed date would store today's value as that
+ * date's prediction. Omitted by default, so the normal run records all six signals.
+ *
  * @returns The rows that were persisted.
  */
 export async function recordPredictions(
   store: SignalPredictionStore,
   matrix: ConfluenceMatrix,
+  options: RecordPredictionsOptions = {},
 ): Promise<readonly SignalPredictionRow[]> {
   const rows: SignalPredictionRow[] = [];
+  const excluded = new Set<StrategyId>(options.excludeStrategyIds ?? []);
 
   for (const pairConfluence of matrix.pairs) {
     // Cells are in canonical STRATEGY_IDS order (length six); index into the
@@ -201,6 +215,7 @@ export async function recordPredictions(
     pairConfluence.cells.forEach((cell, index) => {
       if (!cell.available) return; // no direction to record for an unavailable cell
       const strategyId = STRATEGY_IDS[index] ?? cell.signal.strategyId;
+      if (excluded.has(strategyId)) return;
       rows.push({
         decisionDate: matrix.decisionDate,
         pair: pairConfluence.pair,

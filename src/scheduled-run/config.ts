@@ -163,6 +163,21 @@ export function resolveDecisionDate(
 }
 
 /**
+ * True iff `decisionDate` is the Decision_Date a normal, un-overridden run would use RIGHT
+ * NOW (the America/New_York-derived label, including the roll to the next trading day after
+ * the 17:00 close). False for a replay - an explicit `RUN_DECISION_DATE` naming any other
+ * date.
+ *
+ * Used to withhold data that only exists "live" from a replayed date (see
+ * `recordPredictions`' `excludeStrategyIds`): the third-party reference is fetched from a
+ * live endpoint, so under a replayed date it would be today's value mislabelled as that
+ * date's. Pure given `now`.
+ */
+export function isLiveDecisionDate(decisionDate: TradingDate, now: Date = new Date()): boolean {
+  return decisionDate === resolveDecisionDate({}, now);
+}
+
+/**
  * Resolve the Supabase connection for the Cloud Run (PostgREST/HTTPS) path.
  *
  * The transport is PostgREST over HTTPS, so the resolved `url` must be an

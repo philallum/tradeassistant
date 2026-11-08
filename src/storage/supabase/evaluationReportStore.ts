@@ -15,8 +15,8 @@
 //     metrics jsonb, created_at
 //     -- NO verdict column (Requirement 8.2)
 //
-// It is the successor to `SupabaseGateVerdictStore` on the evaluation write
-// path and is modelled on it directly: it reaches storage ONLY through the
+// It is the evaluation write path (it replaced the removed `SupabaseGateVerdictStore`):
+// it reaches storage ONLY through the
 // injected `SupabaseRestClient`, re-implements NO measurement math
 // (`composeEvaluationReport` in src/kill-gate/verdict.ts stays the sole report
 // producer), and only maps `EvaluationReport` <-> row and reads back the
@@ -26,7 +26,7 @@
 // (`Prefer: return=representation`) so the `gen_random_uuid()` id is read back.
 // Errors are augmented with the `config_id` and remain secret-free — the
 // Supabase key is never part of a `SupabaseRestError`, so it is never surfaced
-// (mirrors the `#guard` in `SupabaseGateVerdictStore`).
+// (the same `#guard` pattern the removed gate-verdict adapter used).
 //
 // Faithful round-trip: the named columns map directly onto the report's scalar
 // fields; the richer sub-objects (`mfeMaeSummary`, `strengthBreakdown`,

@@ -45,6 +45,7 @@ import type {
   ExternalSignalProvider,
   ReferenceDirection,
 } from "./types.js";
+import { redactSecrets } from "../ingestion/redactSecrets.js";
 
 /** Default FCS API v4 base URL (used when `EXTERNAL_SIGNAL_BASE_URL` is blank). */
 export const FCS_DEFAULT_BASE_URL = "https://api-v4.fcsapi.com" as const;
@@ -222,6 +223,6 @@ export class FcsExternalSignalProvider implements ExternalSignalProvider {
   }
 
   #fail(pair: Pair, mode: ExternalSignalError["mode"], message: string): ExternalSignalError {
-    return { reason: "external_signal_error", mode, pair, message };
+    return { reason: "external_signal_error", mode, pair, message: redactSecrets(message, [this.#apiKey]) };
   }
 }

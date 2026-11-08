@@ -55,7 +55,6 @@ import {
   type EvaluationReportStore,
   type EvaluationSplit,
 } from "../../kill-gate/types.js";
-import type { PairEvaluationLoader } from "../../scheduled-run/scheduledRun.js";
 import type { ScheduledRunConfig } from "../../scheduled-run/config.js";
 import { loadScheduledRunConfig } from "../../scheduled-run/config.js";
 import {
@@ -114,14 +113,6 @@ function researchLogBaseDir(): string {
     ? configured
     : tmpdir();
 }
-
-/**
- * A no-op {@link PairEvaluationLoader} / view persister. The evaluation run only
- * reads stored candles/vectors/outcomes to build fold inputs; it never calls the
- * forward-look collaborators, but the staged-runner deps shape requires the
- * fields. Never invoked here.
- */
-const noopEvaluationLoader: PairEvaluationLoader = () => Promise.resolve([]);
 
 /**
  * The outcome of an evaluation run. On a successful compose+record it carries
@@ -228,22 +219,15 @@ export async function runEvaluation(
     }),
   );
 
-  // Assemble the staged-runner deps the SHARED fold-builder reads from. Only the
-  // read-side stores + data dir matter here; the verdict/registry/forward-look
-  // fields are required by the shape but unused by `buildFoldInputs`.
+  // Assemble the staged-runner deps the fold-builder reads from: just the read-side
+  // stores, the CSV loader and the data dir.
   const runnerDeps: StagedRunnerDeps = {
     csvLoader,
     ingestion,
     candleStore: stores.candleStore,
     vectorStore: stores.vectorStore,
     analogueStore: stores.analogueStore,
-    // Unused by buildFoldInputs; a throwing stub asserts it is never touched.
-    gateVerdictStore: unusedGateVerdictStore,
     dataDir,
-    docs,
-    config,
-    loadEvaluations: noopEvaluationLoader,
-    configId,
   };
 
   // Prerequisite: stored candles + vectors must exist (the backfill/seed must
@@ -297,21 +281,6 @@ function makeSharedClient(
     ? new SupabaseRestClient(config.supabase)
     : new SupabaseRestClient(config.supabase, fetchImpl);
 }
-
-/**
- * Throwing stub for the staged-runner deps field `buildFoldInputs` never
- * touches (the gate-verdict store belongs to the retained verdict path, not the
- * report path). If the fold-builder ever reached for it this would fail loudly
- * rather than silently wiring an unintended store.
- */
-const unusedGateVerdictStore: StagedRunnerDeps["gateVerdictStore"] = {
-  persistVerdict() {
-    throw new Error("evaluation-run: gateVerdictStore is not used on the report path");
-  },
-  getVerdict() {
-    throw new Error("evaluation-run: gateVerdictStore is not used on the report path");
-  },
-};
 
 /**
  * Entry wrapper mirroring `gate-run/main.ts`: resolve config, run the evaluation,

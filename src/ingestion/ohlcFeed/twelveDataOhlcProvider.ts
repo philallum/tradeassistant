@@ -28,6 +28,7 @@ import {
   type OhlcFeedProvider,
   type OhlcProviderConfig,
 } from "./types.js";
+import { redactSecrets } from "../redactSecrets.js";
 
 /** Provider provenance tag stamped onto `RawCandle.source` and errors. */
 const PROVIDER_NAME = "TwelveData" as const;
@@ -179,6 +180,12 @@ export class TwelveDataOhlcFeedProvider implements OhlcFeedProvider {
   }
 
   #fail(pair: Pair, mode: OhlcFeedError["mode"], message: string): OhlcFeedError {
-    return { reason: "ohlc_feed_error", mode, provider: PROVIDER_NAME, pair, message };
+    return {
+      reason: "ohlc_feed_error",
+      mode,
+      provider: PROVIDER_NAME,
+      pair,
+      message: redactSecrets(message, [this.#apiKey]),
+    };
   }
 }

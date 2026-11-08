@@ -23,8 +23,19 @@ import {
 import type { RoleInput, RoleOutput } from "./types.js";
 import { earnedConfidence } from "../confidence/confidenceSelector.js";
 import type { Confidence, Horizon } from "../confidence/types.js";
-import { composeGateVerdict, type FoldGateInput } from "../kill-gate/verdict.js";
-import { GATE1_SAMPLE_SIZE_FLOOR, type Gate1FiringSample } from "../kill-gate/types.js";
+import { composeEvaluationReport, type FoldGateInput } from "../kill-gate/verdict.js";
+import {
+  GATE1_SAMPLE_SIZE_FLOOR,
+  type EvaluationSplit,
+  type Gate1FiringSample,
+} from "../kill-gate/types.js";
+
+/** A fixed out-of-sample split; only the report's identity under AI output matters. */
+const SPLIT: EvaluationSplit = {
+  trainEnd: "2019-12-31",
+  testStart: "2020-01-01",
+  testEnd: "2020-12-31",
+};
 import type { AnalogueRecord, DirectionClass, ForwardOutcome } from "../retrieval/types.js";
 import { PAIRS } from "../ingestion/types.js";
 import type { Pair } from "../ingestion/types.js";
@@ -48,7 +59,7 @@ import type { AnalogueSummary, SignalNumericInputs } from "../rationale/types.js
 //
 //   Clause B (deterministic unchanged, Req 2.7, 15.2, 15.4): the directional
 //     probability (`earnedConfidence`) and the Kill_Gate verdict
-//     (`composeGateVerdict`) produce BYTE-IDENTICAL results regardless of
+//     (`composeEvaluationReport`) produce BYTE-IDENTICAL results regardless of
 //     whether rationale / analogue labels were generated for the same signal —
 //     i.e. generating display text has zero effect on the numbers.
 //
@@ -99,7 +110,7 @@ const llmTaggedValue = (): fc.Arbitrary<LlmTagged<unknown>> =>
 const scoringPath = (): fc.Arbitrary<string> =>
   fc.constantFrom(
     "earnedConfidence",
-    "composeGateVerdict",
+    "composeEvaluationReport",
     "evaluateGate1",
     "evaluateGate2",
     "selectHorizon",
@@ -161,7 +172,7 @@ function outcomeWith(mfePips: number, maePips: number): ForwardOutcome {
 
 /**
  * Build one qualifying (>=30-sample) fold whose gates deterministically pass,
- * so `composeGateVerdict` returns a fixed verdict independent of any AI output.
+ * so `composeEvaluationReport` returns a fixed report independent of any AI output.
  */
 function buildFold(pair: Pair, horizon: Horizon): FoldGateInput {
   const size = GATE1_SAMPLE_SIZE_FLOOR + 5;
@@ -295,7 +306,7 @@ describe("Property 4: generating rationale / labels leaves the numeric probabili
     );
   });
 
-  it("composeGateVerdict is identical before vs after rationale / label generation", async () => {
+  it("composeEvaluationReport is identical before vs after rationale / label generation", async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.constantFrom(...PAIRS),
@@ -304,8 +315,8 @@ describe("Property 4: generating rationale / labels leaves the numeric probabili
           const llm = makeLlm();
           const folds = [buildFold(pair, horizon)];
 
-          // Baseline verdict with NO AI output generated.
-          const before = composeGateVerdict("cfg-p4", folds);
+          // Baseline report with NO AI output generated.
+          const before = composeEvaluationReport("cfg-p4", folds, SPLIT);
 
           // Generate display-only rationale + labels.
           const rationale = await generateSignalRationale(llm, numericInputs);
@@ -315,8 +326,9 @@ describe("Property 4: generating rationale / labels leaves the numeric probabili
 
           // The Kill_Gate verdict is unchanged (Req 2.7, 15.4). Compare the
           // numeric verdict + gate results, serialized for byte-identity.
-          const after = composeGateVerdict("cfg-p4", folds);
-          expect(after.verdict).toBe(before.verdict);
+          const after = composeEvaluationReport("cfg-p4", folds, SPLIT);
+          expect(after.deltaVsBaseline).toBe(before.deltaVsBaseline);
+          expect(after.annotations).toStrictEqual(before.annotations);
           expect(JSON.stringify(after)).toBe(JSON.stringify(before));
         },
       ),

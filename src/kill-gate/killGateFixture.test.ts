@@ -5,9 +5,10 @@ import type {
   ForwardOutcome,
   HorizonOutcome,
 } from "../retrieval/types.js";
-import { composeGateVerdict, type FoldGateInput } from "./verdict.js";
+import { composeEvaluationReport, type FoldGateInput } from "./verdict.js";
 import {
   GATE1_SAMPLE_SIZE_FLOOR,
+  type EvaluationSplit,
   type Gate1FiringSample,
 } from "./types.js";
 
@@ -16,10 +17,22 @@ import {
 // Validates: Requirements 3.1, 11.12
 //
 // This is the mandated kill-gate fixture-reproducibility named test. It pins the
-// two-stage Kill_Gate composition (`composeGateVerdict`) down to concrete,
-// hand-computed metric values on a recorded fixture (Req 11.12), and asserts
-// that repeated invocation on identical inputs is deeply equal (Req 3.1 —
-// deterministic reproducibility of the harness).
+// two-stage Kill_Gate composition (`composeEvaluationReport`, the live measurement
+// producer) down to concrete, hand-computed metric values on a recorded fixture
+// (Req 11.12), and asserts that repeated invocation on identical inputs is deeply
+// equal (Req 3.1 - deterministic reproducibility of the harness).
+//
+// (Originally written against the legacy PASS/CUT `composeGateVerdict`, retired in
+// codebase-housekeeping Task 5. The gate math and fold pooling are shared, so the
+// SAME hand-computed numbers hold; only the output shape differs: the report carries
+// the measured values and non-binding annotations instead of a PASS/CUT verdict.)
+
+/** A fixed out-of-sample split; the hand-computed metrics do not depend on it. */
+const SPLIT: EvaluationSplit = {
+  trainEnd: "2019-12-31",
+  testStart: "2020-01-01",
+  testEnd: "2020-12-31",
+};
 
 const DIRECTIONS: readonly DirectionClass[] = ["UP", "DOWN", "FLAT"] as const;
 
@@ -116,57 +129,50 @@ function buildFixture(): FoldGateInput[] {
 }
 
 describe("Property 1 (kill-gate scope): the harness reproduces known metrics on a fixed fixture", () => {
-  it("produces the EXACTLY hand-computed GateVerdict metrics on the recorded fixture (Req 11.12)", () => {
-    const verdict = composeGateVerdict("config-fixture-1", buildFixture());
+  it("produces the EXACTLY hand-computed EvaluationReport metrics on the recorded fixture (Req 11.12)", () => {
+    const report = composeEvaluationReport("config-fixture-1", buildFixture(), SPLIT);
 
     // ---- Aggregate Gate 1 (pooled over qualifying fold 0 only) ----
-    expect(verdict.gate1.sampleSize).toBe(40);
-    expect(verdict.gate1.evaluated).toBe(true);
-    expect(verdict.gate1.modelAccuracy).toBeCloseTo(0.9, 10); // 36 / 40
-    expect(verdict.gate1.baselineAccuracy).toBeCloseTo(0.75, 10); // 30 / 40
-    expect(verdict.gate1.deltaPp).toBeCloseTo(0.15, 10); // 0.90 - 0.75
-    expect(verdict.gate1.passed).toBe(true);
+    expect(report.sampleSize).toBe(40); // union of qualifying folds only
+    expect(report.predictionsCount).toBe(45); // 40 qualifying + 5 skipped (recorded, not pooled)
+    expect(report.modelAccuracy).toBeCloseTo(0.9, 10); // 36 / 40
+    expect(report.baselineAccuracy).toBeCloseTo(0.75, 10); // 30 / 40
+    expect(report.deltaVsBaseline).toBeCloseTo(0.15, 10); // 0.90 - 0.75
 
     // ---- Aggregate Gate 2 (EURUSD friction 1.5, horizon 1) ----
-    expect(verdict.gate2.evaluated).toBe(true);
-    expect(verdict.gate2.modelRiskAdj).toBeCloseTo(5.0, 10);
-    expect(verdict.gate2.baselineRiskAdj).toBeCloseTo(0.0, 10);
-    expect(verdict.gate2.margin).toBeCloseTo(5.0, 10);
-    expect(verdict.gate2.passed).toBe(true);
+    expect(report.frictionAdjustedModel).toBeCloseTo(5.0, 10);
+    expect(report.frictionAdjustedBaseline).toBeCloseTo(0.0, 10);
 
-    // ---- Aggregate verdict + metrics ----
-    expect(verdict.verdict).toBe("PASS");
-    expect(verdict.sampleSize).toBe(40); // union of qualifying folds only
-    expect(verdict.metrics.qualifyingFolds).toBe(1);
-    expect(verdict.metrics.skippedFolds).toBe(1);
-    expect(verdict.metrics.totalFolds).toBe(2);
-    expect(verdict.metrics.accuracyVsBaseline).toBeCloseTo(0.15, 10);
-    expect(verdict.metrics.riskAdjustedVsBaseline).toBeCloseTo(5.0, 10);
+    // ---- Non-binding annotations (descriptive only, never gates) ----
+    expect(report.annotations.deltaExceeds3pp).toBe(true); // 0.15 >= 0.03
+    expect(report.annotations.riskAdjNonNegative).toBe(true); // margin 5.0 >= 0
 
-    // ---- Per-fold verdicts ----
-    expect(verdict.foldVerdicts).toHaveLength(2);
-
-    const fold0 = verdict.foldVerdicts.find((f) => f.foldIndex === 0);
-    expect(fold0).toBeDefined();
-    expect(fold0?.skipped).toBe(false);
-    expect(fold0?.sampleSize).toBe(40);
-    expect(fold0?.verdict).toBe("PASS");
-    expect(fold0?.gate1.passed).toBe(true);
-    expect(fold0?.gate1.deltaPp).toBeCloseTo(0.15, 10);
-    expect(fold0?.gate2.passed).toBe(true);
-    expect(fold0?.gate2.margin).toBeCloseTo(5.0, 10);
-
-    const fold1 = verdict.foldVerdicts.find((f) => f.foldIndex === 1);
-    expect(fold1).toBeDefined();
-    expect(fold1?.skipped).toBe(true);
-    expect(fold1?.sampleSize).toBe(5);
-    expect(fold1?.gate1.evaluated).toBe(false); // below the 30-sample floor
-    expect(fold1?.gate2.evaluated).toBe(false); // Gate 2 only after Gate 1 pass
+    // ---- Identity ----
+    expect(report.configId).toBe("config-fixture-1");
+    expect(report.split).toEqual(SPLIT);
   });
 
-  it("invoking composeGateVerdict twice on identical inputs yields deeply-equal verdicts (Req 3.1)", () => {
-    const first = composeGateVerdict("config-fixture-1", buildFixture());
-    const second = composeGateVerdict("config-fixture-1", buildFixture());
+  it("the skipped (below-floor) fold is excluded from the pooled metrics (Req 11.5)", () => {
+    const withSkipped = composeEvaluationReport("config-fixture-1", buildFixture(), SPLIT);
+    const qualifyingOnly = composeEvaluationReport(
+      "config-fixture-1",
+      buildFixture().filter((f) => f.foldIndex === 0),
+      SPLIT,
+    );
+
+    // Same pooled measurement; only predictionsCount differs (it also counts skipped).
+    expect(withSkipped.sampleSize).toBe(qualifyingOnly.sampleSize);
+    expect(withSkipped.modelAccuracy).toBe(qualifyingOnly.modelAccuracy);
+    expect(withSkipped.baselineAccuracy).toBe(qualifyingOnly.baselineAccuracy);
+    expect(withSkipped.deltaVsBaseline).toBe(qualifyingOnly.deltaVsBaseline);
+    expect(withSkipped.frictionAdjustedModel).toBe(qualifyingOnly.frictionAdjustedModel);
+    expect(withSkipped.predictionsCount).toBe(45);
+    expect(qualifyingOnly.predictionsCount).toBe(40);
+  });
+
+  it("invoking composeEvaluationReport twice on identical inputs yields deeply-equal reports (Req 3.1)", () => {
+    const first = composeEvaluationReport("config-fixture-1", buildFixture(), SPLIT);
+    const second = composeEvaluationReport("config-fixture-1", buildFixture(), SPLIT);
     expect(second).toStrictEqual(first);
   });
 
@@ -224,8 +230,8 @@ describe("Property 1 (kill-gate scope): the harness reproduces known metrics on 
       fc.property(
         fc.array(foldArb, { minLength: 1, maxLength: 6 }),
         (folds) => {
-          const a = composeGateVerdict("config-x", folds);
-          const b = composeGateVerdict("config-x", folds);
+          const a = composeEvaluationReport("config-x", folds, SPLIT);
+          const b = composeEvaluationReport("config-x", folds, SPLIT);
           expect(b).toStrictEqual(a);
         },
       ),

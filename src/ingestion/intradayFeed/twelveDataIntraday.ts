@@ -27,6 +27,7 @@ import type { Pair } from "../../ingestion/types.js";
 import { TWELVE_DATA_DEFAULT_BASE_URL } from "../../ingestion/ohlcFeed/types.js";
 import { toTwelveDataSymbol } from "../../ingestion/ohlcFeed/twelveDataOhlcProvider.js";
 import type { Intraday4hBar } from "../../intraday-validation/types.js";
+import { redactSecrets } from "../redactSecrets.js";
 
 /** Provider provenance tag (never a secret). */
 export const INTRADAY_PROVIDER_NAME = "TwelveData" as const;
@@ -200,6 +201,12 @@ export class TwelveDataIntradayClient {
   }
 
   #fail(pair: Pair, mode: IntradayFeedFailureMode, message: string): IntradayFeedError {
-    return { reason: "intraday_feed_error", mode, provider: INTRADAY_PROVIDER_NAME, pair, message };
+    return {
+      reason: "intraday_feed_error",
+      mode,
+      provider: INTRADAY_PROVIDER_NAME,
+      pair,
+      message: redactSecrets(message, [this.#apiKey]),
+    };
   }
 }

@@ -108,4 +108,12 @@ export const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
 export interface PipelineDeps extends PipelineStores {
   readonly narrative?: NarrativeResolver;
   readonly config?: PipelineConfig;
+  /**
+   * Optional observer for a fail-safe DISPLAY-ONLY step that degraded (today: the expected
+   * candle size, which becomes "no forecast" on a store error). The pipeline stays pure -
+   * it never logs; the caller decides what to do with the notice. It is never consulted by
+   * the firing / confidence / horizon decision, so supplying or omitting it cannot change
+   * any evaluation. `err` is only for message extraction; do not log more than its message.
+   */
+  readonly onWarn?: (step: string, pair: Pair, err: unknown) => void;
 }

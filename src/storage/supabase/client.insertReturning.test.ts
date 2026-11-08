@@ -1,7 +1,7 @@
 // Unit tests for SupabaseRestClient.insertReturning() (dashboard-data-activation
 // Task 1.1; design Component 1).
 //
-// `insertReturning` is the additive read-back path the SupabaseGateVerdictStore
+// `insertReturning` is the additive read-back path the Supabase evaluation-report store
 // needs: a plain insert issued with `Prefer: return=representation` so the
 // DB-generated `gen_random_uuid()` primary key is read back from the response
 // body. `upsert` keeps its `Prefer: resolution=merge-duplicates,return=minimal`
