@@ -1,23 +1,18 @@
-// Twelve Data OHLC_Feed_Provider adapter (latest + range) — Design Component 1
-// (Requirements 1.2, 1.3, 1.6).
+// Twelve Data OHLC_Feed_Provider adapter (latest + range) — Design Component 1.
 //
-// Calls Twelve Data's daily `time_series` endpoint over the built-in `fetch`
-// (no SDK). It supports BOTH the Daily_Top_Up (`outputsize=1`) and the
-// Gap_Backfill (`start_date` / `end_date` range), so it is the first provider in
-// the chain able to close a multi-day gap (FCS cannot).
+// Fetches HOURLY bars (`interval=1h`, `timezone=UTC`) and lets the shared session aggregator build
+// the system's own daily candles on the 17:00 America/New_York close (closed + complete sessions
+// only). Twelve Data's own `1day` bars are NOT used: they roll at 20:00 UTC, include weekend bars
+// and, after the roll, return a brand-new empty bar (docs/state/RISKS.md, DAILY CANDLE DATA INTEGRITY).
 //
-//   GET /time_series?symbol=EUR/USD&interval=1day
-//       &start_date=<from>&end_date=<to>&apikey=<key>&format=JSON&outputsize=5000
+//   GET /time_series?symbol=EUR/USD&interval=1h&timezone=UTC
+//       &start_date=<from> 00:00:00&end_date=<to> 23:59:59&outputsize=5000&apikey=<key>&format=JSON
 //
-// Symbol mapping: the internal `EURUSD` form becomes Twelve Data's `EUR/USD`
-// (slash inserted after the first three characters). The response is
-// `{ status: "ok", values: [{ datetime: "YYYY-MM-DD", open, high, low, close }] }`
-// with numeric fields as strings; this adapter coerces them to numbers and maps
-// each row to the internal `RawCandle` shape, stamping `source`.
+// `datetime` is the bar START ("YYYY-MM-DD HH:mm:ss", UTC). Symbol `EURUSD` becomes `EUR/USD`.
 //
-// Fail-safe: network error → `unavailable`, non-200 → `unavailable`, non-JSON →
-// `invalid`, `{ status: "error" }` or missing/empty `values` → `invalid`/`empty`.
-// The API key is a secret and never appears in a log line or an error message.
+// Fail-safe: network error → `unavailable`, non-200 → `unavailable`, non-JSON → `invalid`,
+// `{ status: "error" }` → `invalid`, no values / no complete session → `empty`. The API key is a
+// secret and never appears in a log line or an error message.
 
 import { err, ok, type Result } from "../../guard/types.js";
 import type { TradingDate } from "../../guard/types.js";
@@ -29,6 +24,8 @@ import {
   type OhlcProviderConfig,
 } from "./types.js";
 import { redactSecrets } from "../redactSecrets.js";
+import type { HourlyBar } from "../sessionAggregation.js";
+import { latestSessionCandle, rangeSessionCandles } from "./hourlySessionFeed.js";
 
 /** Provider provenance tag stamped onto `RawCandle.source` and errors. */
 const PROVIDER_NAME = "TwelveData" as const;
@@ -62,17 +59,20 @@ export function toTwelveDataSymbol(pair: Pair): string {
   return `${pair.slice(0, 3)}/${pair.slice(3)}`;
 }
 
-/** Map one `time_series` value to a `RawCandle`, or null if uncoercible. */
-function toRawCandle(pair: Pair, value: TwelveDataValue): RawCandle | null {
-  const date = typeof value.datetime === "string" ? value.datetime.slice(0, 10) : undefined;
+/** Map one hourly `time_series` value to an {@link HourlyBar}, or null if uncoercible. */
+function toHourlyBar(value: TwelveDataValue): HourlyBar | null {
+  const dt = value.datetime;
+  if (typeof dt !== "string") return null;
+  // "YYYY-MM-DD HH:mm:ss" (UTC, because the request pins timezone=UTC).
+  const openMs = Date.parse(`${dt.trim().replace(" ", "T")}Z`);
   const open = toNumber(value.open);
   const high = toNumber(value.high);
   const low = toNumber(value.low);
   const close = toNumber(value.close);
-  if (date === undefined || date === "" || open === null || high === null || low === null || close === null) {
+  if (!Number.isFinite(openMs) || open === null || high === null || low === null || close === null) {
     return null;
   }
-  return { asset: pair, pair, date, open, high, low, close, source: PROVIDER_NAME };
+  return { openMs, open, high, low, close };
 }
 
 /**
@@ -89,7 +89,13 @@ export class TwelveDataOhlcFeedProvider implements OhlcFeedProvider {
   readonly #baseUrl: string;
   readonly #fetch: typeof fetch;
 
-  constructor(config: OhlcProviderConfig, fetchImpl: typeof fetch = fetch) {
+  readonly #now: () => Date;
+
+  constructor(
+    config: OhlcProviderConfig,
+    fetchImpl: typeof fetch = fetch,
+    now: () => Date = () => new Date(),
+  ) {
     if (config.apiKey === "") {
       throw new Error("TwelveDataOhlcFeedProvider requires a non-empty API key");
     }
@@ -97,21 +103,23 @@ export class TwelveDataOhlcFeedProvider implements OhlcFeedProvider {
     this.#baseUrl =
       config.baseUrl.trim() === "" ? TWELVE_DATA_DEFAULT_BASE_URL : config.baseUrl.trim();
     this.#fetch = fetchImpl;
+    this.#now = now;
   }
 
   async fetchLatest(
     pairs: readonly Pair[],
     asOf: TradingDate,
   ): Promise<ReadonlyMap<Pair, Result<readonly RawCandle[], OhlcFeedError>>> {
-    // The newest daily candle is requested with `outputsize=1`; `asOf` is not
-    // part of a latest request (Twelve Data returns the most recent itself).
-    void asOf;
     const out = new Map<Pair, Result<readonly RawCandle[], OhlcFeedError>>();
-    // Per-pair loop (Twelve Data's time_series symbol param is single-symbol on
-    // the common plans); each pair is independently fail-safe.
+    const nowMs = this.#now().getTime();
     await Promise.all(
       pairs.map(async (pair) => {
-        out.set(pair, await this.#fetchSeries(pair, { outputsize: 1 }));
+        out.set(
+          pair,
+          await latestSessionCandle(PROVIDER_NAME, pair, asOf, nowMs, (p, f, t) =>
+            this.#fetchHourly(p, f, t),
+          ),
+        );
       }),
     );
     return out;
@@ -122,22 +130,26 @@ export class TwelveDataOhlcFeedProvider implements OhlcFeedProvider {
     fromDate: TradingDate,
     toDate: TradingDate,
   ): Promise<Result<readonly RawCandle[], OhlcFeedError>> {
-    return this.#fetchSeries(pair, { startDate: fromDate, endDate: toDate, outputsize: 5000 });
+    return rangeSessionCandles(PROVIDER_NAME, pair, fromDate, toDate, this.#now().getTime(), (p, f, t) =>
+      this.#fetchHourly(p, f, t),
+    );
   }
 
-  async #fetchSeries(
+  async #fetchHourly(
     pair: Pair,
-    opts: { startDate?: TradingDate; endDate?: TradingDate; outputsize: number },
-  ): Promise<Result<readonly RawCandle[], OhlcFeedError>> {
+    fromDate: TradingDate,
+    toDate: TradingDate,
+  ): Promise<Result<readonly HourlyBar[], OhlcFeedError>> {
     const params = new URLSearchParams({
       symbol: toTwelveDataSymbol(pair),
-      interval: "1day",
+      interval: "1h",
+      timezone: "UTC",
       apikey: this.#apiKey,
       format: "JSON",
-      outputsize: String(opts.outputsize),
+      outputsize: "5000",
+      start_date: `${fromDate} 00:00:00`,
+      end_date: `${toDate} 23:59:59`,
     });
-    if (opts.startDate !== undefined) params.set("start_date", opts.startDate);
-    if (opts.endDate !== undefined) params.set("end_date", opts.endDate);
     const url = `${this.#baseUrl.replace(/\/+$/, "")}/time_series?${params.toString()}`;
 
     let response: Response;
@@ -168,15 +180,15 @@ export class TwelveDataOhlcFeedProvider implements OhlcFeedProvider {
       return err(this.#fail(pair, "empty", `TwelveData returned no values for ${pair}`));
     }
 
-    const candles: RawCandle[] = [];
+    const bars: HourlyBar[] = [];
     for (const value of values) {
-      const candle = toRawCandle(pair, value);
-      if (candle !== null) candles.push(candle);
+      const bar = toHourlyBar(value);
+      if (bar !== null) bars.push(bar);
     }
-    if (candles.length === 0) {
-      return err(this.#fail(pair, "empty", `TwelveData returned no usable candle for ${pair}`));
+    if (bars.length === 0) {
+      return err(this.#fail(pair, "empty", `TwelveData returned no usable hourly bar for ${pair}`));
     }
-    return ok(candles);
+    return ok(bars);
   }
 
   #fail(pair: Pair, mode: OhlcFeedError["mode"], message: string): OhlcFeedError {

@@ -1,23 +1,18 @@
-// Massive OHLC_Feed_Provider adapter (latest + range) — Design Component 1
-// (Requirements 1.2, 1.3, 1.6).
+// Massive OHLC_Feed_Provider adapter (latest + range) — Design Component 1.
 //
-// Calls Massive's aggregates endpoints over the built-in `fetch` (no SDK). It
-// supports BOTH the Daily_Top_Up (the "prev" aggregate) and the Gap_Backfill
-// (the date-range aggregates), so it is the final fallback able to close a
-// multi-day gap.
+// Fetches HOURLY aggregates and lets the shared session aggregator build the system's own daily
+// candles on the 17:00 America/New_York close (closed + complete sessions only). Massive's `/prev`
+// and 1-day aggregates are UTC calendar days, which are not the system's session
+// (docs/state/RISKS.md, DAILY CANDLE DATA INTEGRITY).
 //
-//   Range:  GET /v2/aggs/ticker/C:<PAIR>/range/1/day/<from>/<to>
-//               ?adjusted=true&sort=asc&limit=50000&apiKey=<key>
-//   Latest: GET /v2/aggs/ticker/C:<PAIR>/prev?adjusted=true&apiKey=<key>
+//   GET /v2/aggs/ticker/C:<PAIR>/range/1/hour/<from>/<to>
+//       ?adjusted=true&sort=asc&limit=50000&apiKey=<key>
 //
-// Ticker form: the internal `EURUSD` becomes `C:EURUSD` (the `C:` forex prefix).
-// Auth is the `apiKey` query parameter. The response is
-// `{ status: "OK", results: [{ o, h, l, c, t }] }` where `t` is epoch
-// milliseconds; this adapter derives the `YYYY-MM-DD` date from `t` (UTC) and
-// maps each result to the internal `RawCandle` shape, stamping `source`.
+// `t` is the bar START in epoch ms. Weekend bars are omitted; the aggregator tolerates a few
+// missing hours. Ticker `EURUSD` becomes `C:EURUSD`.
 //
-// Fail-safe: network error → `unavailable`, non-200 → `unavailable`, non-JSON →
-// `invalid`, absent/empty `results` → `empty`. The API key is a secret and never
+// Fail-safe: network error → `unavailable`, non-200 → `unavailable`, non-JSON → `invalid`,
+// absent/empty `results` or no complete session → `empty`. The API key is a secret and never
 // appears in a log line or an error message.
 
 import { err, ok, type Result } from "../../guard/types.js";
@@ -30,6 +25,8 @@ import {
   type OhlcProviderConfig,
 } from "./types.js";
 import { redactSecrets } from "../redactSecrets.js";
+import type { HourlyBar } from "../sessionAggregation.js";
+import { latestSessionCandle, rangeSessionCandles } from "./hourlySessionFeed.js";
 
 /** Provider provenance tag stamped onto `RawCandle.source` and errors. */
 const PROVIDER_NAME = "Massive" as const;
@@ -62,24 +59,17 @@ export function toMassiveTicker(pair: Pair): string {
   return `C:${pair}`;
 }
 
-/** Derive a `YYYY-MM-DD` date (UTC) from an epoch-ms timestamp, or null. */
-function dateFromMillis(t: number | string | undefined): string | null {
-  const ms = toNumber(t);
-  if (ms === null) return null;
-  return new Date(ms).toISOString().slice(0, 10);
-}
-
-/** Map one aggregate result to a `RawCandle`, or null if uncoercible. */
-function toRawCandle(pair: Pair, result: MassiveResult): RawCandle | null {
-  const date = dateFromMillis(result.t);
+/** Map one hourly aggregate result to an {@link HourlyBar}, or null if uncoercible. */
+function toHourlyBar(result: MassiveResult): HourlyBar | null {
+  const openMs = toNumber(result.t);
   const open = toNumber(result.o);
   const high = toNumber(result.h);
   const low = toNumber(result.l);
   const close = toNumber(result.c);
-  if (date === null || open === null || high === null || low === null || close === null) {
+  if (openMs === null || open === null || high === null || low === null || close === null) {
     return null;
   }
-  return { asset: pair, pair, date, open, high, low, close, source: PROVIDER_NAME };
+  return { openMs, open, high, low, close };
 }
 
 /**
@@ -96,7 +86,13 @@ export class MassiveOhlcFeedProvider implements OhlcFeedProvider {
   readonly #baseUrl: string;
   readonly #fetch: typeof fetch;
 
-  constructor(config: OhlcProviderConfig, fetchImpl: typeof fetch = fetch) {
+  readonly #now: () => Date;
+
+  constructor(
+    config: OhlcProviderConfig,
+    fetchImpl: typeof fetch = fetch,
+    now: () => Date = () => new Date(),
+  ) {
     if (config.apiKey === "") {
       throw new Error("MassiveOhlcFeedProvider requires a non-empty API key");
     }
@@ -104,23 +100,23 @@ export class MassiveOhlcFeedProvider implements OhlcFeedProvider {
     this.#baseUrl =
       config.baseUrl.trim() === "" ? MASSIVE_DEFAULT_BASE_URL : config.baseUrl.trim();
     this.#fetch = fetchImpl;
+    this.#now = now;
   }
 
   async fetchLatest(
     pairs: readonly Pair[],
     asOf: TradingDate,
   ): Promise<ReadonlyMap<Pair, Result<readonly RawCandle[], OhlcFeedError>>> {
-    // The "prev" aggregate is the most recent completed daily candle; `asOf` is
-    // not part of the request.
-    void asOf;
     const out = new Map<Pair, Result<readonly RawCandle[], OhlcFeedError>>();
+    const nowMs = this.#now().getTime();
     await Promise.all(
       pairs.map(async (pair) => {
-        const base = this.#baseUrl.replace(/\/+$/, "");
-        const url =
-          `${base}/v2/aggs/ticker/${encodeURIComponent(toMassiveTicker(pair))}/prev` +
-          `?adjusted=true&apiKey=${encodeURIComponent(this.#apiKey)}`;
-        out.set(pair, await this.#fetchAggs(pair, url));
+        out.set(
+          pair,
+          await latestSessionCandle(PROVIDER_NAME, pair, asOf, nowMs, (p, f, t) =>
+            this.#fetchHourly(p, f, t),
+          ),
+        );
       }),
     );
     return out;
@@ -131,18 +127,21 @@ export class MassiveOhlcFeedProvider implements OhlcFeedProvider {
     fromDate: TradingDate,
     toDate: TradingDate,
   ): Promise<Result<readonly RawCandle[], OhlcFeedError>> {
+    return rangeSessionCandles(PROVIDER_NAME, pair, fromDate, toDate, this.#now().getTime(), (p, f, t) =>
+      this.#fetchHourly(p, f, t),
+    );
+  }
+
+  async #fetchHourly(
+    pair: Pair,
+    fromDate: TradingDate,
+    toDate: TradingDate,
+  ): Promise<Result<readonly HourlyBar[], OhlcFeedError>> {
     const base = this.#baseUrl.replace(/\/+$/, "");
     const url =
       `${base}/v2/aggs/ticker/${encodeURIComponent(toMassiveTicker(pair))}` +
-      `/range/1/day/${encodeURIComponent(fromDate)}/${encodeURIComponent(toDate)}` +
+      `/range/1/hour/${encodeURIComponent(fromDate)}/${encodeURIComponent(toDate)}` +
       `?adjusted=true&sort=asc&limit=50000&apiKey=${encodeURIComponent(this.#apiKey)}`;
-    return this.#fetchAggs(pair, url);
-  }
-
-  async #fetchAggs(
-    pair: Pair,
-    url: string,
-  ): Promise<Result<readonly RawCandle[], OhlcFeedError>> {
     let response: Response;
     try {
       response = await this.#fetch(url, { method: "GET" });
@@ -168,15 +167,15 @@ export class MassiveOhlcFeedProvider implements OhlcFeedProvider {
       return err(this.#fail(pair, "empty", `Massive returned no results for ${pair}`));
     }
 
-    const candles: RawCandle[] = [];
+    const bars: HourlyBar[] = [];
     for (const result of results) {
-      const candle = toRawCandle(pair, result);
-      if (candle !== null) candles.push(candle);
+      const bar = toHourlyBar(result);
+      if (bar !== null) bars.push(bar);
     }
-    if (candles.length === 0) {
-      return err(this.#fail(pair, "empty", `Massive returned no usable candle for ${pair}`));
+    if (bars.length === 0) {
+      return err(this.#fail(pair, "empty", `Massive returned no usable hourly bar for ${pair}`));
     }
-    return ok(candles);
+    return ok(bars);
   }
 
   #fail(pair: Pair, mode: OhlcFeedError["mode"], message: string): OhlcFeedError {

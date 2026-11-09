@@ -1,7 +1,7 @@
 // Provider_Fallback_Chain resolver — Design Component 2
 // (Requirements 1.1, 1.3, 4.1).
 //
-// Builds the ordered provider list FCS → Twelve Data → Massive from the resolved
+// Builds the ordered provider list Twelve Data → Massive from the resolved
 // `OhlcFeedConfig` (an unconfigured provider — no key — is simply absent from the
 // config and therefore from the chain), and exposes two first-usable-wins
 // operations:
@@ -21,7 +21,6 @@
 
 import type { TradingDate } from "../../guard/types.js";
 import type { Pair, RawCandle } from "../types.js";
-import { FcsOhlcFeedProvider } from "./fcsOhlcProvider.js";
 import { MassiveOhlcFeedProvider } from "./massiveOhlcProvider.js";
 import { TwelveDataOhlcFeedProvider } from "./twelveDataOhlcProvider.js";
 import type { OhlcFeedConfig, OhlcFeedError, OhlcFeedProvider } from "./types.js";
@@ -96,22 +95,22 @@ function screenLatest(
 
 /**
  * Build the ordered provider chain from a resolved config. The `fetchImpl` is
- * injected into every constructed adapter so tests run with no live network.
+ * injected into every constructed adapter so tests run with no live network; `now` is the clock
+ * used to decide whether a session has closed.
  * An unconfigured provider is already absent from `config.providers`, so the
  * chain only contains providers with a key.
  */
 export function buildProviderChain(
   config: OhlcFeedConfig,
   fetchImpl: typeof fetch = fetch,
+  now: () => Date = () => new Date(),
 ): ProviderChain {
   const providers: OhlcFeedProvider[] = config.providers.map((providerConfig) => {
     switch (providerConfig.provider) {
-      case "FCS":
-        return new FcsOhlcFeedProvider(providerConfig, fetchImpl);
       case "TwelveData":
-        return new TwelveDataOhlcFeedProvider(providerConfig, fetchImpl);
+        return new TwelveDataOhlcFeedProvider(providerConfig, fetchImpl, now);
       case "Massive":
-        return new MassiveOhlcFeedProvider(providerConfig, fetchImpl);
+        return new MassiveOhlcFeedProvider(providerConfig, fetchImpl, now);
       default:
         throw new Error(`unknown OHLC provider: ${providerConfig.provider}`);
     }

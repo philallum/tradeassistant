@@ -2,8 +2,8 @@
 // Task 9 (intraday-validation feature).
 //
 // This is the runnable script a SECOND Cloud Run Job executes once per trading
-// day, a few hours AFTER the daily run (triggered by a second Cloud Scheduler
-// job at ~08:00 UK). It is deliberately SEPARATE from the daily entry point
+// day, the morning AFTER the daily run (triggered by a second Cloud Scheduler
+// job at 07:00 UK - deliberately mid-bar, never on a 4H boundary). It is deliberately SEPARATE from the daily entry point
 // (`main.ts`) and shares NONE of its firing/scoring logic:
 //
 //   1. read the same runtime configuration from the environment;

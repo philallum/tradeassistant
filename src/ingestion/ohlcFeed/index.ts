@@ -3,17 +3,16 @@
 // The runtime adapter layer that fetches daily OHLC candles from a third-party
 // provider over the built-in `fetch` (no SDK) for the Candle_Freshness_Stage.
 // A thin, swappable `OhlcFeedProvider` port with a capability model
-// (`supportsLatest` / `supportsRange`), three concrete adapters (FCS latest-only,
-// Twelve Data latest+range, Massive latest+range), a secret-free `OhlcFeedError`,
+// (`supportsLatest` / `supportsRange`), two concrete adapters (Twelve Data and
+// Massive, both hourly-derived NY-close candles), a secret-free `OhlcFeedError`,
 // an env-driven config reader (`ohlcFeedConfigFromEnv`, keys by name only), and a
-// `Provider_Fallback_Chain` resolver (FCS → Twelve Data → Massive,
+// `Provider_Fallback_Chain` resolver (Twelve Data → Massive,
 // first-usable-wins per pair). Every output goes through the existing
 // `OhlcIngestion` path — this layer never bypasses validation or upsert.
 
 export {
   OHLC_FEED_FAILURE_MODES,
   ohlcFeedConfigFromEnv,
-  FCS_OHLC_DEFAULT_BASE_URL,
   TWELVE_DATA_DEFAULT_BASE_URL,
   MASSIVE_DEFAULT_BASE_URL,
   type OhlcFeedFailureMode,
@@ -22,7 +21,6 @@ export {
   type OhlcProviderConfig,
   type OhlcFeedConfig,
 } from "./types.js";
-export { FcsOhlcFeedProvider } from "./fcsOhlcProvider.js";
 export { TwelveDataOhlcFeedProvider, toTwelveDataSymbol } from "./twelveDataOhlcProvider.js";
 export { MassiveOhlcFeedProvider, toMassiveTicker } from "./massiveOhlcProvider.js";
 export {

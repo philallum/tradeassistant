@@ -2,12 +2,9 @@ import { describe, expect, it } from "vitest";
 import { MassiveOhlcFeedProvider, toMassiveTicker } from "./massiveOhlcProvider.js";
 import type { OhlcProviderConfig } from "./types.js";
 
-// Unit tests for the Massive adapter (Task 4.1; Requirements 1.2, 1.3, 1.6).
-//
-// With an injected `fetch` stub: `fetchLatest` (prev) and `fetchRange`
-// (aggregates) map a representative body to RawCandle(s) with OHLC preserved and
-// `source="Massive"`; the epoch-ms `t` becomes a YYYY-MM-DD date; each failure
-// mode maps to the right Result; and no api-key value appears in any error.
+// Unit tests for the Massive adapter. It fetches HOURLY aggregates (`t` = bar start, epoch ms)
+// and builds the system's own 17:00 America/New_York daily candles from them (closed + complete
+// sessions only); each failure mode maps to the right Result and no key appears in any error.
 
 const API_KEY = "massive-secret-def456";
 const BASE_URL = "https://massive.example";
@@ -41,22 +38,29 @@ function networkErrorFetch(): typeof fetch {
   return () => Promise.reject(new Error("socket hang up"));
 }
 
-// 2026-09-15T00:00:00Z = 1789516800000 ms; 2026-09-14T00:00:00Z = 1789430400000.
-const T_20260915 = Date.UTC(2026, 8, 15);
-const T_20260914 = Date.UTC(2026, 8, 14);
-
-const RANGE_BODY = {
-  status: "OK",
-  results: [
-    { o: 1.1, h: 1.12, l: 1.09, c: 1.11, t: T_20260914 },
-    { o: 1.11, h: 1.13, l: 1.1, c: 1.12, t: T_20260915 },
-  ],
-};
+/** 24 hourly aggregates for the Thursday 2026-11-05 session: Wed 22:00 UTC .. Thu 21:00 UTC. */
+function thursdayResults(skipHours: readonly number[] = []): Array<Record<string, number>> {
+  const start = Date.parse("2026-11-04T22:00:00Z");
+  const rows: Array<Record<string, number>> = [];
+  for (let i = 0; i < 24; i += 1) {
+    if (skipHours.includes(i)) continue;
+    rows.push({
+      t: start + i * 3_600_000,
+      o: 1.1 + i * 0.001,
+      h: 1.1 + i * 0.001 + 0.0005,
+      l: 1.1 + i * 0.001 - 0.0002,
+      c: 1.1 + (i + 1) * 0.001,
+    });
+  }
+  return rows;
+}
+const BODY = { status: "OK", results: thursdayResults() };
+const AFTER_CLOSE = () => new Date("2026-11-06T22:30:00Z");
 
 describe("MassiveOhlcFeedProvider", () => {
   it("declares the latest + range capability", () => {
-    const { fetchImpl } = recordingJsonFetch(RANGE_BODY);
-    const provider = new MassiveOhlcFeedProvider(config(), fetchImpl);
+    const { fetchImpl } = recordingJsonFetch(BODY);
+    const provider = new MassiveOhlcFeedProvider(config(), fetchImpl, AFTER_CLOSE);
     expect(provider.name).toBe("Massive");
     expect(provider.supportsLatest).toBe(true);
     expect(provider.supportsRange).toBe(true);
@@ -66,69 +70,74 @@ describe("MassiveOhlcFeedProvider", () => {
     expect(toMassiveTicker("EURUSD")).toBe("C:EURUSD");
   });
 
-  it("fetchRange maps results to RawCandles preserving OHLC and deriving the date from t", async () => {
-    const { fetchImpl, urls } = recordingJsonFetch(RANGE_BODY);
-    const provider = new MassiveOhlcFeedProvider(config(), fetchImpl);
-    const result = await provider.fetchRange("EURUSD", "2026-09-14", "2026-09-15");
-
+  it("fetchRange builds the NY-close daily candle from hourly aggregates", async () => {
+    const { fetchImpl, urls } = recordingJsonFetch(BODY);
+    const provider = new MassiveOhlcFeedProvider(config(), fetchImpl, AFTER_CLOSE);
+    const result = await provider.fetchRange("EURUSD", "2026-11-05", "2026-11-05");
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value).toHaveLength(2);
-      expect(result.value[0]).toMatchObject({
-        asset: "EURUSD",
-        date: "2026-09-14",
-        open: 1.1,
-        high: 1.12,
-        low: 1.09,
-        close: 1.11,
-        source: "Massive",
-      });
-      expect(result.value[1]?.date).toBe("2026-09-15");
+      expect(result.value).toHaveLength(1);
+      const c = result.value[0]!;
+      expect(c).toMatchObject({ asset: "EURUSD", date: "2026-11-05", source: "Massive" });
+      expect(c.open).toBeCloseTo(1.1, 10);
+      expect(c.close).toBeCloseTo(1.124, 10);
     }
-    expect(urls[0]).toContain("/v2/aggs/ticker/C%3AEURUSD/range/1/day/2026-09-14/2026-09-15");
+    expect(urls[0]).toContain("/v2/aggs/ticker/C%3AEURUSD/range/1/hour/");
     expect(urls[0]).toContain("sort=asc");
   });
 
-  it("fetchLatest uses the prev endpoint and maps results[0]", async () => {
-    const { fetchImpl, urls } = recordingJsonFetch({
-      status: "OK",
-      results: [{ o: 1.2, h: 1.25, l: 1.19, c: 1.24, t: T_20260915 }],
-    });
-    const provider = new MassiveOhlcFeedProvider(config(), fetchImpl);
-    const result = await provider.fetchLatest(["EURUSD"], "2026-09-16");
+  it("tolerates a couple of missing hours inside the session", async () => {
+    const { fetchImpl } = recordingJsonFetch({ status: "OK", results: thursdayResults([5, 6]) });
+    const provider = new MassiveOhlcFeedProvider(config(), fetchImpl, AFTER_CLOSE);
+    const result = await provider.fetchRange("EURUSD", "2026-11-05", "2026-11-05");
+    expect(result.ok).toBe(true);
+  });
+
+  it("fetchLatest returns only the newest closed complete session before asOf", async () => {
+    const { fetchImpl } = recordingJsonFetch(BODY);
+    const provider = new MassiveOhlcFeedProvider(config(), fetchImpl, AFTER_CLOSE);
+    const result = await provider.fetchLatest(["EURUSD"], "2026-11-06");
     const eur = result.get("EURUSD");
     expect(eur?.ok).toBe(true);
     if (eur?.ok) {
-      expect(eur.value[0]).toMatchObject({ date: "2026-09-15", open: 1.2, close: 1.24 });
+      expect(eur.value).toHaveLength(1);
+      expect(eur.value[0]).toMatchObject({ date: "2026-11-05" });
     }
-    expect(urls[0]).toContain("/v2/aggs/ticker/C%3AEURUSD/prev");
+  });
+
+  it("never emits a session that has not closed yet (forming bar)", async () => {
+    const { fetchImpl } = recordingJsonFetch(BODY);
+    const provider = new MassiveOhlcFeedProvider(config(), fetchImpl, () => new Date("2026-11-05T21:30:00Z"));
+    const eur = (await provider.fetchLatest(["EURUSD"], "2026-11-06")).get("EURUSD");
+    expect(eur?.ok).toBe(false);
   });
 
   it("maps a network error to unavailable", async () => {
-    const provider = new MassiveOhlcFeedProvider(config(), networkErrorFetch());
-    const result = await provider.fetchRange("EURUSD", "2026-09-14", "2026-09-15");
+    const provider = new MassiveOhlcFeedProvider(config(), networkErrorFetch(), AFTER_CLOSE);
+    const result = await provider.fetchRange("EURUSD", "2026-11-05", "2026-11-05");
     expect(result.ok === false && result.error.mode).toBe("unavailable");
     if (!result.ok) expect(result.error.message).not.toContain(API_KEY);
   });
 
   it("maps a non-200 to unavailable", async () => {
-    const { fetchImpl } = recordingJsonFetch(RANGE_BODY, 500);
-    const provider = new MassiveOhlcFeedProvider(config(), fetchImpl);
-    const result = await provider.fetchRange("EURUSD", "2026-09-14", "2026-09-15");
+    const { fetchImpl } = recordingJsonFetch(BODY, 403);
+    const provider = new MassiveOhlcFeedProvider(config(), fetchImpl, AFTER_CLOSE);
+    const result = await provider.fetchRange("EURUSD", "2026-11-05", "2026-11-05");
     expect(result.ok === false && result.error.mode).toBe("unavailable");
   });
 
   it("maps a non-JSON body to invalid", async () => {
-    const provider = new MassiveOhlcFeedProvider(config(), textFetch("gateway timeout"));
-    const result = await provider.fetchRange("EURUSD", "2026-09-14", "2026-09-15");
+    const provider = new MassiveOhlcFeedProvider(config(), textFetch("not json"), AFTER_CLOSE);
+    const result = await provider.fetchRange("EURUSD", "2026-11-05", "2026-11-05");
     expect(result.ok === false && result.error.mode).toBe("invalid");
   });
 
-  it("maps absent/empty results to empty", async () => {
-    const { fetchImpl } = recordingJsonFetch({ status: "OK", results: [] });
-    const provider = new MassiveOhlcFeedProvider(config(), fetchImpl);
-    const result = await provider.fetchRange("EURUSD", "2026-09-14", "2026-09-15");
-    expect(result.ok === false && result.error.mode).toBe("empty");
-    if (!result.ok) expect(result.error.message).not.toContain(API_KEY);
+  it("maps absent or empty results to empty", async () => {
+    for (const body of [{ status: "OK" }, { status: "OK", results: [] }]) {
+      const { fetchImpl } = recordingJsonFetch(body);
+      const provider = new MassiveOhlcFeedProvider(config(), fetchImpl, AFTER_CLOSE);
+      const result = await provider.fetchRange("EURUSD", "2026-11-05", "2026-11-05");
+      expect(result.ok === false && result.error.mode).toBe("empty");
+    }
   });
 });

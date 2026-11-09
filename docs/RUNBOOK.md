@@ -16,7 +16,7 @@ Secrets are referenced **by Secret Manager name only**.
 | Daily Job | Cloud Run Job `scheduled-daily-run` (`node dist/scheduled-run/main.js`) |
 | Daily trigger | Cloud Scheduler `scheduled-daily-run-session-close`, `30 17 * * 1-5` America/New_York (committed in `ops/scheduler-job.config.json`) |
 | Intraday Job | Cloud Run Job `intraday-validation-run` (same image, `node dist/scheduled-run/intradayMain.js`) |
-| Intraday trigger | Cloud Scheduler `intraday-validation-run-0800-uk`, `0 8 * * 1-5` Europe/London (`ops/intraday-validation-scheduler.config.json`) |
+| Intraday trigger | Cloud Scheduler `intraday-validation-run-0800-uk` (name is historical), `0 7 * * 1-5` Europe/London (`ops/intraday-validation-scheduler.config.json`) |
 | Output | `dashboard.json` in the public-read bucket named by `DASHBOARD_SNAPSHOT_BUCKET` |
 | UI | Firebase Hosting site (`web/firebase.json`), reads that one file |
 | Database | Supabase (hosted), reached over PostgREST as the `fx_writer` role |
@@ -28,8 +28,10 @@ Secrets are referenced **by Secret Manager name only**.
    (Friday -> Monday), freshens candles (retrying 3 x 120 s if a provider has not published the
    bar), evaluates the five pairs, persists, builds the display-only extras, and publishes
    `dashboard.json`. Weekends are skipped by a weekday gate.
-3. 08:00 London next morning - the intraday Job validates each pair's call against the forming 4H
-   candle and republishes the file with only `intradayValidation` replaced.
+3. 07:00 London next morning - the intraday Job validates each pair's call against the forming 4H
+   candle (04:00-08:00 UTC, 2-3 hours in) and republishes the file with only `intradayValidation`
+   replaced. 07:00 is deliberately mid-bar in both GMT and BST: a run exactly on a 4H boundary (the
+   original 08:00 London in winter) finds no forming bar and validates nothing.
 
 Why 17:30 and not 17:00: firing at the exact close meant the in-Job retry window could expire
 before providers published the bar, causing a recurring `candle_freshness.degraded` alert. The
@@ -181,7 +183,7 @@ in the local `.env`, and review the open Dependabot findings.
 
 - **A bad or stale `dashboard.json`:** re-run the daily Job (idempotent), then the intraday Job.
 - **A missed day / candle gap:** the next run's freshness stage back-fills a bounded gap
-  (default look-back 90 trading days, via the range-capable providers - FCS is latest-only). A
+  (default look-back 90 trading days, via the hourly-derived Twelve Data / Massive providers). A
   manual `gcloud run jobs execute scheduled-daily-run --wait` clears it sooner.
 - **Roll back a deploy:** redeploy the previous commit's SHA-tagged image with
   `gcloud run jobs update <job> --image=<previous-image-uri>` for both Jobs.

@@ -3,9 +3,16 @@
 // 4H FX bars sit on FIXED UTC boundaries: 00:00, 04:00, 08:00, 12:00, 16:00,
 // 20:00 UTC. The "currently-forming" bar at an instant `now` is the one whose
 // open satisfies `open ≤ now < open + 4h`. Deriving the window from these UTC
-// boundaries makes UK/NY daylight-saving irrelevant: 08:00 UK is 08:00 UTC in
-// winter and 07:00 UTC in summer, and in BOTH cases the arithmetic below picks
-// the correct forming bar without any fixed-offset assumption.
+// boundaries makes UK/NY daylight-saving irrelevant: the arithmetic below picks
+// the correct forming bar for any instant without any fixed-offset assumption.
+//
+// CAUTION - WHEN the Job runs matters, not just how the bar is chosen. The bar
+// must already EXIST at the provider, and a provider publishes a bar only once it
+// has ticks. A run that fires exactly on a boundary (e.g. 08:00 London, which is
+// 08:00 UTC in winter) finds no forming bar and every pair is "unavailable" - the
+// 2026-11-09 incident. The trigger is therefore kept mid-bar in both seasons
+// (07:00 London = 07:00 UTC in winter, 06:00 UTC in summer), and
+// src/scheduled-run/intradaySchedule.test.ts enforces it.
 //
 // DETERMINISTIC + PURE: `now` is injected (never read from a hidden clock), so
 // the selection is fully reproducible and property-testable.

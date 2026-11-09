@@ -95,8 +95,8 @@ describe("freshenCandles daily-entry wiring", () => {
       });
       const buildStores = vi.fn(() => stores);
       const deps: FreshenCandlesDeps = {
-        // An FCS key present ⇒ a non-empty provider list ⇒ the stage runs.
-        env: { EXTERNAL_SIGNAL_API_KEY: "fcs-key-not-logged" },
+        // A Twelve Data key present ⇒ a non-empty provider list ⇒ the stage runs.
+        env: { TWELVE_DATA_API_KEY: "td-key-not-logged" },
         runStage,
         buildStores,
       };
@@ -109,7 +109,7 @@ describe("freshenCandles daily-entry wiring", () => {
       expect(captured?.decisionDate).toBe(DECISION_DATE);
       expect(captured?.candleStore).toBe(stores.candleStore);
       expect(captured?.vectorStore).toBe(stores.vectorStore);
-      expect(captured?.chain.providerNames).toContain("FCS");
+      expect(captured?.chain.providerNames).toContain("TwelveData");
       expect(captured?.maxLookbackTradingDays).toBeGreaterThan(0);
 
       // The start/complete logs are structured and carry no key value.
@@ -158,7 +158,7 @@ describe("freshenCandles daily-entry wiring", () => {
         (): Promise<readonly CandleFreshnessPairSummary[]> => Promise.resolve(summaries),
       );
       const deps: FreshenCandlesDeps = {
-        env: { EXTERNAL_SIGNAL_API_KEY: "fcs-key-not-logged" },
+        env: { TWELVE_DATA_API_KEY: "td-key-not-logged" },
         runStage,
         buildStores: vi.fn(() => stores),
         sleep: () => Promise.resolve(),
@@ -201,7 +201,7 @@ describe("freshenCandles daily-entry wiring", () => {
         );
         const sleep = vi.fn(() => Promise.resolve());
         await freshenCandles(makeConfig(), {
-          env: { EXTERNAL_SIGNAL_API_KEY: "k", CANDLE_FRESHNESS_RETRY_DELAY_SECONDS: "7" },
+          env: { TWELVE_DATA_API_KEY: "k", CANDLE_FRESHNESS_RETRY_DELAY_SECONDS: "7" },
           runStage,
           buildStores: vi.fn(() => makeStores()),
           sleep,
@@ -223,7 +223,7 @@ describe("freshenCandles daily-entry wiring", () => {
           (): Promise<readonly CandleFreshnessPairSummary[]> => Promise.resolve([summary(true)]),
         );
         await freshenCandles(makeConfig(), {
-          env: { EXTERNAL_SIGNAL_API_KEY: "k", CANDLE_FRESHNESS_RETRY_ATTEMPTS: "2" },
+          env: { TWELVE_DATA_API_KEY: "k", CANDLE_FRESHNESS_RETRY_ATTEMPTS: "2" },
           runStage,
           buildStores: vi.fn(() => makeStores()),
           sleep: () => Promise.resolve(),
@@ -243,7 +243,7 @@ describe("freshenCandles daily-entry wiring", () => {
         );
         const sleep = vi.fn(() => Promise.resolve());
         await freshenCandles(makeConfig(), {
-          env: { EXTERNAL_SIGNAL_API_KEY: "k", CANDLE_FRESHNESS_RETRY_ATTEMPTS: "0" },
+          env: { TWELVE_DATA_API_KEY: "k", CANDLE_FRESHNESS_RETRY_ATTEMPTS: "0" },
           runStage: behind,
           buildStores: vi.fn(() => makeStores()),
           sleep,
@@ -254,7 +254,7 @@ describe("freshenCandles daily-entry wiring", () => {
           (): Promise<readonly CandleFreshnessPairSummary[]> => Promise.resolve([summary(false)]),
         );
         await freshenCandles(makeConfig(), {
-          env: { EXTERNAL_SIGNAL_API_KEY: "k" },
+          env: { TWELVE_DATA_API_KEY: "k" },
           runStage: fresh,
           buildStores: vi.fn(() => makeStores()),
           sleep,
@@ -277,7 +277,7 @@ describe("freshenCandles daily-entry wiring", () => {
       );
       const buildStores = vi.fn(() => stores);
       const deps: FreshenCandlesDeps = {
-        env: { EXTERNAL_SIGNAL_API_KEY: "fcs-key-not-logged" },
+        env: { TWELVE_DATA_API_KEY: "td-key-not-logged" },
         runStage,
         buildStores,
       };

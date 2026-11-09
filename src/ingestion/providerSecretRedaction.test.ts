@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { FcsExternalSignalProvider } from "../external-signal/fcsProvider.js";
-import { FcsOhlcFeedProvider } from "./ohlcFeed/fcsOhlcProvider.js";
 import { MassiveOhlcFeedProvider } from "./ohlcFeed/massiveOhlcProvider.js";
 import { TwelveDataOhlcFeedProvider } from "./ohlcFeed/twelveDataOhlcProvider.js";
 import { TwelveDataIntradayClient } from "./intradayFeed/twelveDataIntraday.js";
@@ -51,7 +50,7 @@ function expectNoKey(text: string): void {
 
 /** Collect every error message produced by an OHLC feed `fetchLatest` map. */
 async function ohlcMessages(
-  provider: FcsOhlcFeedProvider | MassiveOhlcFeedProvider | TwelveDataOhlcFeedProvider,
+  provider: MassiveOhlcFeedProvider | TwelveDataOhlcFeedProvider,
 ): Promise<string[]> {
   const results = await provider.fetchLatest(["EURUSD", "GBPUSD"], DECISION_DATE);
   const messages: string[] = [];
@@ -76,12 +75,6 @@ describe("provider failure messages never carry the API key", () => {
       const result = await provider.fetchReference("EURUSD", DECISION_DATE);
       expect(result.ok).toBe(false);
       if (!result.ok) expectNoKey(result.error.message);
-    });
-
-    it(`FCS OHLC client: ${label}`, async () => {
-      const messages = await ohlcMessages(new FcsOhlcFeedProvider(ohlcConfig("FCS"), fetchImpl));
-      expect(messages.length).toBeGreaterThan(0);
-      for (const m of messages) expectNoKey(m);
     });
 
     it(`Massive OHLC client: ${label}`, async () => {
@@ -120,11 +113,5 @@ describe("provider failure messages never carry the API key", () => {
       expectNoKey(result.error.message);
       expect(result.error.message).toContain("Invalid"); // the useful part is kept
     }
-  });
-
-  it("FCS OHLC client: a provider error body that echoes the key", async () => {
-    const messages = await ohlcMessages(new FcsOhlcFeedProvider(ohlcConfig("FCS"), jsonEchoFetch));
-    expect(messages.length).toBeGreaterThan(0);
-    for (const m of messages) expectNoKey(m);
   });
 });
