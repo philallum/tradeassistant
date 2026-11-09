@@ -21,13 +21,13 @@ constraints in [`LESSONS.md`](LESSONS.md).
 
 ## How it works (one paragraph)
 
-At 17:30 New York on weekdays a Cloud Run Job fetches the day's candles (FCS, falling back to
-Twelve Data, then Massive), encodes each pair's recent shape as a 70-number vector, finds the
+At 17:30 New York on weekdays a Cloud Run Job builds the day's candles from hourly bars on
+the 17:00 New York close (Twelve Data, falling back to Massive), encodes each pair's recent shape as a 70-number vector, finds the
 most similar past shapes whose outcomes are fully known, and turns their outcomes into a
 direction and a shrunk confidence. A pair "fires" only if its direction is not FLAT and its
 confidence is at least 0.55. The result is written to Supabase and published as **one static
 file, `dashboard.json`**, which a read-only React app on Firebase Hosting displays. A second Job
-at 08:00 London the next morning checks the forming 4H candle against the original call.
+at 07:00 London the next morning checks the forming 4H candle against the original call.
 
 ```text
 OHLC providers -> candle freshness -> per-pair evaluation x5 -> fires()? -> Supabase rows

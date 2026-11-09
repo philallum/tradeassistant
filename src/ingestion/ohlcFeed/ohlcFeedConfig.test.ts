@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  FCS_OHLC_DEFAULT_BASE_URL,
   MASSIVE_DEFAULT_BASE_URL,
   TWELVE_DATA_DEFAULT_BASE_URL,
   ohlcFeedConfigFromEnv,
@@ -31,22 +30,19 @@ describe("ohlcFeedConfigFromEnv", () => {
     expect(config.providers).toEqual([]);
   });
 
-  it("includes only FCS when only the FCS key is present", () => {
+  it("never includes FCS: its latest bar is still forming, so it is not a candle source", () => {
     const config = ohlcFeedConfigFromEnv({ EXTERNAL_SIGNAL_API_KEY: FCS_KEY });
-    expect(config.providers.map((p) => p.provider)).toEqual(["FCS"]);
-    expect(config.providers[0]?.keyEnvName).toBe("EXTERNAL_SIGNAL_API_KEY");
-    expect(config.providers[0]?.baseUrl).toBe(FCS_OHLC_DEFAULT_BASE_URL);
+    expect(config.providers).toEqual([]);
   });
 
-  it("includes all three providers in the fixed FCS → TwelveData → Massive order", () => {
+  it("includes both providers in the fixed TwelveData → Massive order", () => {
     const config = ohlcFeedConfigFromEnv({
       EXTERNAL_SIGNAL_API_KEY: FCS_KEY,
       TWELVE_DATA_API_KEY: TWELVE_KEY,
       MASSIVE_API_KEY: MASSIVE_KEY,
     });
-    expect(config.providers.map((p) => p.provider)).toEqual(["FCS", "TwelveData", "Massive"]);
+    expect(config.providers.map((p) => p.provider)).toEqual(["TwelveData", "Massive"]);
     expect(config.providers.map((p) => p.baseUrl)).toEqual([
-      FCS_OHLC_DEFAULT_BASE_URL,
       TWELVE_DATA_DEFAULT_BASE_URL,
       MASSIVE_DEFAULT_BASE_URL,
     ]);
@@ -54,15 +50,12 @@ describe("ohlcFeedConfigFromEnv", () => {
 
   it("honours explicit base URLs when provided", () => {
     const config = ohlcFeedConfigFromEnv({
-      EXTERNAL_SIGNAL_API_KEY: FCS_KEY,
-      EXTERNAL_SIGNAL_BASE_URL: "https://fcs.example",
       TWELVE_DATA_API_KEY: TWELVE_KEY,
       TWELVE_DATA_BASE_URL: "https://td.example",
       MASSIVE_API_KEY: MASSIVE_KEY,
       MASSIVE_BASE_URL: "https://massive.example",
     });
     expect(config.providers.map((p) => p.baseUrl)).toEqual([
-      "https://fcs.example",
       "https://td.example",
       "https://massive.example",
     ]);

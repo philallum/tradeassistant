@@ -58,6 +58,12 @@ export interface OutcomeResolutionDeps {
    * vectors; the forward-candle gate still applies.
    */
   readonly requireVector?: boolean;
+  /**
+   * When set, analogue dates BEFORE this date are skipped (their stored outcomes are left as
+   * they are). Used by the candle repair tool to recompute only the affected tail. Omitted =
+   * every date, exactly as before.
+   */
+  readonly fromDate?: TradingDate;
 }
 
 /**
@@ -90,7 +96,7 @@ export async function resolveHistoricalOutcomes(
   let totalOutcomesWritten = 0;
 
   for (const pair of PAIRS) {
-    const summary = await resolvePair(stores, pair, evalDate, windowSize, requireVector);
+    const summary = await resolvePair(stores, pair, evalDate, windowSize, requireVector, deps.fromDate);
     perPair.push(summary);
     totalOutcomesWritten += summary.outcomesWritten;
   }
@@ -105,6 +111,7 @@ async function resolvePair(
   evalDate: TradingDate,
   windowSize: number,
   requireVector: boolean,
+  fromDate: TradingDate | undefined,
 ): Promise<PerPairOutcomeResolution> {
   // Candles ascending (the CandleStore PORT already sorts; the resolver and ATR
   // both require ascending order).
@@ -129,6 +136,10 @@ async function resolvePair(
   // length - 1. Each index i yields the forward slice candles[i+1 ..].
   for (let i = 0; i < candles.length - 1; i++) {
     const analogueDate: TradingDate = candles[i]!.date;
+
+    if (fromDate !== undefined && analogueDate < fromDate) {
+      continue;
+    }
 
     // Vector gate (production): skip dates without a stored pattern vector.
     if (vectorDates !== null && !vectorDates.has(analogueDate)) {

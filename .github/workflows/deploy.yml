@@ -245,7 +245,7 @@ jobs:
             --set-env-vars "GCP_PROJECT_ID=${GCP_PROJECT_ID},GCP_REGION=${GCP_REGION},GEMINI_MODEL=${GEMINI_MODEL},GOOGLE_GENAI_USE_VERTEXAI=true,EXTERNAL_SIGNAL_PROVIDER=FCS,SUPABASE_TARGET=hosted,DASHBOARD_SNAPSHOT_BUCKET=${DASHBOARD_SNAPSHOT_BUCKET}" \
             --set-secrets "EXTERNAL_SIGNAL_API_KEY=external-signal-api-key:latest,TWELVE_DATA_API_KEY=twelve-data-api-key:latest,MASSIVE_API_KEY=massive-api-key:latest,SUPABASE_HOSTED_KEY=supabase-key:latest,SUPABASE_PUBLISHABLE_KEY=supabase-publishable-key:latest,SUPABASE_HOSTED_URL=supabase-url:latest,SUPABASE_POOLER_URL=supabase-pooler-url:latest"
 
-      # intraday-validation (2026-11-06): the SEPARATE ~08:00-UK intraday 4H validation
+      # intraday-validation (2026-11-06): the SEPARATE 07:00-UK intraday 4H validation
       # Job runs the SAME SHA-pinned image with its entrypoint overridden to
       # `dist/scheduled-run/intradayMain.js`, so it must be redeployed on EVERY backend
       # deploy or it silently keeps running a stale image (that stale image once

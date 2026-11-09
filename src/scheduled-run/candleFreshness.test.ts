@@ -212,6 +212,38 @@ describe("runCandleFreshnessStage", () => {
     expect(stored.some((c) => c.date === "2026-09-11")).toBe(true);
   });
 
+  it("logs candle_freshness.nothing_accepted when a provider's candles are all dropped", async () => {
+    const store = new InMemoryCandleStore();
+    const ingestion = new OhlcIngestion(store);
+    await seedPair(ingestion, "USDCAD", ["2026-09-09"]);
+
+    const invalid: RawCandle = { asset: "USDCAD", pair: "USDCAD", date: "2026-09-10", open: 1, high: 0.5, low: 0.9, close: 1 };
+    const chain = new StubChain(emptyLatest, (pair) =>
+      pair === "USDCAD"
+        ? { candles: [invalid], provider: "Massive" }
+        : { reason: "ohlc_feed_error", mode: "empty", provider: "none", pair, message: "x" },
+    );
+    const logs: object[] = [];
+    await runCandleFreshnessStage(makeDeps(chain, store, logs));
+
+    const warn = logs.find((l) => (l as { event?: string }).event === "candle_freshness.nothing_accepted");
+    expect(warn).toMatchObject({ pair: "USDCAD", provider: "Massive", fetched: 1, dates: ["2026-09-10"] });
+  });
+
+  it("does not log nothing_accepted when at least one candle is accepted", async () => {
+    const store = new InMemoryCandleStore();
+    const ingestion = new OhlcIngestion(store);
+    await seedPair(ingestion, "USDCAD", ["2026-09-09"]);
+    const chain = new StubChain(emptyLatest, (pair) =>
+      pair === "USDCAD"
+        ? { candles: [candle("USDCAD", "2026-09-10")], provider: "Massive" }
+        : { reason: "ohlc_feed_error", mode: "empty", provider: "none", pair, message: "x" },
+    );
+    const logs: object[] = [];
+    await runCandleFreshnessStage(makeDeps(chain, store, logs));
+    expect(logs.some((l) => (l as { event?: string }).event === "candle_freshness.nothing_accepted")).toBe(false);
+  });
+
   it("a re-run is a storage no-op (idempotent upsert)", async () => {
     const store = new InMemoryCandleStore();
     const ingestion = new OhlcIngestion(store);

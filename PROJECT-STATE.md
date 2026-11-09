@@ -28,8 +28,8 @@
 
 <!-- BEGIN STATE -->
 - **Phase:** v1 feature-complete and LIVE. `multi-strategy-confluence-engine`, Signal Scorecard and `intraday-validation` (snapshot schema v8) are all LIVE; the intraday republish bug is fixed, deployed and live-verified. Delivery cadence: operator merges dev->main to deploy; agent builds/verifies locally.
-- **Updated:** 2026-11-08
-- **Summary:** A senior peer review was actioned as the `codebase-housekeeping` spec (12 tasks, implemented locally, not yet deployed): behaviour is byte-identical on a fixed scenario except two tested changes (replay guard for the live `third_party` signal; confluence matrix built once), the dormant PASS/CUT verdict path was removed, and the docs were rebuilt (README, snapshot contract, runbook, decision index). Next: operator review + dev->main, then read the new `scheduled_run.step_timing` logs and work the RUNBOOK cloud-cleanup checklist; the first scheduled intraday fire (Mon 2026-11-09) is still to be confirmed.
+- **Updated:** 2026-11-09
+- **Summary:** P0 daily-candle defect is fixed in the repo (hourly-derived 17:00-NY candles, FCS dropped from the candle chain, repair tool added; gate green) but NOT deployed and stored history NOT repaired; intraday trigger is 07:00 in the repo, live Scheduler still 08:00. Awaiting operator approval for: Scheduler pause/update, deploy, repair `--apply`.
 <!-- END STATE -->
 
 ---
@@ -94,7 +94,7 @@ be re-verified from the repo. This document tracks the *system as built*.
   (`30 17 * * 1-5` America/New_York as observed live 2026-11-06 — see RISKS re: the
   close-time publication-lag issue). A SECOND, separate Cloud Run Job
   (`intraday-validation-run`, same image, `intradayMain` entrypoint) is triggered by
-  its own Scheduler job at `0 8 * * 1-5` Europe/London (§5.11); Secret Manager holds
+  its own Scheduler job at `0 7 * * 1-5` Europe/London (§5.11); Secret Manager holds
   all runtime secrets; Cloud Build + Artifact
   Registry build SHA-pinned images; CI authenticates keylessly via Workload
   Identity Federation / OIDC (no stored SA key).
@@ -121,7 +121,7 @@ evaluation → persisted rows → a published JSON snapshot → the SPA.
 ```
                           ┌─────────────────────── Cloud Run Job (daily) ───────────────────────┐
   OHLC providers ──fetch──▶ Candle_Freshness_Stage ──▶ runDailyPipeline (×5 pairs) ──▶ dailyRun  │
-  (FCS→TwelveData→Massive)        │ idempotent upsert        │ deterministic core     │ firing   │
+  (TwelveData→Massive, hourly)        │ idempotent upsert        │ deterministic core     │ firing   │
                                   ▼                          ▼                        ▼ decision │
                            Supabase: candles          Supabase: pattern_vectors   firing_setups  │
                                                         analogue_outcomes         realized_out…  │
@@ -177,10 +177,9 @@ following, in order:
 2. **Candle_Freshness_Stage** (`src/scheduled-run/candleFreshness.ts`). Before the
    pipeline reads history, bring every pair's candles up to the most recent
    completed trading day via the provider fallback chain
-   **FCS → Twelve Data → Massive** (`src/ingestion/ohlcFeed/`), writing through the
+   **Twelve Data → Massive** (`src/ingestion/ohlcFeed/`; each daily candle is built from HOURLY bars on the 17:00 NY close by `src/ingestion/sessionAggregation.ts`, closed + complete sessions only; FCS is no longer a candle source), writing through the
    idempotent, Look_Ahead_Safe `OhlcIngestion` path. A one-day top-up uses
-   `fetchLatest`; a multi-day gap uses `fetchRange` (FCS is latest-only, so ranges
-   route past it). Fail-safe with a bounded retry (default 3×120s); if pairs are
+   `fetchLatest` (the single newest closed session); a multi-day gap uses `fetchRange`. Fail-safe with a bounded retry (default 3×120s); if pairs are
    still behind it logs a high-severity `candle_freshness.degraded` event and
    proceeds on existing history (the run never crashes on a provider hiccup).
 3. **`runDailyPipeline`** (`src/pipeline/dailyPipeline.ts`) evaluates all five
@@ -422,7 +421,7 @@ stored candles and replay correctly. The normal scheduled run is unaffected.
 ### 5.11 Intraday 4H validation (read-only enrichment) — `src/intraday-validation/`
 
 A small layer AROUND the immutable daily forecast, not a second forecasting system.
-The next morning (08:00 Europe/London, roughly 13 hours after the 17:30 NY daily
+The next morning (07:00 Europe/London, roughly 12 hours after the 17:30 NY daily
 run), a SEPARATE Job answers one narrow question: "does
 the currently-forming 4H candle support or contradict the original daily direction?"
 It never reruns the pipeline, never writes a daily-path table, and never changes the
@@ -430,7 +429,7 @@ original direction, Earned_Confidence, firing, or kill-gate. Any failure degrade
 "validation unavailable" with the daily forecast untouched.
 
 - **Flow** (`src/scheduled-run/intradayMain.ts`, Cloud Run Job `intraday-validation-run`,
-  Scheduler `0 8 * * 1-5` Europe/London): read the PUBLISHED `dashboard.json`
+  Scheduler `0 7 * * 1-5` Europe/London): read the PUBLISHED `dashboard.json`
   (`publishedSnapshot.ts`, public GCS read) → take every evaluated pair's original
   direction + confidence from its `pairEvaluations` (fired or not; falls back to fired
   `firing_setups` only if unreadable) → fetch the forming 4H bar per pair → classify →
@@ -466,7 +465,7 @@ original direction, Earned_Confidence, firing, or kill-gate. Any failure degrade
   render a compact block beside the original forecast (observed time, status, current
   confidence labelled "unvalidated adjustment", change in pp) or "Intraday validation
   unavailable". Note the daily run republishes with an empty `intradayValidation`, so the
-  slice clears at each daily run and refills at ~08:00 next morning (history persists in
+  slice clears at each daily run and refills at ~07:00 next morning (history persists in
   `intraday_validations`).
 
 ---
@@ -589,7 +588,7 @@ pure view-model builders, the only place display values are derived),
   Scheduler at 17:30 NY (30 minutes after the 17:00 candle close). Each run is idempotent by Decision_Date (keyed upserts),
   so re-running a date overwrites rather than duplicates.
 - **Intraday cadence:** a second Cloud Run Job `intraday-validation-run` fires once per
-  weekday at 08:00 Europe/London (Scheduler `intraday-validation-run-0800-uk`) and logs
+  weekday at 07:00 Europe/London (Scheduler `intraday-validation-run-0800-uk`, name historical) and logs
   `intraday_validation.start|complete` (`validated`, `unavailable`, `republished`). Manual
   run: `gcloud run jobs execute intraday-validation-run --region europe-west1 --wait`.
   Hazard: it republishes `dashboard.json`, so run it only on an image that key-replaces
@@ -609,12 +608,13 @@ pure view-model builders, the only place display values are derived),
 - **Operational-safety protocol:** live-cloud actions (manual Job runs, migrations,
   IAM/secret changes, backfills) are operator-approved, never autonomous. Secrets
   are referenced by name only and never logged.
-- **Resolved (2026-11-06, operator-confirmed):** the Scheduler used to fire at the
-  exact 17:00 NY candle close, so the in-Job retry window (~6 min) could expire before
-  OHLC providers published the day's bar, causing a recurring `candle_freshness.degraded`
-  alert. Moving the schedule to `30 17 * * 1-5` America/New_York fixed it. (Whether the
-  Job retry env vars were also widened was not checked; the operator reports the schedule
-  shift alone resolved it.) The optional alert-softening idea remains in NEXT-STEPS.
+- **CORRECTED 2026-11-09 - the 17:30 shift did NOT fix the candle problem, and the cause was
+  not timing.** It was recorded here as resolved on 2026-11-06; Friday's first run on the new
+  schedule still ended with all five pairs behind, and a read-only investigation found the real
+  defect: the daily-candle providers' "latest" bars are mis-dated and, for FCS, are the *forming*
+  bar of the next session, so partial bars have been stored as completed candles (e.g. EURUSD
+  2026-11-04 has a 2.4-pip range). See RISKS "DAILY CANDLE DATA INTEGRITY" and DECISIONS
+  2026-11-09. Fixed in the repo 2026-11-09 (see CHANGELOG); deploy + history repair pending operator approval.
 
 ---
 
@@ -668,16 +668,14 @@ Summarised; the authoritative, moving detail is in `docs/state/CHANGELOG.md`
 | `mobile-dashboard-single-window` (SPA single-window refactor) | Complete locally |
 | `trader-edge-validation` (evidence layer: trade-sim/ledger/walk-forward/exposure) | Code-complete (Stages A–H), NOT deployed; no edge measured yet |
 | Signal Scorecard (per-signal predicted-vs-actual, schema v7) | DEPLOYED + live-verified |
-| `intraday-validation` (read-only 4H candle validation, schema v8) | DEPLOYED; manual runs live-verified (5 pairs, other slices byte-identical); first scheduled 08:00 fire and SPA card render not yet confirmed |
+| `intraday-validation` (read-only 4H candle validation, schema v8) | DEPLOYED; manual runs live-verified (5 pairs, other slices byte-identical); its first scheduled fire (08:00 London, Mon 2026-11-09) validated 0 of 5 pairs because 08:00 London is a 4H boundary in winter; trigger moved to 07:00 (see DECISIONS 2026-11-09) |
 | `codebase-housekeeping` (peer-review remediation: single `fires()`, verdict-path removal, redaction, docs) | Implemented locally, NOT deployed; behaviour-preserving except two intended, tested changes (replay guard, shared matrix) |
 
-**Open threads right now** (see NEXT-STEPS for detail): confirm the first scheduled
-intraday run (Mon 2026-11-09 08:00 London) and that the SPA renders the intraday card;
-exercise the new deploy.yml step that keeps the intraday Job on the current image;
-confirm the first signal-
-scorecard reconciliation and the web bundle rendering the "Recorded" line; the
-candle-freshness schedule-timing fix; deploy/measure `trader-edge-validation`; the
-analogue FLAT dead-band unit-mismatch decision.
+**Open threads right now** (see NEXT-STEPS for detail): **daily-candle data integrity (P0;
+partial bars stored as completed candles - diagnosed, fix and history repair pending)**;
+apply the 07:00 intraday trigger to the live Scheduler job and confirm the next scheduled
+intraday run validates; confirm the first signal-scorecard reconciliation; deploy/measure
+`trader-edge-validation`; the analogue FLAT dead-band unit-mismatch decision.
 
 ---
 
@@ -721,7 +719,7 @@ D's close and labels itself the **next** trading day (Friday -> Monday). Every f
 only candles strictly BEFORE the label, so a stored row labelled X never used data from X
 or later. Providers sometimes publish the bar a little after the close, so the candle stage
 retries (default 3 x 120 s) and then proceeds on stored history, logging
-`candle_freshness.degraded`. The intraday Job runs at 08:00 Europe/London the next morning
+`candle_freshness.degraded`. The intraday Job runs at 07:00 Europe/London the next morning
 and uses fixed UTC 4H boundaries (00/04/08/12/16/20), so DST needs no special handling.
 
 ### 12.3 Known limitations (intentional or accepted)

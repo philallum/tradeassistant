@@ -217,11 +217,24 @@ async function processPair(
     deps.decisionDate,
   );
 
+  const log = deps.logger ?? defaultLogger;
+  // A provider that returned candles which ALL failed validation or normalisation used to leave
+  // only an easy-to-miss `fetched=N accepted=0` count (the 2026-11 Friday-candle failure).
+  if (candles.length > 0 && report.accepted === 0) {
+    log({
+      event: "candle_freshness.nothing_accepted",
+      pair,
+      provider: outcome.provider,
+      fetched: candles.length,
+      rejected: report.rejected,
+      dates: candles.map((c) => c.date ?? null),
+    });
+  }
+
   // Encode the newly covered dates so vectors exist for retrieval. The accepted
   // dates are those now stored in `(preRunLatest, target]`; encoding reads a
   // trailing window STRICTLY BEFORE each date (look-ahead safe via the helper).
   const newlyCovered = await datesToEncode(deps, pair, preRunLatest, target);
-  const log = deps.logger ?? defaultLogger;
   await encodeDatesIntoVectors(
     deps.candleStore,
     deps.vectorStore,

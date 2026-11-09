@@ -77,7 +77,7 @@ only the `intradayValidation` key, and uploads it again**. Consequences:
 - If no matching published snapshot exists (wrong decision date, unreadable file) it skips the
   republish rather than writing a partial file.
 - `deploy.yml` redeploys the intraday Job on every backend deploy so it cannot run a stale image.
-- Between the daily run and the 08:00 London republish the file's `schemaVersion` is the same;
+- Between the daily run and the 07:00 London republish the file's `schemaVersion` is the same;
   only `intradayValidation` changes.
 
 ## Reading the file

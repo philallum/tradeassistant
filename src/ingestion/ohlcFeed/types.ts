@@ -14,8 +14,7 @@
 //
 // Capability model: a provider advertises whether it can serve a date-range
 // history fetch (`fetchRange`) or only the latest candle (`fetchLatest`). This
-// makes the FCS limitation explicit — FCS `/forex/latest` is latest-only on the
-// free plan — so the Provider_Fallback_Chain can route a range request past it.
+// makes the capability explicit so the Provider_Fallback_Chain can route a range request past it.
 
 import type { Result, TradingDate } from "../../guard/types.js";
 import type { Pair, RawCandle } from "../types.js";
@@ -56,7 +55,7 @@ export interface OhlcFeedError {
 
 /**
  * The thin, swappable OHLC_Feed_Provider PORT — Design Component 1
- * (Requirement 1). A concrete adapter (FCS, Twelve Data, Massive) implements
+ * (Requirement 1). A concrete adapter (Twelve Data, Massive) implements
  * only these methods over the built-in `fetch`, so the vendor can be swapped
  * without touching the chain or the stage.
  *
@@ -93,9 +92,6 @@ export interface OhlcFeedProvider {
   ): Promise<Result<readonly RawCandle[], OhlcFeedError>>;
 }
 
-/** Default FCS API v4 base URL (reused from the external-signal adapter). */
-export const FCS_OHLC_DEFAULT_BASE_URL = "https://api-v4.fcsapi.com" as const;
-
 /** Default Twelve Data base URL. */
 export const TWELVE_DATA_DEFAULT_BASE_URL = "https://api.twelvedata.com" as const;
 
@@ -109,7 +105,7 @@ export const MASSIVE_DEFAULT_BASE_URL = "https://api.massive.com" as const;
  * `provider` tag and `keyEnvName` are safe to surface.
  */
 export interface OhlcProviderConfig {
-  /** Provenance tag (e.g. "FCS", "TwelveData", "Massive"). */
+  /** Provenance tag (e.g. "TwelveData", "Massive"). */
   readonly provider: string;
   /** The env-var name the key came from (safe to log — a name, not a value). */
   readonly keyEnvName: string;
@@ -121,7 +117,7 @@ export interface OhlcProviderConfig {
 
 /**
  * The resolved OHLC-feed config: the ordered list of configured providers
- * (FCS → Twelve Data → Massive). A provider whose key is absent is omitted, so
+ * (Twelve Data → Massive; FCS is NOT a candle source: its "latest" is a forming bar). A provider whose key is absent is omitted, so
  * the chain simply skips it. When NO key is present the list is empty, which
  * the chain treats as "no provider configured".
  */
@@ -140,11 +136,9 @@ function cleanEnv(value: string | undefined): string | undefined {
  * Read the OHLC-feed env-var contract into an {@link OhlcFeedConfig}, mirroring
  * `externalSignalConfigFromEnv`. Reads BY NAME ONLY:
  *
- * - `EXTERNAL_SIGNAL_API_KEY` (FCS, reusing the existing key)
  * - `TWELVE_DATA_API_KEY`
  * - `MASSIVE_API_KEY`
- * - optional base URLs `EXTERNAL_SIGNAL_BASE_URL`, `TWELVE_DATA_BASE_URL`,
- *   `MASSIVE_BASE_URL` (with the documented defaults)
+ * - optional base URLs `TWELVE_DATA_BASE_URL`, `MASSIVE_BASE_URL` (with the documented defaults)
  *
  * A provider whose key is absent is omitted from the ordered list. When no key
  * is present the returned config carries an empty `providers` list (the chain
@@ -158,16 +152,6 @@ export function ohlcFeedConfigFromEnv(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): OhlcFeedConfig {
   const providers: OhlcProviderConfig[] = [];
-
-  const fcsKey = cleanEnv(env.EXTERNAL_SIGNAL_API_KEY);
-  if (fcsKey !== undefined) {
-    providers.push({
-      provider: "FCS",
-      keyEnvName: "EXTERNAL_SIGNAL_API_KEY",
-      apiKey: fcsKey,
-      baseUrl: cleanEnv(env.EXTERNAL_SIGNAL_BASE_URL) ?? FCS_OHLC_DEFAULT_BASE_URL,
-    });
-  }
 
   const twelveKey = cleanEnv(env.TWELVE_DATA_API_KEY);
   if (twelveKey !== undefined) {

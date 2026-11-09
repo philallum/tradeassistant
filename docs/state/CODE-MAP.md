@@ -14,9 +14,10 @@ authoritative export surface):
 - `ingestion/` — OHLC ingestion + session-boundary normalization, idempotent
   `(asset, date)` upsert.
 - `ingestion/ohlcFeed/` — the OHLC_Feed_Provider port + `ohlcFeedConfigFromEnv`
-  + FCS/Twelve Data/Massive adapters (zero-SDK `fetch`) + `buildProviderChain`
-  fallback resolver (FCS→Twelve Data→Massive, first-usable-wins per pair,
-  capability-aware: a date-range backfill skips latest-only FCS). Feeds the
+  + Twelve Data/Massive adapters (zero-SDK `fetch`, HOURLY bars) + `hourlySessionFeed.ts`
+  (latest = newest closed complete session; range = all of them) + `buildProviderChain`
+  fallback resolver (Twelve Data→Massive, first-usable-wins per pair, injectable `now`).
+  `ingestion/sessionAggregation.ts` is the pure hourly→17:00-NY-session aggregator. Feeds the
   Candle_Freshness_Stage; output goes through the existing `OhlcIngestion`.
 - `encoder/` — Shape-only, per-scale-normalized pattern-vector encoder
   (10/20/40-day windows).
@@ -247,7 +248,7 @@ authoritative export surface):
   stay),
   `evaluation-run/` (the one-shot first-OOS-evaluation entrypoint added by
   `simplify-to-cloud-minimal` task 2.2 - composes + records an `EvaluationReport`
-  over a fixed committed OOS split). `candle-backfill/` (added by
+  over a fixed committed OOS split). `candle-repair/` (2026-11-09: `main.ts` dry-run-by-default `--from/--to/--apply` repair of stored candles from hourly-derived canonical ones + pure `candleRepairPlan.ts`; re-encodes vectors and re-resolves outcomes via `resolveHistoricalOutcomes({fromDate})`). `candle-backfill/` (added by
   `daily-candle-freshness-and-cleanup` task 12 — the one-off operator entry
   (`main.ts`) that closes the current candle gap for all five pairs by driving the
   shared `runCandleFreshnessStage` once (bounded Gap_Backfill via the provider
@@ -304,7 +305,7 @@ dated scorecard for all six signals, beside the replay-based `record` line),
   `recordThirdParty` and `recordPredictions(..., { excludeStrategyIds })` it implements the
   replay guard (the live-only `third_party` signal is not recorded for a replayed date).
 - `ingestion/redactSecrets.ts` - `redactSecrets()`; applied in all five provider clients'
-  failure constructors (FCS x2, Twelve Data x2, Massive) because each puts its API key in the
+  failure constructors (FCS external-signal x2, Twelve Data x2, Massive) because each puts its API key in the
   request URL.
 - `encoder/encodeStoredCandles.ts` - `encodeDatesIntoVectors(..., onSkip)` reports skipped dates.
 - `pipeline/types.ts` - `PipelineDeps.onWarn`: observer for a degraded display-only step.

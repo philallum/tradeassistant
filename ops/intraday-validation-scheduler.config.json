@@ -1,9 +1,9 @@
 {
-  "description": "Committed, version-controlled artifact provisioning the SECOND Cloud Scheduler job that triggers the intraday 4H validation Cloud_Run_Job at ~08:00 UK (intraday-validation feature). Separate from the 17:00-NY daily trigger; the daily Job is untouched.",
+  "description": "Committed, version-controlled artifact provisioning the SECOND Cloud Scheduler job that triggers the intraday 4H validation Cloud_Run_Job at 07:00 UK, before the working day starts (intraday-validation feature). Separate from the 17:30-NY daily trigger; the daily Job is untouched.",
   "artifactApproach": "committed-config",
   "artifactApproachLabel": "committed configuration or Terraform file",
   "schedulerJobName": "intraday-validation-run-0800-uk",
-  "schedule": "0 8 * * 1-5",
+  "schedule": "0 7 * * 1-5",
   "timeZone": "Europe/London",
   "maxRetryAttempts": 2,
   "targetJobName": "intraday-validation-run",
@@ -11,7 +11,9 @@
   "invokerServiceAccount": "scheduler-invoker@trade-assistant-508806.iam.gserviceaccount.com",
   "invokerRole": "roles/run.invoker",
   "notes": [
-    "Schedule derives from Europe/London so the ~08:00 UK trigger tracks UK DST automatically; the Job itself derives the forming 4H bar from fixed UTC boundaries, so no fixed-offset assumption is made.",
+    "Schedule derives from Europe/London so the 07:00 UK trigger tracks UK DST automatically; the Job itself derives the forming 4H bar from fixed UTC boundaries, so no fixed-offset assumption is made.",
+    "WHY 07:00 AND NOT 08:00: the Job only validates against a bar the provider has ALREADY published (open == floor(now, 4h)). 08:00 London is 08:00 UTC in winter - exactly a 4H boundary - so the first scheduled run (Mon 2026-11-09, 35 s into the bar) found no forming bar for any pair and published nothing. 07:00 London is 07:00 UTC in winter (3 h into the 04:00-08:00 bar) and 06:00 UTC in summer (2 h in), so it is mid-bar in BOTH. src/scheduled-run/intradaySchedule.test.ts fails if a schedule ever lands within 30 minutes of a 4H boundary in either season.",
+    "The Scheduler job name `intraday-validation-run-0800-uk` is HISTORICAL: it was created for an 08:00 trigger and was kept (renaming means create-new/delete-old) when the time moved to 07:00. Change the schedule with `gcloud scheduler jobs update http intraday-validation-run-0800-uk --location=europe-west1 --schedule='0 7 * * 1-5' --time-zone=Europe/London`.",
     "Reuses existing secrets by NAME only: TWELVE_DATA_API_KEY (intraday 4H feed), supabase-key, supabase-url (storage), DASHBOARD_SNAPSHOT_BUCKET (snapshot republish). Optional TWELVE_DATA_BASE_URL overrides the provider base URL.",
     "Apply the additive migration supabase/migrations/20260916000010_intraday_validations.sql out-of-band (operator), consistent with project convention. The SupabaseIntradayValidationStore reads/writes fail-safe, so a torn deploy is harmless.",
     "AFTER the one-time bootstrap below, the Cloud Run Job `intraday-validation-run` is (re)deployed on EVERY backend deploy by .github/workflows/deploy.yml (step 'Deploy SHA-pinned image to intraday validation Job', `gcloud run jobs deploy`, same SHA-pinned image + runtime SA, entrypoint dist/scheduled-run/intradayMain.js), so its image can never go stale. Only the Cloud Scheduler job below is still operator-managed.",
@@ -32,7 +34,7 @@
     {
       "kind": "create-scheduler-job",
       "affectedResource": "Cloud Scheduler job \"intraday-validation-run-0800-uk\"",
-      "command": "gcloud scheduler jobs create http intraday-validation-run-0800-uk --schedule='0 8 * * 1-5' --time-zone=Europe/London --uri=https://europe-west1-run.googleapis.com/v2/projects/trade-assistant-508806/locations/europe-west1/jobs/intraday-validation-run:run --http-method=POST --oauth-service-account-email=scheduler-invoker@trade-assistant-508806.iam.gserviceaccount.com --max-retry-attempts=2 --project=trade-assistant-508806 --location=europe-west1"
+      "command": "gcloud scheduler jobs create http intraday-validation-run-0800-uk --schedule='0 7 * * 1-5' --time-zone=Europe/London --uri=https://europe-west1-run.googleapis.com/v2/projects/trade-assistant-508806/locations/europe-west1/jobs/intraday-validation-run:run --http-method=POST --oauth-service-account-email=scheduler-invoker@trade-assistant-508806.iam.gserviceaccount.com --max-retry-attempts=2 --project=trade-assistant-508806 --location=europe-west1"
     }
   ]
 }
