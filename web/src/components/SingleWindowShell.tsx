@@ -23,7 +23,8 @@
  * (the selection provider rewrites the URL afterwards).
  *
  * Composition: PairSummary + 2 x 3 StrategyCardGrid + collapsed context drawers + the
- * System record footer (see `MasterCard`). No stop-loss, take-profit or expectancy anywhere.
+ * System record footer (see `MasterCard`). The only stop-style figure is the labelled,
+ * unvalidated invalidation distance; no take-profit or expectancy anywhere.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
@@ -42,15 +43,18 @@ import type {
   SignalScorecard,
   Pair,
   PairEvaluationRow,
+  ProvenanceRow,
   TrackRecord,
 } from "../api/types";
 import { resolveWindowSelection } from "../pure/resolveWindowSelection";
 import { shapeAllPairsStrip } from "../pure/shapeAllPairsStrip";
 import { shapeConviction } from "../pure/shapeConviction";
+import { shapeDataHealth } from "../pure/shapeDataHealth";
 import { shapeDailyNote } from "../pure/shapeDailyNote";
 import { shapePairNote } from "../pure/shapePairNote";
 import { shapeEvidence } from "../pure/shapeEvidence";
 import { shapeIntradayValidation } from "../pure/shapeIntradayValidation";
+import { shapeInvalidation } from "../pure/shapeInvalidation";
 import { shapePairSummary } from "../pure/shapePairSummary";
 import { shapeStrategyCards } from "../pure/shapeStrategyCards";
 import { shapeSystemRecord } from "../pure/shapeSystemRecord";
@@ -59,6 +63,7 @@ import { selectLatestReport } from "../tabs/Gate/selectReport";
 import type { EvaluationReportsLoader } from "../tabs/Gate/GateTab";
 import { theme } from "../theme/darkTheme";
 import { AllPairsStrip } from "./AllPairsStrip";
+import { DataHealthBanner } from "./DataHealthBanner";
 import { EmptyState } from "./EmptyState";
 import { ErrorState } from "./ErrorState";
 import { LoadingState } from "./LoadingState";
@@ -105,6 +110,10 @@ export interface WindowEvidence {
   readonly intradayValidation: IntradayValidation;
   /** Per-pair AI rationales (one per firing pair). Absent = none loaded. */
   readonly aiRationale?: readonly SignalRationaleRow[];
+  /** Per-forecast Signal_Provenance (data freshness). Absent = none loaded. */
+  readonly provenance?: readonly ProvenanceRow[];
+  /** When the snapshot was generated (ISO), for the snapshot-age fallback. */
+  readonly generatedAt?: string;
 }
 
 /** Loader for the evidence slices. Injected for testability. */
@@ -143,6 +152,8 @@ const defaultLoadEvidence: WindowEvidenceLoader = async (options) => {
     signalScorecard: snapshot.signalScorecard,
     intradayValidation: snapshot.intradayValidation,
     aiRationale: snapshot.aiRationale,
+    provenance: snapshot.provenance,
+    generatedAt: snapshot.generatedAt,
   };
 };
 
@@ -355,6 +366,8 @@ function ReadyView(props: {
   readonly onSelectPair: (pair: Pair) => void;
 }): JSX.Element {
   const { data, pair, onSelectPair } = props;
+  // The clock is read once per mount and injected into the pure shaper.
+  const [nowMs] = useState(() => Date.now());
 
   const composed = useMemo(() => {
     const confluenceRow = data.confluence.pairs.find((p) => p.pair === pair) ?? null;
@@ -388,10 +401,17 @@ function ReadyView(props: {
           ? null
           : shapeEvidence({ pair, horizon, analogueOutcomes: data.evidence.analogueOutcomes }),
       intradayValidation: shapeIntradayValidation(data.evidence.intradayValidation, pair),
+      invalidation: shapeInvalidation(pair, data.rows, data.decisionDate),
       systemRecord: shapeSystemRecord(selectLatestReport(data.evaluationReports)),
+      dataHealth: shapeDataHealth({
+        ...(data.evidence.provenance !== undefined ? { provenance: data.evidence.provenance } : {}),
+        decisionDate: data.decisionDate,
+        ...(data.evidence.generatedAt !== undefined ? { generatedAt: data.evidence.generatedAt } : {}),
+        nowMs,
+      }),
       empty: data.rows.length === 0 && data.confluence.pairs.length === 0,
     };
-  }, [data, pair]);
+  }, [data, pair, nowMs]);
 
   if (composed.empty) {
     return <EmptyState message="No data for this date." />;
@@ -399,6 +419,7 @@ function ReadyView(props: {
 
   return (
     <>
+      <DataHealthBanner health={composed.dataHealth} />
       <AllPairsStrip strip={composed.strip} selectedPair={pair} onSelectPair={onSelectPair} />
       <MasterCard
         pair={pair}
@@ -411,6 +432,7 @@ function ReadyView(props: {
         evidence={composed.evidence}
         intradayValidation={composed.intradayValidation}
         systemRecord={composed.systemRecord}
+        invalidation={composed.invalidation}
       />
     </>
   );

@@ -4,6 +4,7 @@
 > Updated alongside PROJECT-STATE.md when code structure changes.
 
 ## 3. Repository / code map
+- **Lightweight upgrades (2026-11-10), web.** `pure/shapeDataHealth.ts` + `components/DataHealthBanner.tsx` (banner from `provenance`, wired in `SingleWindowShell` via optional `WindowEvidence.provenance/generatedAt`); `pure/shapeHitRateHistory.ts` + `tabs/Gate/TrackRecordHistory.tsx` (record of fired setups from `realizedOutcomes`, rendered under `GateTab` in `AppShell`); `pure/shapeInvalidation.ts` + `components/InvalidationLine.tsx` (labelled, unvalidated invalidation distance from the firing row's `stop_loss_pips`, optional `invalidation` prop on `MasterCard`). No snapshot schema change (still v8).
 - **Dashboard simplification (2026-11-04).** Backend: `src/range-forecast/` (pure expected candle size: `expectedRange.ts`, `realized.ts`), `src/track-record/` (`strategyRecord.ts`, `rangeRecord.ts`, `trackRecordSlice.ts`, `memoizedAnalogueStore.ts`), `src/strategies/calibration.ts` + `src/ops/confluence-calibration/main.ts` (read-only threshold measurement over `data/*.csv`); `PairEvaluation.expectedRange`, snapshot v6 (`expected_range`, `trackRecord`). Web: `components/{PairSummary,StrategyCard,StrategyCardGrid,SystemRecordFooter,MasterCard,AllPairsStrip,ControlBar}.tsx`, `pure/{shapeConviction,shapeStrategyCards,shapePairSummary,shapeSystemRecord,shapeAllPairsStrip,shapeEvidence,shapePairNote}.ts` (`shapePairNote` = the selected pair's own AI rationale from `aiRationale`; `ContextDrawers` shows it above the pair-independent `dailyCommentary` overview); `tabs/` now holds only `Gate/` (accuracy-vs-baseline report). `state/selection.ts` has no "All pairs" (`DEFAULT_PAIR` EURUSD).
 
 Top-level TypeScript modules under `src/` (see each module's `index.ts` for the
@@ -12,7 +13,10 @@ authoritative export surface):
 - `guard/` — Look-ahead safety guard: rejects any candle dated at/after a
   decision date; enforces matured-only outcomes.
 - `ingestion/` — OHLC ingestion + session-boundary normalization, idempotent
-  `(asset, date)` upsert.
+  `(asset, date)` upsert. `ingestion/rangeGuard.ts` (`validateRange`) is the pre-store range sanity
+  check (trailing-median range, no look-ahead, skipped under 20 prior candles), applied inside
+  `OhlcIngestion.ingest` so every write path is covered; rejections land in `IngestReport.errors`
+  and log `candle_ingest.range_rejected`.
 - `ingestion/ohlcFeed/` — the OHLC_Feed_Provider port + `ohlcFeedConfigFromEnv`
   + Twelve Data/Massive adapters (zero-SDK `fetch`, HOURLY bars) + `hourlySessionFeed.ts`
   (latest = newest closed complete session; range = all of them) + `buildProviderChain`

@@ -3,8 +3,9 @@
  *
  *   PairSummary -> StrategyCardGrid (2 x 3) -> ContextDrawers -> SystemRecordFooter
  *
- * Props are already-shaped view models; nothing is recomputed here. There is no stop-loss,
- * take-profit or expectancy anywhere, no multi-pair table, and no raw sample-count dump (the
+ * Props are already-shaped view models; nothing is recomputed here. The only stop-style
+ * figure is the labelled, unvalidated invalidation distance (see `shapeInvalidation`); there
+ * is no take-profit or expectancy anywhere, no multi-pair table, and no raw sample-count dump (the
  * latter lives only inside the collapsed evidence drawer). No `<h1>` is rendered; the
  * ControlBar owns the document's single `<h1>`.
  */
@@ -14,12 +15,14 @@ import type { ConvictionVM } from "../pure/shapeConviction";
 import type { DailyNoteViewModel } from "../pure/shapeDailyNote";
 import type { EvidenceVM } from "../pure/shapeEvidence";
 import type { IntradayValidationViewModel } from "../pure/shapeIntradayValidation";
+import type { InvalidationVM } from "../pure/shapeInvalidation";
 import type { PairSummaryVM } from "../pure/shapePairSummary";
 import type { StrategyCardVM } from "../pure/shapeStrategyCards";
 import type { SystemRecordVM } from "../pure/shapeSystemRecord";
 import { theme } from "../theme/darkTheme";
 import { ContextDrawers } from "./ContextDrawers";
 import { IntradayValidationCard } from "./IntradayValidationCard";
+import { InvalidationLine } from "./InvalidationLine";
 import { PairSummary } from "./PairSummary";
 import { StrategyCardGrid } from "./StrategyCardGrid";
 import { SystemRecordFooter } from "./SystemRecordFooter";
@@ -40,6 +43,8 @@ export interface MasterCardProps {
   /** The read-only intraday 4H validation for the pair (schema v8). */
   readonly intradayValidation: IntradayValidationViewModel;
   readonly systemRecord: SystemRecordVM;
+  /** Labelled, unvalidated invalidation distance for a firing pair (optional; omitted = none). */
+  readonly invalidation?: InvalidationVM | null;
 }
 
 export function MasterCard({
@@ -53,6 +58,7 @@ export function MasterCard({
   evidence,
   intradayValidation,
   systemRecord,
+  invalidation = null,
 }: MasterCardProps): JSX.Element {
   return (
     <article
@@ -66,6 +72,7 @@ export function MasterCard({
       }}
     >
       <PairSummary pair={pair} conviction={conviction} summary={summary} />
+      <InvalidationLine vm={invalidation} />
       <IntradayValidationCard pair={pair} vm={intradayValidation} />
       <StrategyCardGrid pair={pair} cards={cards} lookbackDays={lookbackDays} />
       <ContextDrawers

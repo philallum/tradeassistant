@@ -39,7 +39,7 @@ import { getSnapshot } from "../api/snapshotCache";
 import type { DecisionDateRow } from "../api/types";
 import { selectBrowseDate } from "../pure/selectDates";
 import { useSelection } from "../state/selection";
-import { GateTab } from "../tabs/Gate";
+import { GateTab, TrackRecordHistory } from "../tabs/Gate";
 import { theme } from "../theme/darkTheme";
 import { ControlBar } from "./ControlBar";
 import { EmptyState } from "./EmptyState";
@@ -204,6 +204,7 @@ export function AppShell({ loadDecisionDates = defaultLoader }: AppShellProps): 
                 </nav>
                 {/* GateTab has no refreshNonce prop; remount on refresh to re-fetch. */}
                 <GateTab key={refreshNonce} />
+                <TrackRecordHistory key={`history-${refreshNonce}`} />
               </>
             ) : (
               <>
