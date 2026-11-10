@@ -14,3 +14,4 @@ ops/fx-writer-key/
 # CLI scratch / cache directories (link metadata, deploy caches) - never source
 supabase/.temp/
 web/.firebase/
+data/hourly/

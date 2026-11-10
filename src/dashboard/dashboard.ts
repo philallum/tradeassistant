@@ -86,6 +86,19 @@ export interface PairEvaluation {
    * small to forecast (never fabricated).
    */
   readonly expectedRange?: ExpectedRange;
+  /**
+   * The analogue neighbourhood size n at the selected horizon. DISPLAY-ONLY: it feeds the
+   * `runHealth` snapshot slice's "why silent" reason and no firing, confidence or scoring
+   * decision. Optional so every existing construction site stays valid.
+   */
+  readonly analogueCount?: number;
+  /**
+   * True when the pair's candle history was still behind the most recent completed session
+   * after the freshness stage, so NO call is made for it (operator decision 2026-11-10). Set by
+   * the scheduled run only; `fires` returns false for a withheld pair, so every consumer of the
+   * single firing predicate (persistence, snapshot, scorecard) treats it as silent.
+   */
+  readonly withheld?: boolean;
   /** Outward-only plain-language AI rationale for the card (Requirement 15.1). */
   readonly rationale: string;
   /** Outward-only qualitative analogue labels for the card (Requirement 15.3). */
@@ -105,6 +118,7 @@ export interface PairEvaluation {
  */
 export function fires(evaluation: PairEvaluation, confidenceThreshold: number): boolean {
   return (
+    evaluation.withheld !== true &&
     evaluation.direction !== "FLAT" &&
     evaluation.earnedConfidence >= confidenceThreshold
   );

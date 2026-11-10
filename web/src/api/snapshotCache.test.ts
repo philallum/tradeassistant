@@ -12,6 +12,8 @@ import { getSnapshot, resetSnapshotCache } from "./snapshotCache";
 import {
   EMPTY_CONFLUENCE,
   EMPTY_INTRADAY_VALIDATION,
+  EMPTY_EVENT_FLAGS,
+  EMPTY_RUN_HEALTH,
   EMPTY_SIGNAL_SCORECARD,
   EMPTY_TRACK_RECORD,
   type DashboardSnapshot,
@@ -42,6 +44,8 @@ const SNAPSHOT: DashboardSnapshot = {
   trackRecord: EMPTY_TRACK_RECORD,
   signalScorecard: EMPTY_SIGNAL_SCORECARD,
   intradayValidation: EMPTY_INTRADAY_VALIDATION,
+  runHealth: EMPTY_RUN_HEALTH,
+  eventFlags: EMPTY_EVENT_FLAGS,
 };
 
 const originalFetch = globalThis.fetch;

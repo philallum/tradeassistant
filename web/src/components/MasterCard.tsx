@@ -17,6 +17,7 @@ import type { EvidenceVM } from "../pure/shapeEvidence";
 import type { IntradayValidationViewModel } from "../pure/shapeIntradayValidation";
 import type { InvalidationVM } from "../pure/shapeInvalidation";
 import type { PairSummaryVM } from "../pure/shapePairSummary";
+import type { SilenceVM } from "../pure/shapeSilence";
 import type { StrategyCardVM } from "../pure/shapeStrategyCards";
 import type { SystemRecordVM } from "../pure/shapeSystemRecord";
 import { theme } from "../theme/darkTheme";
@@ -32,6 +33,8 @@ export interface MasterCardProps {
   /** `null` when the pair has no confluence row. */
   readonly conviction: ConvictionVM | null;
   readonly summary: PairSummaryVM;
+  /** Why the pair is silent today (schema v9), or omitted/null when it fired. */
+  readonly silence?: SilenceVM | null;
   readonly cards: readonly StrategyCardVM[];
   /** Trading-day window the strategy records cover (0 = none built). */
   readonly lookbackDays: number;
@@ -51,6 +54,7 @@ export function MasterCard({
   pair,
   conviction,
   summary,
+  silence = null,
   cards,
   lookbackDays,
   note,
@@ -71,7 +75,7 @@ export function MasterCard({
         minWidth: 0,
       }}
     >
-      <PairSummary pair={pair} conviction={conviction} summary={summary} />
+      <PairSummary pair={pair} conviction={conviction} summary={summary} silence={silence} />
       <InvalidationLine vm={invalidation} />
       <IntradayValidationCard pair={pair} vm={intradayValidation} />
       <StrategyCardGrid pair={pair} cards={cards} lookbackDays={lookbackDays} />

@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { RealizedOutcomeRow } from "../api/types";
-import { LEDGER_LIMIT, MIN_RELIABLE_N, shapeHitRateHistory } from "./shapeHitRateHistory";
+import { FORWARD_TEST_START, LEDGER_LIMIT, MIN_RELIABLE_N, shapeHitRateHistory } from "./shapeHitRateHistory";
 
 function row(over: Partial<RealizedOutcomeRow> = {}): RealizedOutcomeRow {
   return {
@@ -99,5 +101,34 @@ describe("shapeHitRateHistory", () => {
     const before = JSON.stringify(rows);
     shapeHitRateHistory(rows);
     expect(JSON.stringify(rows)).toBe(before);
+  });
+});
+
+describe("shapeHitRateHistory intervals and framing", () => {
+  it("carries a Wilson interval and compares it with the coin-flip line", () => {
+    const rows = Array.from({ length: 40 }, (_, i) =>
+      row({ decision_date: `2026-11-${String((i % 28) + 1).padStart(2, "0")}`, pair: i < 28 ? "EURUSD" : "GBPUSD", realized_direction: i % 2 === 0 ? "UP" : "DOWN" }),
+    );
+    const vm = shapeHitRateHistory(rows);
+    expect(vm.overall.intervalText).toMatch(/^95% interval \d+%–\d+%$/);
+    expect(vm.overall.versusCoinFlip).toBe("indistinguishable");
+    expect(vm.readingText).toContain("not distinguishable from a coin flip");
+    expect(vm.coinFlipNote).toContain("50%");
+  });
+
+  it("flags an interval that clears the coin flip, and shows nothing for no data", () => {
+    const wins = Array.from({ length: 60 }, (_, i) => row({ pair: `P${i}`, decision_date: "2026-11-02" }));
+    expect(shapeHitRateHistory(wins).overall.versusCoinFlip).toBe("above");
+    const none = shapeHitRateHistory([]);
+    expect(none.overall.versusCoinFlip).toBe("none");
+    expect(none.readingText).toBeNull();
+    expect(none.overall.intervalText).toBe("–");
+  });
+
+  it("states the forward-test start and keeps it equal to the backend protocol constant", () => {
+    const vm = shapeHitRateHistory([]);
+    expect(vm.forwardStartNote).toContain(FORWARD_TEST_START);
+    const backend = readFileSync(join(__dirname, "..", "..", "..", "src", "walk-forward", "evidenceProtocol.ts"), "utf8");
+    expect(backend).toContain(`FORWARD_TEST_START = "${FORWARD_TEST_START}"`);
   });
 });

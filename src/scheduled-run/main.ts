@@ -40,6 +40,9 @@ import {
   type DisplayOnlyWrite,
 } from "../storage/supabase/index.js";
 import type { PairEvaluation, DashboardView } from "../dashboard/index.js";
+import type { Pair } from "../ingestion/types.js";
+import { buildEventFlags } from "../event-calendar/eventFlags.js";
+import { buildRunHealthSlice } from "./runHealthSlice.js";
 import { isTradingDay } from "../guard/tradingDate.js";
 import { OhlcIngestion } from "../ingestion/ohlcIngestion.js";
 import {
@@ -124,6 +127,22 @@ export const loadEvaluations: PairEvaluationLoader = (decisionDate, supabase) =>
  * persister; capturing them here lets the persister build the display-only
  * cross-reference from the exact same deterministic evaluations.
  */
+/**
+ * Wrap a loader so pairs left behind by the candle-freshness stage are marked `withheld`
+ * (operator decision 2026-11-10): their call is computed as usual but `fires` returns false, so
+ * they surface as silent with reason DATA_BEHIND instead of as a call built on stale candles.
+ * Healthy days (no pair behind) are returned untouched, byte-identical to before.
+ */
+export function withholdBehindPairs(
+  inner: PairEvaluationLoader,
+  behindPairs: readonly string[],
+): PairEvaluationLoader {
+  if (behindPairs.length === 0) return inner;
+  const behind = new Set<string>(behindPairs);
+  return async (decisionDate, supabase) =>
+    (await inner(decisionDate, supabase)).map((ev) => (behind.has(ev.pair) ? { ...ev, withheld: true } : ev));
+}
+
 function cachingLoader(
   inner: PairEvaluationLoader,
 ): { loader: PairEvaluationLoader; get(): readonly PairEvaluation[] } {
@@ -282,7 +301,7 @@ const realSleep = (ms: number): Promise<void> =>
 export async function freshenCandles(
   config: ReturnType<typeof loadScheduledRunConfig>,
   deps: FreshenCandlesDeps = {},
-): Promise<void> {
+): Promise<readonly Pair[]> {
   const env = deps.env ?? process.env;
   const runStage = deps.runStage ?? runCandleFreshnessStage;
   const buildStores =
@@ -295,7 +314,7 @@ export async function freshenCandles(
     // an empty list means no provider key is present (R1.5) — skip the stage.
     if (chainConfig.providers.length === 0) {
       logStartupWarning("candle_freshness", new Error("no OHLC feed provider configured"));
-      return;
+      return [];
     }
 
     console.log(
@@ -368,10 +387,13 @@ export async function freshenCandles(
         decisionDate: config.decisionDate,
       }),
     );
+    // Reported to the caller for the display-only `runHealth` slice; firing is unaffected.
+    return summaries.filter((s) => s.degraded || s.residualGap).map((s) => s.pair);
   } catch (err) {
     // Fail-safe (R4.1): a stage error never crashes the Job; the run proceeds on
     // existing history with a secret-free warning (no key value is logged).
     logStartupWarning("candle_freshness", err);
+    return [];
   }
 }
 
@@ -431,6 +453,8 @@ export interface PersistViewDeps {
   readonly displayDeps: DisplayOnlyDeps;
   /** The resolved snapshot destination sink, or `undefined` for a no-op write. */
   readonly snapshotSink: SnapshotSink | undefined;
+  /** Pairs the freshness stage left behind (display-only `runHealth` slice). Default none. */
+  readonly behindPairs?: readonly string[];
   /** The DB view persister. Defaults to the Supabase writer (the source of truth). */
   readonly persist?: (view: DashboardView, supabase: SupabaseConfigArg) => Promise<void>;
   /** Build the display-only writes. Defaults to {@link buildDisplayOnly}. */
@@ -734,6 +758,23 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
     } catch (err) {
       warn("signal_scorecard_slice", err);
     }
+    // v9 run-health slice: pure and display-only (why each silent pair is silent, which
+    // pairs ran on stale candles). It reads the evaluations the view was built from and
+    // returns nothing firing reads, so a defect here cannot change a decision.
+    let runHealth: ReturnType<typeof buildRunHealthSlice> | undefined;
+    try {
+      runHealth = buildRunHealthSlice(deps.cached.get(), deps.behindPairs ?? []);
+    } catch (err) {
+      warn("run_health", err);
+    }
+    // v9 event flags: a pure lookup in a static calendar for the Decision_Date. A caution flag
+    // only; it reads nothing the run computed and returns nothing firing reads.
+    let eventFlags: ReturnType<typeof buildEventFlags> | undefined;
+    try {
+      eventFlags = buildEventFlags(view.decisionDate);
+    } catch (err) {
+      warn("event_flags", err);
+    }
     const snapshot = buildSnapshot(
       view,
       displayOnly,
@@ -744,6 +785,9 @@ export function makePersistView(deps: PersistViewDeps): DashboardViewPersister {
       confluence,
       trackRecord,
       signalScorecard,
+      undefined,
+      runHealth,
+      eventFlags,
     );
     await time("write_snapshot", () => writeSnapshot(snapshot, deps.snapshotSink));
   };
@@ -786,10 +830,10 @@ async function main(): Promise<void> {
   // to the most recent Completed_Trading_Day BEFORE `runScheduledDaily` reads it.
   // Fail-safe (R4.1): a stage error is caught inside `freshenCandles` and the run
   // proceeds on existing history.
-  await timed("freshen_candles", () => freshenCandles(config));
+  const behindPairs = await timed("freshen_candles", () => freshenCandles(config));
 
   const displayDeps = await buildDisplayDeps(config);
-  const cached = cachingLoader(loadEvaluations);
+  const cached = cachingLoader(withholdBehindPairs(loadEvaluations, behindPairs));
 
   /**
    * Persist the produced dashboard view to `firing_setups`, then — beside it —
@@ -804,7 +848,7 @@ async function main(): Promise<void> {
    */
   const snapshotSink = await resolveSnapshotSink(config);
 
-  const persistView = makePersistView({ cached, displayDeps, snapshotSink });
+  const persistView = makePersistView({ cached, displayDeps, snapshotSink, behindPairs });
 
   // Total of: the deterministic pipeline + persistView (whose steps are each timed above).
   const result = await timed("pipeline_and_persist_total", () =>

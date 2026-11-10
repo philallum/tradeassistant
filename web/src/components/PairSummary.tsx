@@ -11,6 +11,8 @@ import type { JSX } from "react";
 import type { ConvictionVM } from "../pure/shapeConviction";
 import { tierGlyph } from "../pure/shapeConviction";
 import type { PairSummaryVM } from "../pure/shapePairSummary";
+import type { SilenceVM } from "../pure/shapeSilence";
+import { RISK_NOTE } from "../pure/riskNote";
 import { theme } from "../theme/darkTheme";
 
 export interface PairSummaryProps {
@@ -18,9 +20,11 @@ export interface PairSummaryProps {
   /** `null` when the pair has no confluence row. */
   readonly conviction: ConvictionVM | null;
   readonly summary: PairSummaryVM;
+  /** Why the pair is silent today, or null/omitted when it fired. */
+  readonly silence?: SilenceVM | null;
 }
 
-export function PairSummary({ pair, conviction, summary }: PairSummaryProps): JSX.Element {
+export function PairSummary({ pair, conviction, summary, silence = null }: PairSummaryProps): JSX.Element {
   const { pattern, candleSize } = summary;
   return (
     <section
@@ -72,6 +76,20 @@ export function PairSummary({ pair, conviction, summary }: PairSummaryProps): JS
       <p data-testid="pair-pattern" style={{ margin: 0, fontSize: 14, color: theme.colors.textPrimary }}>
         {pattern.text}
       </p>
+      {pattern.basisText !== null ? (
+        <p data-testid="pair-basis" style={{ margin: 0, fontSize: 13, color: theme.colors.textSecondary }}>
+          {pattern.basisText}
+        </p>
+      ) : null}
+      {silence !== null ? (
+        <p
+          data-testid="pair-silence"
+          data-reason={silence.reason}
+          style={{ margin: 0, fontSize: 13, color: theme.colors.textSecondary }}
+        >
+          Staying silent is a result, not a fault. {silence.text}
+        </p>
+      ) : null}
 
       <div
         data-testid="candle-size"
@@ -97,6 +115,10 @@ export function PairSummary({ pair, conviction, summary }: PairSummaryProps): JS
           {candleSize.smallSample && candleSize.available ? " (small sample)" : ""}
         </span>
       </div>
+
+      <p data-testid="risk-note" style={{ margin: 0, fontSize: 12, color: theme.colors.textMuted }}>
+        {RISK_NOTE}
+      </p>
     </section>
   );
 }

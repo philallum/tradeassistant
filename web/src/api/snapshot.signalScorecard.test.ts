@@ -15,7 +15,7 @@ const GOOD = {
 
 describe("parseSignalScorecard", () => {
   it("the current schema version is v8", () => {
-    expect(SNAPSHOT_SCHEMA_VERSION).toBe(8);
+    expect(SNAPSHOT_SCHEMA_VERSION).toBe(9);
   });
 
   it("passes a well-formed slice through", () => {

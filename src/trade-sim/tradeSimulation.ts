@@ -29,7 +29,7 @@ import type { IntraCandleResolver, TradeOutcome, TradeProposal } from "./types.j
  * The absolute Stop_Loss / Take_Profit price levels for a proposal. For a long
  * (UP) the target is above and the stop below the entry; mirrored for a short.
  */
-function priceLevels(proposal: TradeProposal): {
+export function priceLevels(proposal: TradeProposal): {
   readonly stopPrice: number;
   readonly targetPrice: number;
 } {
@@ -66,7 +66,8 @@ function expiredPips(proposal: TradeProposal, terminalClose: number): number {
  * @param forwardCandles     candles for the pair, chronological, bounded by the
  *                           caller to the entry→Horizon-expiry window. The
  *                           simulation consumes at most `horizon` candles dated
- *                           strictly after the entry date (Look_Ahead_Safe).
+ *                           on or after the entry date, the entry session first
+ *                           (Look_Ahead_Safe: nothing before the fill is read).
  * @param intraCandleResolver optional lower-timeframe disambiguation seam (R1.4);
  *                           absent ⇒ a both-touched candle stays `ambiguous`.
  */
@@ -77,9 +78,12 @@ export function simulateTrade(
 ): TradeOutcome {
   const { stopPrice, targetPrice } = priceLevels(proposal);
 
-  // Only candles STRICTLY AFTER the entry date, chronological, capped to horizon.
+  // The path starts at the ENTRY session itself: a fill at that session's open is followed by
+  // that session's own high/low, so a stop or target touched later the same day must count.
+  // (Filtering strictly AFTER the entry date skipped it and shifted the horizon by a session.)
+  // Candles before the entry date can never be on the path. Chronological, capped to horizon.
   const path = [...forwardCandles]
-    .filter((c) => c.asset === proposal.pair && c.date > proposal.entryDate)
+    .filter((c) => c.asset === proposal.pair && c.date >= proposal.entryDate)
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, proposal.horizon);
 

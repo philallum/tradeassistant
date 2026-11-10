@@ -27,9 +27,9 @@
 > write a secret value into any doc — reference credentials by name only.
 
 <!-- BEGIN STATE -->
-- **Phase:** v1 feature-complete and LIVE. `multi-strategy-confluence-engine`, Signal Scorecard and `intraday-validation` (snapshot schema v8) are all LIVE; the intraday republish bug is fixed, deployed and live-verified. Delivery cadence: operator merges dev->main to deploy; agent builds/verifies locally.
+- **Phase:** v1 feature-complete and LIVE. `multi-strategy-confluence-engine`, Signal Scorecard and `intraday-validation` (snapshot schema v8) are all LIVE; the intraday republish bug is fixed, deployed and live-verified. An evidence-first hardening pass (snapshot v9, offline evidence tools) is implemented locally and NOT deployed. Delivery cadence: operator merges dev->main to deploy; agent builds/verifies locally.
 - **Updated:** 2026-11-10
-- **Summary:** Daily-candle fix (hourly-derived 17:00-NY candles) and the 07:00 London intraday trigger are deployed and verified live on 2026-11-10 (daily candles canonical on all 5 pairs, intraday validated 5/5, no warnings). History 2026-10-12..11-06 repaired; older history unaudited. Dependabot cleanup complete (0 open PRs/branches); the flaky `generatedAt` test in `src/scheduled-run/main.test.ts` is fixed (PR #71). Four lightweight upgrades (candle range guard, data-health banner, fired-setup record view, labelled invalidation distance) are implemented and locally gated on `dev`; not committed or deployed.
+- **Summary:** Evidence-first hardening (16 tasks) is built locally and verified (`make check` green) but uncommitted and undeployed: the measured signal is a coin flip (model 50.1%) and the +1.24pp headline comes from a weak weekly-trend baseline; 79% of firing days rest on <30 analogues. See RESEARCH-LOG, NEXT-STEPS 0m. Daily-candle fix (hourly-derived 17:00-NY candles) and the 07:00 London intraday trigger are deployed and verified live on 2026-11-10 (daily candles canonical on all 5 pairs, intraday validated 5/5, no warnings). History 2026-10-12..11-06 repaired; older history unaudited. Dependabot cleanup complete (0 open PRs/branches); the flaky `generatedAt` test in `src/scheduled-run/main.test.ts` is fixed (PR #71). Four lightweight upgrades (candle range guard, data-health banner, fired-setup record view, labelled invalidation distance) are implemented and locally gated on `dev`; not committed or deployed.
 <!-- END STATE -->
 
 ---
@@ -39,7 +39,7 @@
 A personal, local-first **FX Daily Pattern Trading Assistant** for the five major
 pairs (EURUSD, GBPUSD, USDJPY, USDCHF, USDCAD). Once per trading day it surfaces a
 small number of high-conviction, forward-looking directional setups — "a pattern
-is emerging; over the next 1–3 days, direction X, earned confidence C%" — and
+is emerging; over the session after the Decision_Date, direction X, earned confidence C%" — and
 stays **silent** otherwise. It is the successor to a prior forecasting system that
 failed instructively; the lessons from that failure are hard constraints that live
 in `LESSONS.md`.
@@ -280,9 +280,11 @@ C_shrunk = (n / (n + k)) · C_raw + (k / (n + k)) · 0.5        with k = FIXED_P
 result   = clamp(C_shrunk, 0, 1)
 ```
 
-Because `k` is fixed, a thin neighborhood (small `n`) is pulled hard toward the
-neutral prior 0.5 and **cannot cross the 0.55 firing threshold on sample size
-alone** — the 30-analogue floor is enforced by the math, not a special case.
+Because `k` is fixed, a thin neighborhood (small `n`) is pulled toward the neutral
+prior 0.5, but only moderately: **a unanimous neighborhood of 5 earns 0.667, above the
+0.55 firing line.** The 30-analogue figure is NOT enforced for firing (it only gates the
+empirical SL/TP). Measured 2013-2024: 79% of firing days had fewer than 30 analogues
+(RISKS, RESEARCH-LOG 2026-11-10).
 
 **Direction** (`dominantDirection`): tally UP vs DOWN at the selected horizon; ties
 and all-FLAT resolve to **FLAT** (so the pair does not fire).
@@ -495,12 +497,12 @@ earlier phases (`gate_verdicts`, `signal_rationale`, `external_reference_compari
 etc.) survive in migration history but are superseded — treat the list above as the
 live set and check `docs/state/CODE-MAP.md` before relying on any other.
 
-**The published artifact** is `dashboard.json` (schema **v8**), assembled by
+**The published artifact** is `dashboard.json` (schema **v9**), assembled by
 `src/scheduled-run/snapshot.ts` from today's view plus history read back from the
 rows above. Slices: `firingSetups`, `pairEvaluations`, `realizedOutcomes`,
 `analogueOutcomes`, `candles`, `aiRationale`, `dailyCommentary`,
 `externalComparison`, `evaluationReports`, `confluence` (v5), `trackRecord` (v6),
-`signalScorecard` (v7), `intradayValidation` (v8, filled by the separate intraday Job),
+`signalScorecard` (v7), `intradayValidation` (v8, filled by the separate intraday Job), `runHealth` and `eventFlags` (v9, local only until deployed),
 plus the offline-evidence slices (`tradeLedgerSummary`,
 `calibration`, `exposure`, `provenance`, `validationStatus`). The web side parses
 it leniently (`web/src/api/snapshot.ts`): an absent/malformed slice degrades to its
@@ -669,6 +671,7 @@ Summarised; the authoritative, moving detail is in `docs/state/CHANGELOG.md`
 | `trader-edge-validation` (evidence layer: trade-sim/ledger/walk-forward/exposure) | Code-complete (Stages A–H), NOT deployed; no edge measured yet |
 | Signal Scorecard (per-signal predicted-vs-actual, schema v7) | DEPLOYED + live-verified |
 | `intraday-validation` (read-only 4H candle validation, schema v8) | DEPLOYED; manual runs live-verified (5 pairs, other slices byte-identical); its first scheduled fire (08:00 London, Mon 2026-11-09) validated 0 of 5 pairs because 08:00 London is a 4H boundary in winter; trigger moved to 07:00 (see DECISIONS 2026-11-09) |
+| Evidence-first hardening (pre-registered protocol, offline evidence tools, snapshot v9 `runHealth`/`eventFlags`, event calendar, hourly archive, heartbeat) | Implemented locally, NOT deployed; behaviour-preserving for the live decision (guard tests); the only changes to existing behaviour are web copy and a dormant trade-sim fix |
 | `codebase-housekeeping` (peer-review remediation: single `fires()`, verdict-path removal, redaction, docs) | Implemented locally, NOT deployed; behaviour-preserving except two intended, tested changes (replay guard, shared matrix) |
 
 **Open threads right now** (see NEXT-STEPS for detail): **daily-candle data integrity (P0;
@@ -687,9 +690,9 @@ intraday run validates; confirm the first signal-scorecard reconciliation; deplo
 chart shapes - within cosine distance 0.2, strictly earlier than the Decision_Date, with a
 fully matured outcome - the share that went on to move in the dominant direction at the
 selected horizon (a FLAT outcome counts against), pulled toward 0.5 by a fixed prior worth
-10 observations: `C = n/(n+10)·C_raw + 10/(n+10)·0.5`. The shrinkage is deliberate: the
-system does not treat a small historical sample as a reliable probability, so a thin
-neighbourhood cannot clear the firing line (0.55) on sample size alone.
+10 observations: `C = n/(n+10)·C_raw + 10/(n+10)·0.5`. The shrinkage damps a small sample
+but does not stop it clearing the firing line (0.55): a unanimous neighbourhood of 5 earns
+0.667, and about 79% of measured firing days (2013-2024) had fewer than 30 analogues.
 
 **It is not** (all deliberate, and why):
 - A calibrated probability that a trade wins. Calibration has not been measured (the
@@ -699,7 +702,11 @@ neighbourhood cannot clear the firing line (0.55) on sample size alone.
   measured edge.
 - Evidence of a large edge. The one out-of-sample evaluation recorded is model 0.4996 vs
   baseline 0.4871 (+1.24pp, 95% CI [+0.66, +1.82]pp, n=28,470): a small, statistically
-  positive, practically marginal lead, recorded with no verdict (`RESEARCH-LOG.md`).
+  positive, practically marginal lead, recorded with no verdict (`RESEARCH-LOG.md`). A local
+  re-run (2026-11-10) reproduces it at +1.04pp but shows the lead comes from the weekly-trend
+  baseline scoring 49.1%; the model itself scores 50.1% (a coin flip), the interval includes
+  zero once overlapping days and correlated pairs are discounted, and net expectancy is
+  about -1.2 pips/trade after friction.
 - Information about news, regime, or costs. The vector is shape only (70 dimensions of
   z-scored closes over 10/20/40 days).
 - A multi-day forecast with a chosen horizon. In practice it is horizon 1 (§5.4, R1).
@@ -708,8 +715,10 @@ The 0.55 line is a *display gate*, not a trading signal. Two further unvalidated
 exist and are always labelled so: the Confluence score ("strength is not a probability") and
 the intraday validation delta (a bounded, provisional adjustment).
 
-An open, documented question affects how far the headline comparison can be trusted: the
-analogue FLAT dead-band unit mismatch (`docs/state/RISKS.md`, finding 1).
+The analogue FLAT dead-band unit mismatch (`docs/state/RISKS.md`, finding 1) was measured
+offline (2026-11-10): the originally intended 0.5xATR band (about 60% FLAT) does not beat the
+live sign-based behaviour, so the live definition is unchanged and the decision stays with
+the operator.
 
 ### 12.2 What the daily schedule means
 
@@ -717,17 +726,19 @@ The Decision_Date is the label of the session being decided. The FX daily candle
 closes at 17:00 America/New_York; the Job runs at 17:30 NY on weekdays, so it has just seen
 D's close and labels itself the **next** trading day (Friday -> Monday). Every feature uses
 only candles strictly BEFORE the label, so a stored row labelled X never used data from X
-or later. Providers sometimes publish the bar a little after the close, so the candle stage
+or later. The stored outcome for a Decision_Date X, however, measures the first session
+strictly AFTER X (X's own session is in neither the features nor the label); this is consistent
+across analogues and the journal and was measured to change nothing (RISKS). Providers sometimes publish the bar a little after the close, so the candle stage
 retries (default 3 x 120 s) and then proceeds on stored history, logging
 `candle_freshness.degraded`. The intraday Job runs at 07:00 Europe/London the next morning
 and uses fixed UTC 4H boundaries (00/04/08/12/16/20), so DST needs no special handling.
 
 ### 12.3 Known limitations (intentional or accepted)
 
-- **A stale run still publishes.** If providers fail, the run evaluates on stored candles
-  and publishes normally (exit 0); the only in-band signal is the
-  `candle_freshness.degraded` ERROR event and its alert. A visible "data behind" banner is
-  a future consideration.
+- **A stale run still publishes, but a stale pair is withheld (local, undeployed).** If
+  providers fail, the run publishes normally (exit 0), yet any pair whose candles are still
+  behind the latest completed session makes no call and shows "data behind" (silence reason
+  DATA_BEHIND); the data-delay banner and the `candle_freshness.degraded` ERROR alert remain.
 - **The third-party reference is a live read.** The scheduled run reads FCS "latest" at
   17:30 NY; a replay cannot reproduce it, so replays withhold it from the scorecard (§5.10).
 - **LLM rationale inputs are approximations.** `toNumericInputs` / `toAnalogueSummaries`

@@ -39,6 +39,8 @@ keeps its byte position (the tests compare serialised output).
 | `trackRecord` | v6 | `buildTrackRecordSlice` - look-ahead-safe *replay* of the four classical strategies, the pattern journal, and the expected-candle-size replay (120 s deadline) | lenient; a bad row is dropped | `EMPTY_TRACK_RECORD` |
 | `signalScorecard` | v7 | `buildSignalScorecardSlice` - the *recorded* per-signal ledger from `signal_predictions` (all six signals) | lenient; a bad row is dropped | `EMPTY_SIGNAL_SCORECARD` |
 | `intradayValidation` | v8 | the intraday Job (`intradayMain.ts`) - the 4H enrichment | lenient; a bad row is dropped | `EMPTY_INTRADAY_VALIDATION` |
+| `runHealth` | v9 | `buildRunHealthSlice` - per pair the analogue count, a data-behind flag and ONE named silence reason, plus the pairs the freshness stage left behind. Display-only. | lenient; a bad row is dropped | `EMPTY_RUN_HEALTH` |
+| `eventFlags` | v9 | `buildEventFlags` - scheduled high-impact events (FOMC, ECB, US jobs report) on the Decision_Date from a static calendar. A caution flag, never a scoring input. | lenient; a bad event is dropped | `EMPTY_EVENT_FLAGS` (claims nothing: `calendarCovers: false`) |
 
 ## Rules
 

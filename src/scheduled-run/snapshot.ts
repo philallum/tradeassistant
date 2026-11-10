@@ -22,6 +22,8 @@
 // exactly as the two allowlists used to be kept in lockstep by hand.
 
 import type { DashboardView } from "../dashboard/index.js";
+import { EMPTY_EVENT_FLAGS, type SnapshotEventFlagsSlice } from "../event-calendar/eventFlags.js";
+import { EMPTY_RUN_HEALTH, type SnapshotRunHealthSlice } from "./runHealthSlice.js";
 import type { PairEvaluation } from "../dashboard/index.js";
 import { DEFAULT_CONFIDENCE_THRESHOLD, fires } from "../dashboard/index.js";
 import type {
@@ -57,11 +59,16 @@ import type {
  * `(decisionDate, pair)` it carries a snapshot of the original daily
  * direction/confidence, the forming 4H candle's validation state, a bounded
  * UNVALIDATED confidence delta, the resulting current confidence, and a reason —
- * defaulting to `EMPTY_INTRADAY_VALIDATION`. The SPA tolerates a version
+ * defaulting to `EMPTY_INTRADAY_VALIDATION`. v9 (evidence hardening) appends the
+ * `runHealth` slice — per pair the analogue neighbourhood size, whether its candles were
+ * still behind after the freshness stage, and ONE named reason when it stayed silent —
+ * defaulting to `EMPTY_RUN_HEALTH`, and the `eventFlags` slice — scheduled high-impact events
+ * (central-bank decisions, the US jobs report) on the Decision_Date, a caution flag only —
+ * defaulting to `EMPTY_EVENT_FLAGS`. The SPA tolerates a version
  * mismatch (best-effort render) and defaults an absent slice to its empty value,
  * so each bump is backward- and forward-compatible.
  */
-export const SNAPSHOT_SCHEMA_VERSION = 8 as const;
+export const SNAPSHOT_SCHEMA_VERSION = 9 as const;
 
 /** The canonical file name the SPA fetches as a same-origin static asset. */
 export const SNAPSHOT_FILE_NAME = "dashboard.json" as const;
@@ -622,6 +629,16 @@ export interface DashboardSnapshot {
    * `EMPTY_INTRADAY_VALIDATION` by default. Always present.
    */
   readonly intradayValidation: SnapshotIntradayValidationSlice;
+  /**
+   * v9: why each non-firing pair is silent, and which pairs ran on stale candles.
+   * Display-only; `EMPTY_RUN_HEALTH` by default. Always present.
+   */
+  readonly runHealth: SnapshotRunHealthSlice;
+  /**
+   * v9: scheduled high-impact events on the Decision_Date. A caution flag only: never an input
+   * to firing or confidence. `EMPTY_EVENT_FLAGS` by default. Always present.
+   */
+  readonly eventFlags: SnapshotEventFlagsSlice;
 }
 
 /** The v1 deterministic system Strategy_Source (schema default 'system'). */
@@ -700,9 +717,11 @@ export function pairEvaluationRows(
   return evaluations.map((ev) => ({
     decision_date: decisionDate,
     pair: ev.pair,
-    direction: ev.direction,
+    // A pair withheld for stale data made no call: publish it as FLAT / neutral so nothing
+    // downstream (the intraday validation reads these rows) treats a stale reading as a call.
+    direction: ev.withheld === true ? "FLAT" : ev.direction,
     horizon: ev.horizon,
-    earned_confidence: ev.earnedConfidence,
+    earned_confidence: ev.withheld === true ? 0.5 : ev.earnedConfidence,
     fired: fires(ev, confidenceThreshold),
     choppiness: ev.choppiness,
     ...(ev.expectedRange !== undefined
@@ -792,6 +811,9 @@ function externalComparisonRow(
  * @param confluence      The v5 per-run Confluence_Matrix slice; omitted → `EMPTY_CONFLUENCE`.
  * @param trackRecord     The v6 track-record slice; omitted → `EMPTY_TRACK_RECORD`.
  * @param signalScorecard The v7 recorded signal-scorecard slice; omitted → `EMPTY_SIGNAL_SCORECARD`.
+ * @param intradayValidation The v8 intraday-validation slice; omitted → `EMPTY_INTRADAY_VALIDATION`.
+ * @param runHealth       The v9 run-health slice (why silent, stale pairs); omitted → `EMPTY_RUN_HEALTH`.
+ * @param eventFlags      The v9 scheduled-event flags for the Decision_Date; omitted → `EMPTY_EVENT_FLAGS`.
  */
 export function buildDashboardSnapshot(
   view: DashboardView,
@@ -804,6 +826,8 @@ export function buildDashboardSnapshot(
   trackRecord: SnapshotTrackRecordSlice = EMPTY_TRACK_RECORD,
   signalScorecard: SnapshotSignalScorecardSlice = EMPTY_SIGNAL_SCORECARD,
   intradayValidation: SnapshotIntradayValidationSlice = EMPTY_INTRADAY_VALIDATION,
+  runHealth: SnapshotRunHealthSlice = EMPTY_RUN_HEALTH,
+  eventFlags: SnapshotEventFlagsSlice = EMPTY_EVENT_FLAGS,
 ): DashboardSnapshot {
   const decisionDate = view.decisionDate;
   const todayFiring = view.cards.map((card) => firingSetupRow(decisionDate, card));
@@ -849,8 +873,12 @@ export function buildDashboardSnapshot(
     trackRecord,
     // v7: appended after v6 for the same reason.
     signalScorecard,
-    // v8: appended LAST so every earlier key keeps its byte order.
+    // v8: appended after v7 for the same reason.
     intradayValidation,
+    // v9: appended after v8 for the same reason.
+    runHealth,
+    // v9: appended LAST so every earlier key keeps its byte order.
+    eventFlags,
   };
 }
 

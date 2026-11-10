@@ -120,7 +120,7 @@ describe("runIntradayValidationJob", () => {
     expect(result.republished).toBe(true);
 
     const snap = captured.snapshot as unknown as DashboardSnapshot;
-    expect(snap.schemaVersion).toBe(8);
+    expect(snap.schemaVersion).toBe(9);
     const rows = snap.intradayValidation.rows;
     expect(rows.map((r) => r.pair).sort()).toEqual(["EURUSD", "GBPUSD", "USDCAD", "USDCHF", "USDJPY"]);
     // A FLAT original direction is NOT_APPLICABLE with zero delta.

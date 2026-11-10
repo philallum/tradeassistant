@@ -30,6 +30,7 @@ import { encodePatternVector } from "../encoder/patternEncoder.js";
 import { retrieve } from "../retrieval/retrieve.js";
 import type { AnalogueRecord, DirectionClass } from "../retrieval/types.js";
 import {
+  analogueCount as countAnalogues,
   earnedConfidence,
   rawResolutionRate,
   selectHorizon,
@@ -161,6 +162,7 @@ export async function evaluatePair(
     stopLossPips: number | null,
     takeProfitPips: number | null,
     expectedRange?: ExpectedRange | null,
+    analogueCount?: number,
   ): PairEvaluation => ({
     pair,
     earnedConfidence: confidence,
@@ -172,13 +174,15 @@ export async function evaluatePair(
     choppiness,
     // Display-only: attached only when a forecast exists (absent = not forecast).
     ...(expectedRange ? { expectedRange } : {}),
+    // Display-only neighbourhood size (feeds the "why silent" reason, never firing).
+    ...(analogueCount !== undefined ? { analogueCount } : {}),
     rationale: narrative.rationale,
     analogueLabels: narrative.analogueLabels,
   });
 
   // Not enough history to encode a shape → represent as a non-firing FLAT pair.
   if (window.length === 0) {
-    return buildEvaluation("FLAT", 1, 0.5 as Confidence, { favorablePips: 0, adversePips: 0 }, null, null);
+    return buildEvaluation("FLAT", 1, 0.5 as Confidence, { favorablePips: 0, adversePips: 0 }, null, null, undefined, 0);
   }
 
   // Step 1 (cont.): encode the query Pattern_Vector (encoder enforces the guard).
@@ -220,7 +224,16 @@ export async function evaluatePair(
     deps,
   );
 
-  return buildEvaluation(direction, horizon, confidence, profile, stopLossPips, takeProfitPips, expectedRange);
+  return buildEvaluation(
+    direction,
+    horizon,
+    confidence,
+    profile,
+    stopLossPips,
+    takeProfitPips,
+    expectedRange,
+    countAnalogues(neighborhood, horizon),
+  );
 }
 
 /**

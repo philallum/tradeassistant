@@ -23,7 +23,7 @@ import { PAIRS } from "../../ingestion/types.js";
 import type { Pair } from "../../ingestion/types.js";
 import type { PipelineStores } from "../../pipeline/types.js";
 import { DEFAULT_PIPELINE_WINDOW_SIZE } from "../../pipeline/types.js";
-import { resolve } from "../../retrieval/resolver.js";
+import { resolve, type FlatBandMode, type LabelAlignment } from "../../retrieval/resolver.js";
 import type {
   OutcomeResolutionResult,
   PerPairOutcomeResolution,
@@ -64,6 +64,16 @@ export interface OutcomeResolutionDeps {
    * every date, exactly as before.
    */
   readonly fromDate?: TradingDate;
+  /**
+   * FLAT dead-band definition passed to `resolve`. Omitted = `"legacy"` (the live, stored
+   * behaviour). `"atr_pips"` is for OFFLINE measurement against local stores only.
+   */
+  readonly flatBandMode?: FlatBandMode;
+  /**
+   * Which session the outcome measures. Omitted = `"after_decision_date"` (live, stored).
+   * `"on_decision_date"` is for OFFLINE measurement against local stores only.
+   */
+  readonly labelAlignment?: LabelAlignment;
 }
 
 /**
@@ -96,7 +106,7 @@ export async function resolveHistoricalOutcomes(
   let totalOutcomesWritten = 0;
 
   for (const pair of PAIRS) {
-    const summary = await resolvePair(stores, pair, evalDate, windowSize, requireVector, deps.fromDate);
+    const summary = await resolvePair(stores, pair, evalDate, windowSize, requireVector, deps.fromDate, deps.flatBandMode, deps.labelAlignment);
     perPair.push(summary);
     totalOutcomesWritten += summary.outcomesWritten;
   }
@@ -112,6 +122,8 @@ async function resolvePair(
   windowSize: number,
   requireVector: boolean,
   fromDate: TradingDate | undefined,
+  flatBandMode: FlatBandMode | undefined,
+  labelAlignment: LabelAlignment | undefined,
 ): Promise<PerPairOutcomeResolution> {
   // Candles ascending (the CandleStore PORT already sorts; the resolver and ATR
   // both require ascending order).
@@ -155,7 +167,8 @@ async function resolvePair(
 
     // Forward candles: strictly after the analogue date. `resolve` filters
     // again defensively, but we pass only the genuine forward slice.
-    const forwardCandles: readonly Candle[] = candles.slice(i + 1);
+    const forwardCandles: readonly Candle[] =
+      labelAlignment === "on_decision_date" ? candles.slice(i) : candles.slice(i + 1);
 
     await resolve(
       analogueDate,
@@ -164,6 +177,10 @@ async function resolvePair(
       atr14,
       evalDate,
       stores.analogueStore,
+      {
+        ...(flatBandMode === undefined ? {} : { flatBandMode }),
+        ...(labelAlignment === undefined ? {} : { labelAlignment }),
+      },
     );
 
     datesResolved += 1;
