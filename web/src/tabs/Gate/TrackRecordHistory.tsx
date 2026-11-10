@@ -98,7 +98,14 @@ export function TrackRecordHistory({
             <>
               <p style={{ margin: 0, color: theme.colors.textPrimary }}>
                 Right {vm.overall.rateText} of {vm.overall.n} decided setups
-                {vm.pending > 0 ? ` (${vm.pending} pending)` : ""}.
+                {vm.pending > 0 ? ` (${vm.pending} pending)` : ""}. {vm.overall.intervalText}.
+              </p>
+              <p data-testid="record-reading" style={{ margin: 0, fontSize: 12, color: theme.colors.textMuted }}>
+                {vm.coinFlipNote}
+                {vm.readingText !== null ? ` ${vm.readingText}` : ""}
+              </p>
+              <p data-testid="record-forward-start" style={{ margin: 0, fontSize: 12, color: theme.colors.textMuted }}>
+                {vm.forwardStartNote}
               </p>
               {vm.caution !== null && (
                 <p style={{ margin: 0, fontSize: 12, color: theme.colors.textMuted }}>{vm.caution}</p>
@@ -148,6 +155,7 @@ function BucketTable(props: {
         <tr>
           <th scope="col" style={cellStyle}>{props.firstHeader}</th>
           <th scope="col" style={cellStyle}>Right</th>
+          <th scope="col" style={cellStyle}>Range</th>
           <th scope="col" style={cellStyle}>Setups</th>
         </tr>
       </thead>
@@ -156,6 +164,7 @@ function BucketTable(props: {
           <tr key={b.label}>
             <th scope="row" style={{ ...cellStyle, fontWeight: 400 }}>{b.label}</th>
             <td style={cellStyle}>{b.rateText}</td>
+            <td style={cellStyle}>{b.intervalText}</td>
             <td style={cellStyle}>
               {b.n}
               {b.smallSample ? " (small sample)" : ""}

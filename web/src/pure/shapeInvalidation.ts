@@ -3,8 +3,8 @@
  *
  * DELIBERATE, LABELLED reintroduction of one removed UI element (decision recorded in
  * docs/state/DECISIONS.md): the backend already derives, per firing pair, the 75th percentile
- * of the neighbourhood's historical adverse excursion (MAE) measured from the next session's
- * open over one session. This shaper restates that single number as the distance beyond which
+ * of the neighbourhood's historical adverse excursion (MAE) measured from the open of the session after the
+ * Decision_Date, over that one session. This shaper restates that single number as the distance beyond which
  * the pattern thesis is treated as invalidated. It is NOT a stop recommendation, never a
  * target, and carries no expectancy. It stays tagged "unvalidated".
  *
@@ -23,7 +23,7 @@ export interface InvalidationVM {
   /** "31.5" or "32" - the persisted pip distance, rounded for display only. */
   readonly pipsText: string;
   readonly direction: "UP" | "DOWN";
-  /** One sentence: "If price falls 31.5 pips below the next session's open ..." */
+  /** One sentence: "If price falls 31.5 pips below the open of the session after the Decision_Date ..." */
   readonly text: string;
   readonly tag: typeof INVALIDATION_UNVALIDATED_TAG;
   readonly note: string;
@@ -48,8 +48,8 @@ export function shapeInvalidation(
   const pipsText = formatPips(pips);
   const text =
     firing.direction === "UP"
-      ? `If price falls ${pipsText} pips below the next session's open before that session closes, this pattern thesis is invalidated.`
-      : `If price rises ${pipsText} pips above the next session's open before that session closes, this pattern thesis is invalidated.`;
+      ? `If price falls ${pipsText} pips below the open of the session after ${decisionDate} before that session closes, this pattern thesis is invalidated.`
+      : `If price rises ${pipsText} pips above the open of the session after ${decisionDate} before that session closes, this pattern thesis is invalidated.`;
 
   return {
     pipsText,

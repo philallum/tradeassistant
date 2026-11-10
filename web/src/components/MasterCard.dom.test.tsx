@@ -17,6 +17,7 @@ import { shapeInvalidation } from "../pure/shapeInvalidation";
 import { shapeDailyNote } from "../pure/shapeDailyNote";
 import { shapeIntradayValidation } from "../pure/shapeIntradayValidation";
 import { shapePairSummary } from "../pure/shapePairSummary";
+import type { SilenceVM } from "../pure/shapeSilence";
 import { shapeStrategyCards } from "../pure/shapeStrategyCards";
 import { shapeSystemRecord } from "../pure/shapeSystemRecord";
 import { MasterCard } from "./MasterCard";
@@ -99,6 +100,7 @@ function renderCard(
     firing?: FiringSetupRow[];
     track?: TrackRecord;
     withInvalidation?: boolean;
+    silence?: SilenceVM | null;
   } = {},
 ): void {
   const confluence = over.confluence ?? SPLIT_CONFLUENCE;
@@ -115,6 +117,7 @@ function renderCard(
       evidence={{ pair: "EURUSD", horizon: 1, sampleCount: 40, upShare: 0.5, downShare: 0.5 }}
       intradayValidation={shapeIntradayValidation(EMPTY_INTRADAY_VALIDATION, "EURUSD")}
       systemRecord={shapeSystemRecord(REPORT)}
+      silence={over.silence ?? null}
       {...(over.withInvalidation === true
         ? { invalidation: shapeInvalidation("EURUSD", over.firing ?? [FIRING], DATE) }
         : {})}
@@ -169,7 +172,7 @@ describe("MasterCard", () => {
     renderCard();
     const size = screen.getByTestId("candle-size");
     expect(size.textContent).toContain("Large candle");
-    expect(size.textContent).toContain("About 70.2\u2013110.4 pips over 1 day.");
+    expect(size.textContent).toContain("About 70.2\u2013110.4 pips over the session after 2026-09-16.");
     expect(size.textContent).toContain("Forecast right 11 of 18 recent days.");
     expect(size.textContent).toMatch(/not direction/i);
   });
@@ -177,7 +180,7 @@ describe("MasterCard", () => {
   it("shows the pattern engine's own call", () => {
     renderCard();
     expect(screen.getByTestId("pair-pattern").textContent).toBe(
-      "Pattern engine fired: Up, 57% confidence, 1 day horizon.",
+      "Pattern engine fired: Up for the session after 2026-09-16. Historically, 57 of 100 similar setups moved this way (shrunk toward 50).",
     );
   });
 
@@ -185,7 +188,7 @@ describe("MasterCard", () => {
     renderCard({ withInvalidation: true });
     const line = screen.getByTestId("invalidation-line");
     expect(line.textContent).toContain(
-      "If price falls 31.5 pips below the next session's open before that session closes, this pattern thesis is invalidated.",
+      "If price falls 31.5 pips below the open of the session after 2026-09-16 before that session closes, this pattern thesis is invalidated.",
     );
     expect(screen.getByTestId("invalidation-tag").textContent).toBe("unvalidated");
     expect(line.textContent).toContain("Not a stop recommendation.");
@@ -252,5 +255,44 @@ describe("MasterCard", () => {
     expect(label).toContain("EURUSD Trend");
     expect(label).toContain("Down");
     expect(label).toContain("Right 12 of 31 recent calls.");
+  });
+});
+
+
+describe("MasterCard silence reason (schema v9)", () => {
+  it("shows why a silent pair is silent, framed as a result and not a fault", () => {
+    renderCard({
+      firing: [],
+      silence: { reason: "THIN_NEIGHBOURHOOD", text: "Few similar past setups were found (12; 30 or more is more reliable)." },
+    });
+    const line = screen.getByTestId("pair-silence");
+    expect(line.getAttribute("data-reason")).toBe("THIN_NEIGHBOURHOOD");
+    expect(line.textContent).toContain("Staying silent is a result, not a fault.");
+    expect(line.textContent).toContain("(12;");
+  });
+
+  it("shows no silence line when the pair fired", () => {
+    renderCard();
+    expect(screen.queryByTestId("pair-silence")).toBeNull();
+  });
+});
+
+describe("MasterCard neighbourhood size", () => {
+  it("shows how many similar past days a fired call rests on", () => {
+    const row = SPLIT_CONFLUENCE.pairs.find((p) => p.pair === "EURUSD") ?? null;
+    render(
+      <MasterCard
+        pair="EURUSD"
+        conviction={row === null ? null : shapeConviction(row, SPLIT_CONFLUENCE.weights)}
+        summary={shapePairSummary("EURUSD", [EVAL], [FIRING], DATE, TRACK, 7)}
+        cards={shapeStrategyCards(row, "EURUSD", SPLIT_CONFLUENCE.weights, TRACK)}
+        lookbackDays={TRACK.lookbackDays}
+        note={shapeDailyNote({ decision_date: DATE, note_text: "x", generated: true })}
+        evidence={null}
+        intradayValidation={shapeIntradayValidation(EMPTY_INTRADAY_VALIDATION, "EURUSD")}
+        systemRecord={shapeSystemRecord(REPORT)}
+      />,
+    );
+    expect(screen.getByTestId("pair-basis").textContent).toBe("Based on 7 similar past days (a small sample; 30 or more is more reliable).");
   });
 });

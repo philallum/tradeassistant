@@ -35,7 +35,7 @@ describe("shapePairSummary", () => {
   it("states the pattern call and never exposes stop-loss, take-profit or expectancy", () => {
     const vm = shapePairSummary("EURUSD", [evalRow()], [firing()], DATE, EMPTY_TRACK_RECORD);
     expect(vm.pattern).toMatchObject({ fired: true, direction: "UP", horizon: 1 });
-    expect(vm.pattern.text).toBe("Pattern engine fired: Up, 57% confidence, 1 day horizon.");
+    expect(vm.pattern.text).toBe("Pattern engine fired: Up for the session after 2024-03-15. Historically, 57 of 100 similar setups moved this way (shrunk toward 50).");
     expect(JSON.stringify(vm)).not.toMatch(/stop|take.?profit|expectancy|30|45/i);
   });
 
@@ -60,7 +60,7 @@ describe("shapePairSummary", () => {
     expect(candleSize).toMatchObject({
       available: true,
       headline: "Medium candle",
-      rangeText: "About 60.2\u201395.4 pips over 1 day.",
+      rangeText: "About 60.2\u201395.4 pips over the session after 2024-03-15.",
       recordText: "Forecast right 11 of 18 recent days.",
       smallSample: false,
     });
@@ -116,5 +116,22 @@ describe("shapeSystemRecord", () => {
       text: "System record: not measured yet.",
       caution: null,
     });
+  });
+});
+
+describe("basisText (neighbourhood size shown, not enforced)", () => {
+  it("states n and flags a small sample below 30", async () => {
+    const { basisText } = await import("./shapePairSummary");
+    expect(basisText(5)).toBe("Based on 5 similar past days (a small sample; 30 or more is more reliable).");
+    expect(basisText(1)).toContain("1 similar past day ");
+    expect(basisText(29)).toContain("small sample");
+    expect(basisText(30)).toBe("Based on 30 similar past days.");
+    expect(basisText(null)).toBeNull();
+  });
+
+  it("appears on a fired pair when n is known, and never on a silent one", () => {
+    expect(shapePairSummary("EURUSD", [evalRow()], [firing()], DATE, EMPTY_TRACK_RECORD, 12).pattern.basisText).toContain("12 similar past days");
+    expect(shapePairSummary("EURUSD", [evalRow()], [firing()], DATE, EMPTY_TRACK_RECORD).pattern.basisText).toBeNull();
+    expect(shapePairSummary("EURUSD", [evalRow({ fired: false })], [], DATE, EMPTY_TRACK_RECORD, 12).pattern.basisText).toBeNull();
   });
 });

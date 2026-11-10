@@ -54,6 +54,12 @@ function toNumber(value: number | string | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * Optional observer of every successfully fetched hourly batch (for the hourly archive).
+ * Failures it throws are swallowed by the provider; it never influences the returned bars.
+ */
+export type HourlyBarsObserver = (pair: Pair, bars: readonly HourlyBar[]) => Promise<void> | void;
+
 /** Map the internal `EURUSD` form to Twelve Data's `EUR/USD` symbol. */
 export function toTwelveDataSymbol(pair: Pair): string {
   return `${pair.slice(0, 3)}/${pair.slice(3)}`;
@@ -90,11 +96,13 @@ export class TwelveDataOhlcFeedProvider implements OhlcFeedProvider {
   readonly #fetch: typeof fetch;
 
   readonly #now: () => Date;
+  readonly #onHourlyBars: HourlyBarsObserver | undefined;
 
   constructor(
     config: OhlcProviderConfig,
     fetchImpl: typeof fetch = fetch,
     now: () => Date = () => new Date(),
+    onHourlyBars?: HourlyBarsObserver,
   ) {
     if (config.apiKey === "") {
       throw new Error("TwelveDataOhlcFeedProvider requires a non-empty API key");
@@ -104,6 +112,7 @@ export class TwelveDataOhlcFeedProvider implements OhlcFeedProvider {
       config.baseUrl.trim() === "" ? TWELVE_DATA_DEFAULT_BASE_URL : config.baseUrl.trim();
     this.#fetch = fetchImpl;
     this.#now = now;
+    this.#onHourlyBars = onHourlyBars;
   }
 
   async fetchLatest(
@@ -133,6 +142,19 @@ export class TwelveDataOhlcFeedProvider implements OhlcFeedProvider {
     return rangeSessionCandles(PROVIDER_NAME, pair, fromDate, toDate, this.#now().getTime(), (p, f, t) =>
       this.#fetchHourly(p, f, t),
     );
+  }
+
+  /**
+   * The raw hourly bars for the UTC calendar dates `[fromDate, toDate]` (inclusive), exactly as
+   * the daily-candle builder sees them. Exposed so an offline tool can archive them; it never
+   * throws and applies the same observer as the daily path.
+   */
+  fetchHourlyBars(
+    pair: Pair,
+    fromDate: TradingDate,
+    toDate: TradingDate,
+  ): Promise<Result<readonly HourlyBar[], OhlcFeedError>> {
+    return this.#fetchHourly(pair, fromDate, toDate);
   }
 
   async #fetchHourly(
@@ -187,6 +209,14 @@ export class TwelveDataOhlcFeedProvider implements OhlcFeedProvider {
     }
     if (bars.length === 0) {
       return err(this.#fail(pair, "empty", `TwelveData returned no usable hourly bar for ${pair}`));
+    }
+    // Optional archive hook. FAIL-SAFE: an observer failure can never fail or alter the fetch.
+    if (this.#onHourlyBars !== undefined) {
+      try {
+        await this.#onHourlyBars(pair, bars);
+      } catch {
+        /* the archive is a measurement aid; the daily-candle path must not depend on it */
+      }
     }
     return ok(bars);
   }

@@ -60,8 +60,12 @@ const NO_SCORE_STRENGTH = 0.5 as const;
  * (Requirement 7.9): only its `direction` and `earnedConfidence` are read.
  */
 export function adaptCustomPattern(
-  evaluation: Pick<PairEvaluation, "direction" | "earnedConfidence">,
+  evaluation: Pick<PairEvaluation, "direction" | "earnedConfidence"> & { readonly withheld?: boolean },
 ): AdapterOutcome {
+  // A pair withheld for stale data makes no call, so it contributes no signal and is not recorded.
+  if (evaluation.withheld === true) {
+    return { kind: "unavailable", reason: "custom_pattern: withheld, price data was behind" };
+  }
   const { direction, earnedConfidence } = evaluation;
   const rationale = `pattern matcher: ${direction}, earned confidence ${earnedConfidence.toFixed(3)}`;
 

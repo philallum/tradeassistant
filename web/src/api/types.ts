@@ -465,3 +465,56 @@ export const VALIDATION_STATES: readonly ValidationState[] = [
   "STRONGLY_CONTRADICTS",
   "NOT_APPLICABLE",
 ] as const;
+
+/** Why a pair did not fire (v9 `runHealth`). Priority order is the declaration order. */
+export type SilenceReason =
+  | "DATA_BEHIND"
+  | "THIN_NEIGHBOURHOOD"
+  | "NO_DIRECTIONAL_VIEW"
+  | "BELOW_THRESHOLD";
+
+/** The ordered set of silence reasons (for exhaustive iteration/tests). */
+export const SILENCE_REASONS: readonly SilenceReason[] = [
+  "DATA_BEHIND",
+  "THIN_NEIGHBOURHOOD",
+  "NO_DIRECTIONAL_VIEW",
+  "BELOW_THRESHOLD",
+] as const;
+
+/** One pair's run-health row (v9). */
+export interface RunHealthRow {
+  readonly pair: string;
+  /** Analogue neighbourhood size n at the selected horizon, or null when not recorded. */
+  readonly analogue_count: number | null;
+  /** True when the pair's candles were still behind after the freshness stage. */
+  readonly data_behind: boolean;
+  /** The single reason the pair is silent, or null when it fired. */
+  readonly silence_reason: SilenceReason | null;
+}
+
+/** The v9 `runHealth` slice: why each pair is silent and which pairs ran on stale candles. */
+export interface RunHealth {
+  readonly rows: readonly RunHealthRow[];
+  readonly degradedPairs: readonly string[];
+  /** The firing line used to derive reasons (for wording "below X%"). */
+  readonly confidenceThreshold: number;
+}
+
+/** Kind of scheduled high-impact event (v9 `eventFlags`). */
+export type EventKind = "FOMC" | "ECB" | "US_NFP";
+export const EVENT_KINDS: readonly EventKind[] = ["FOMC", "ECB", "US_NFP"] as const;
+
+/** One scheduled event on the Decision_Date. `basis: "rule"` means the date is rule-derived. */
+export interface EventFlag {
+  readonly kind: EventKind;
+  readonly label: string;
+  readonly basis: "official" | "rule";
+}
+
+/** The v9 `eventFlags` slice: scheduled high-impact events on the Decision_Date (caution only). */
+export interface EventFlags {
+  readonly decisionDate: string;
+  readonly events: readonly EventFlag[];
+  /** False when the date is beyond the maintained calendar, so "no events" cannot be claimed. */
+  readonly calendarCovers: boolean;
+}

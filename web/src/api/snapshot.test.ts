@@ -15,6 +15,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   EMPTY_CONFLUENCE,
   EMPTY_INTRADAY_VALIDATION,
+  EMPTY_EVENT_FLAGS,
+  EMPTY_RUN_HEALTH,
   EMPTY_SIGNAL_SCORECARD,
   EMPTY_TRACK_RECORD,
   loadSnapshot,
@@ -70,6 +72,8 @@ const FULL_SNAPSHOT: DashboardSnapshot = {
   trackRecord: EMPTY_TRACK_RECORD,
   signalScorecard: EMPTY_SIGNAL_SCORECARD,
   intradayValidation: EMPTY_INTRADAY_VALIDATION,
+  runHealth: EMPTY_RUN_HEALTH,
+  eventFlags: EMPTY_EVENT_FLAGS,
 };
 
 describe("loadSnapshot — same-origin static fetch (R5.1, R4.4)", () => {
@@ -338,5 +342,59 @@ describe("parseSnapshot — v8 intradayValidation slice", () => {
       parseSnapshot({ schemaVersion: 8, confluence: EMPTY_CONFLUENCE, intradayValidation: "nope" })
         .intradayValidation,
     ).toEqual(EMPTY_INTRADAY_VALIDATION);
+  });
+});
+
+describe("parseRunHealth (schema v9)", () => {
+  it("defaults an absent or malformed slice to the empty value", async () => {
+    const { parseRunHealth, EMPTY_RUN_HEALTH } = await import("./snapshot");
+    expect(parseRunHealth(undefined)).toBe(EMPTY_RUN_HEALTH);
+    expect(parseRunHealth("nope")).toBe(EMPTY_RUN_HEALTH);
+  });
+
+  it("keeps well-formed rows, drops defective ones, never fabricates", async () => {
+    const { parseRunHealth } = await import("./snapshot");
+    const parsed = parseRunHealth({
+      rows: [
+        { pair: "EURUSD", analogue_count: 120, data_behind: false, silence_reason: null },
+        { pair: "GBPUSD", analogue_count: null, data_behind: true, silence_reason: "DATA_BEHIND" },
+        { pair: "USDJPY", analogue_count: 5, data_behind: false, silence_reason: "NOT_A_REASON" },
+        { pair: 7, analogue_count: 1, data_behind: false, silence_reason: null },
+      ],
+      degradedPairs: ["GBPUSD", 3],
+      confidenceThreshold: 0.6,
+    });
+    expect(parsed.rows.map((r) => r.pair)).toEqual(["EURUSD", "GBPUSD"]);
+    expect(parsed.degradedPairs).toEqual(["GBPUSD"]);
+    expect(parsed.confidenceThreshold).toBe(0.6);
+  });
+
+  it("an older snapshot without the key parses to the empty run health", async () => {
+    const { parseSnapshot, EMPTY_RUN_HEALTH } = await import("./snapshot");
+    expect(parseSnapshot({ schemaVersion: 1, decisionDate: "2026-11-10" }).runHealth).toEqual(EMPTY_RUN_HEALTH);
+  });
+});
+
+describe("parseEventFlags (schema v9)", () => {
+  it("defaults an absent or malformed slice to one that claims nothing", async () => {
+    const { parseEventFlags, EMPTY_EVENT_FLAGS } = await import("./snapshot");
+    expect(parseEventFlags(undefined)).toBe(EMPTY_EVENT_FLAGS);
+    expect(parseEventFlags({ events: [] })).toBe(EMPTY_EVENT_FLAGS);
+    expect(EMPTY_EVENT_FLAGS.calendarCovers).toBe(false);
+  });
+
+  it("keeps well-formed events and drops defective ones", async () => {
+    const { parseEventFlags } = await import("./snapshot");
+    const parsed = parseEventFlags({
+      decisionDate: "2026-12-09",
+      calendarCovers: true,
+      events: [
+        { kind: "FOMC", label: "US Federal Reserve rate decision", basis: "official" },
+        { kind: "NOPE", label: "x", basis: "official" },
+        { kind: "ECB", label: "ECB rate decision", basis: "guess" },
+      ],
+    });
+    expect(parsed.events.map((e) => e.kind)).toEqual(["FOMC"]);
+    expect(parsed.calendarCovers).toBe(true);
   });
 });

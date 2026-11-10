@@ -1,6 +1,6 @@
 // Expected candle size (range forecast) types.
 //
-// A deterministic, LLM-free, display-only forecast of how BIG the next 1-3 day
+// A deterministic, LLM-free, display-only forecast of how BIG the next-session
 // move envelope is expected to be, expressed as a Small / Medium / Large bucket
 // RELATIVE TO THE PAIR'S OWN HISTORY (pair-relative terciles), plus a pips range.
 // It says nothing about direction and never feeds firing, confidence or scoring.

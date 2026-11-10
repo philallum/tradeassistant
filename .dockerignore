@@ -23,3 +23,4 @@ data
 # Editor / OS noise.
 *.log
 .DS_Store
+data/hourly/

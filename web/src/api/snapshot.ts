@@ -33,6 +33,7 @@ import type {
   DailyCommentary,
   Direction,
   EvaluationReportRow,
+  EventFlags,
   Exposure,
   ExternalReferenceComparisonRow,
   FiringSetupRow,
@@ -41,14 +42,21 @@ import type {
   PairEvaluationRow,
   ProvenanceRow,
   RealizedOutcomeRow,
+  RunHealth,
+  RunHealthRow,
   SignalRationaleRow,
+  SilenceReason,
   SignalScorecard,
   TrackRecord,
   TradeLedgerSummary,
   ValidationState,
   ValidationStatusRow,
 } from "./types";
-import { VALIDATION_STATES } from "./types";
+import { EVENT_KINDS, SILENCE_REASONS, VALIDATION_STATES } from "./types";
+
+const EVENT_KIND_SET: ReadonlySet<string> = new Set(EVENT_KINDS);
+
+const SILENCE_REASON_SET: ReadonlySet<string> = new Set(SILENCE_REASONS);
 
 /**
  * The URL the SPA fetches the snapshot from.
@@ -94,9 +102,11 @@ export function resolveSnapshotPath(): string {
  * parsed leniently to `EMPTY_SIGNAL_SCORECARD` when absent or malformed. v8 appends the
  * `intradayValidation` slice (the read-only intraday 4H enrichment produced a few hours after
  * the immutable daily run), parsed leniently to `EMPTY_INTRADAY_VALIDATION` when absent or
- * malformed; a defective row is dropped, never fabricated.
+ * malformed; a defective row is dropped, never fabricated. v9 appends the `runHealth` slice
+ * (why each non-firing pair is silent, and which pairs ran on stale candles), parsed
+ * leniently to `EMPTY_RUN_HEALTH` when absent or malformed.
  */
-export const SNAPSHOT_SCHEMA_VERSION = 8;
+export const SNAPSHOT_SCHEMA_VERSION = 9;
 
 /**
  * The complete `dashboard.json` envelope. Mirrors the writer's wire shape in
@@ -156,7 +166,23 @@ export interface DashboardSnapshot {
    * confidence, and a reason). `EMPTY_INTRADAY_VALIDATION` for older snapshots. Always present.
    */
   readonly intradayValidation: IntradayValidation;
+  /**
+   * v9: why each non-firing pair is silent and which pairs ran on stale candles.
+   * `EMPTY_RUN_HEALTH` for older snapshots. Always present.
+   */
+  readonly runHealth: RunHealth;
+  /**
+   * v9: scheduled high-impact events on the Decision_Date (a caution flag only).
+   * `EMPTY_EVENT_FLAGS` for older snapshots. Always present.
+   */
+  readonly eventFlags: EventFlags;
 }
+
+/** The fail-safe empty event flags (pre-v9 snapshots, or a slice that failed to build). */
+export const EMPTY_EVENT_FLAGS: EventFlags = { decisionDate: "", events: [], calendarCovers: false };
+
+/** The fail-safe empty run health (pre-v9 snapshots, or a slice that failed to build). */
+export const EMPTY_RUN_HEALTH: RunHealth = { rows: [], degradedPairs: [], confidenceThreshold: 0.55 };
 
 /** The fail-safe empty track record (pre-v6 snapshots, or a slice that failed to build). */
 export const EMPTY_TRACK_RECORD: TrackRecord = { lookbackDays: 0, strategies: [], rangeForecast: [] };
@@ -267,6 +293,8 @@ export const EMPTY_SNAPSHOT: DashboardSnapshot = {
   trackRecord: EMPTY_TRACK_RECORD,
   signalScorecard: EMPTY_SIGNAL_SCORECARD,
   intradayValidation: EMPTY_INTRADAY_VALIDATION,
+  runHealth: EMPTY_RUN_HEALTH,
+  eventFlags: EMPTY_EVENT_FLAGS,
 };
 
 /** Narrow an untrusted `dailyCommentary` object, defaulting a missing/malformed one. */
@@ -357,6 +385,64 @@ export function parseSignalScorecard(value: unknown): SignalScorecard {
 
 const VALIDATION_STATE_SET: ReadonlySet<string> = new Set<ValidationState>(VALIDATION_STATES);
 const INTRADAY_DIRECTION_SET: ReadonlySet<string> = new Set<Direction>(["UP", "DOWN", "FLAT"]);
+
+/**
+ * Narrow an untrusted `eventFlags` slice, defaulting a missing/malformed one. Lenient and
+ * display-only: a defective event is dropped, never fabricated, and a defective slice becomes
+ * `EMPTY_EVENT_FLAGS` (which claims nothing, since `calendarCovers` is false).
+ */
+export function parseEventFlags(value: unknown): EventFlags {
+  if (!isObj(value) || typeof value.decisionDate !== "string") return EMPTY_EVENT_FLAGS;
+  const events = (Array.isArray(value.events) ? value.events : []).flatMap((e): EventFlags["events"] => {
+    if (
+      !isObj(e) ||
+      typeof e.kind !== "string" ||
+      !EVENT_KIND_SET.has(e.kind) ||
+      typeof e.label !== "string" ||
+      (e.basis !== "official" && e.basis !== "rule")
+    ) {
+      return [];
+    }
+    return [{ kind: e.kind as EventFlags["events"][number]["kind"], label: e.label, basis: e.basis }];
+  });
+  return { decisionDate: value.decisionDate, events, calendarCovers: value.calendarCovers === true };
+}
+
+/**
+ * Narrow an untrusted `runHealth` slice, defaulting a missing/malformed one. Lenient by design
+ * (display-only): a defective row is DROPPED (never fabricated) and a defective slice becomes
+ * `EMPTY_RUN_HEALTH`, so a pre-v9 snapshot simply has no "why silent" detail.
+ */
+export function parseRunHealth(value: unknown): RunHealth {
+  if (!isObj(value)) return EMPTY_RUN_HEALTH;
+  const rows: RunHealthRow[] = (Array.isArray(value.rows) ? value.rows : []).flatMap((r): RunHealthRow[] => {
+    if (
+      !isObj(r) ||
+      typeof r.pair !== "string" ||
+      typeof r.data_behind !== "boolean" ||
+      !(r.analogue_count === null || (typeof r.analogue_count === "number" && Number.isFinite(r.analogue_count))) ||
+      !(r.silence_reason === null || (typeof r.silence_reason === "string" && SILENCE_REASON_SET.has(r.silence_reason)))
+    ) {
+      return [];
+    }
+    return [
+      {
+        pair: r.pair,
+        analogue_count: r.analogue_count,
+        data_behind: r.data_behind,
+        silence_reason: r.silence_reason as SilenceReason | null,
+      },
+    ];
+  });
+  const degradedPairs = (Array.isArray(value.degradedPairs) ? value.degradedPairs : []).filter(
+    (p): p is string => typeof p === "string",
+  );
+  const threshold =
+    typeof value.confidenceThreshold === "number" && Number.isFinite(value.confidenceThreshold)
+      ? value.confidenceThreshold
+      : EMPTY_RUN_HEALTH.confidenceThreshold;
+  return { rows, degradedPairs, confidenceThreshold: threshold };
+}
 
 /**
  * Narrow an untrusted `intradayValidation` slice, defaulting a missing/malformed one. Lenient
@@ -588,6 +674,8 @@ export function parseSnapshot(body: unknown): DashboardSnapshot {
     trackRecord: parseTrackRecord(b.trackRecord),
     signalScorecard: parseSignalScorecard(b.signalScorecard),
     intradayValidation: parseIntradayValidation(b.intradayValidation),
+    runHealth: parseRunHealth(b.runHealth),
+    eventFlags: parseEventFlags(b.eventFlags),
   };
 }
 

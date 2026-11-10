@@ -21,17 +21,17 @@ function firing(over: Partial<FiringSetupRow> = {}): FiringSetupRow {
 }
 
 describe("shapeInvalidation", () => {
-  it("states an UP thesis as a fall below the next session's open", () => {
+  it("states an UP thesis as a fall below the open of the session after the Decision_Date", () => {
     const vm = shapeInvalidation("EURUSD", [firing()], DATE);
     expect(vm?.pipsText).toBe("31.5");
     expect(vm?.text).toBe(
-      "If price falls 31.5 pips below the next session's open before that session closes, this pattern thesis is invalidated.",
+      "If price falls 31.5 pips below the open of the session after 2026-11-10 before that session closes, this pattern thesis is invalidated.",
     );
     expect(vm?.tag).toBe("unvalidated");
     expect(vm?.note).toBe(INVALIDATION_NOTE);
   });
 
-  it("states a DOWN thesis as a rise above the next session's open", () => {
+  it("states a DOWN thesis as a rise above the open of the session after the Decision_Date", () => {
     const vm = shapeInvalidation("EURUSD", [firing({ direction: "DOWN" })], DATE);
     expect(vm?.text).toContain("rises 31.5 pips above");
   });

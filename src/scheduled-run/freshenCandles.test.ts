@@ -283,7 +283,8 @@ describe("freshenCandles daily-entry wiring", () => {
       };
 
       // Must NOT propagate — the run proceeds on existing history.
-      await expect(freshenCandles(makeConfig(), deps)).resolves.toBeUndefined();
+      // A failed stage reports no behind pairs (the run proceeds on existing history).
+      await expect(freshenCandles(makeConfig(), deps)).resolves.toEqual([]);
 
       expect(runStage).toHaveBeenCalledTimes(1);
       const warnings = console_.warnings();
@@ -337,5 +338,35 @@ describe("logFreshnessDegradation (Phase 2a alert signal)", () => {
     expect(event.severity).toBe("ERROR");
     const pairsBehind = event.pairsBehind as Array<{ pair: string }>;
     expect(pairsBehind.map((p) => p.pair)).toEqual(["USDJPY"]);
+  });
+});
+
+describe("freshenCandles reports the pairs still behind (display-only runHealth input)", () => {
+  it("returns the degraded or residual-gap pairs from the last attempt", async () => {
+    const console_ = captureConsole();
+    try {
+      const summary = (pair: string, behind: boolean): CandleFreshnessPairSummary =>
+        ({
+          pair,
+          gap: "top_up",
+          provider: behind ? null : "twelvedata",
+          fetched: 0,
+          accepted: 0,
+          rejected: 0,
+          latestDate: "2026-11-09",
+          target: "2026-11-10",
+          residualGap: behind,
+          degraded: behind,
+        }) as unknown as CandleFreshnessPairSummary;
+      const runStage = vi.fn(() => Promise.resolve([summary("EURUSD", false), summary("USDCHF", true)]));
+      const behind = await freshenCandles(makeConfig(), {
+        env: { TWELVE_DATA_API_KEY: "td-key-not-logged", CANDLE_FRESHNESS_RETRY_ATTEMPTS: "0" },
+        runStage,
+        buildStores: () => makeStores(),
+      });
+      expect(behind).toEqual(["USDCHF"]);
+    } finally {
+      console_.restore();
+    }
   });
 });

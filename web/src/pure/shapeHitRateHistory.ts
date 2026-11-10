@@ -19,6 +19,7 @@
  * clock; it recomputes nothing the backend decided and never mutates its input.
  */
 import type { Direction, RealizedOutcomeRow } from "../api/types";
+import { wilsonInterval } from "./wilson";
 
 /** Below this many decided setups a rate is flagged as a small sample. */
 export const MIN_RELIABLE_N = 30;
@@ -31,6 +32,18 @@ export const BAND_WIDTH = 0.05;
 
 export const HISTORY_LABEL = "Historical record of fired setups. Not a probability.";
 
+/**
+ * Date the forward evaluation began with parameters frozen. Must equal `FORWARD_TEST_START` in
+ * `src/walk-forward/evidenceProtocol.ts` (a test pins the two together).
+ */
+export const FORWARD_TEST_START = "2026-11-11";
+export const FORWARD_START_NOTE = `Forward record since ${FORWARD_TEST_START} with parameters frozen; changing them restarts this record.`;
+/** What chance alone would score on a binary up/down call. */
+export const COIN_FLIP_NOTE = "A coin flip would be right about 50% of the time.";
+
+/** How a rate's interval compares with the 50% coin-flip line. */
+export type VersusCoinFlip = "none" | "indistinguishable" | "above" | "below";
+
 export interface HitRateBucket {
   readonly label: string;
   /** Decided setups. */
@@ -38,6 +51,10 @@ export interface HitRateBucket {
   readonly correct: number;
   /** "55.0%" or "–" when `n` is 0. */
   readonly rateText: string;
+  /** "95% interval 41%–63%" or "–" when `n` is 0. */
+  readonly intervalText: string;
+  /** Whether the 95% interval clears the 50% line; "none" when `n` is 0. */
+  readonly versusCoinFlip: VersusCoinFlip;
   readonly smallSample: boolean;
 }
 
@@ -62,6 +79,11 @@ export interface HitRateHistoryVM {
   readonly pending: number;
   /** Caution when the overall sample is small, else null. */
   readonly caution: string | null;
+  /** Coin-flip reference line, always shown beside the overall rate. */
+  readonly coinFlipNote: string;
+  /** Plain-language reading of the overall interval against the coin flip, or null. */
+  readonly readingText: string | null;
+  readonly forwardStartNote: string;
 }
 
 interface Decided {
@@ -76,11 +98,16 @@ interface Decided {
 function bucket(label: string, rows: readonly Decided[]): HitRateBucket {
   const n = rows.length;
   const correct = rows.filter((r) => r.right).length;
+  const ci = wilsonInterval(correct, n);
+  const versusCoinFlip: VersusCoinFlip =
+    n === 0 ? "none" : ci.lo > 0.5 ? "above" : ci.hi < 0.5 ? "below" : "indistinguishable";
   return {
     label,
     n,
     correct,
     rateText: n === 0 ? "–" : `${((correct / n) * 100).toFixed(1)}%`,
+    intervalText: n === 0 ? "–" : `95% interval ${Math.round(ci.lo * 100)}%–${Math.round(ci.hi * 100)}%`,
+    versusCoinFlip,
     smallSample: n < MIN_RELIABLE_N,
   };
 }
@@ -94,6 +121,19 @@ function bandLabel(index: number): string {
   const lo = Math.round(index * BAND_WIDTH * 100);
   const hi = Math.round((index + 1) * BAND_WIDTH * 100);
   return `${lo}–${hi}%`;
+}
+
+function readingFor(b: HitRateBucket): string | null {
+  switch (b.versusCoinFlip) {
+    case "none":
+      return null;
+    case "indistinguishable":
+      return "So far this is not distinguishable from a coin flip.";
+    case "above":
+      return "So far the interval sits above a coin flip. Keep watching: a short record can still change.";
+    case "below":
+      return "So far the interval sits below a coin flip.";
+  }
 }
 
 export function shapeHitRateHistory(rows: readonly RealizedOutcomeRow[]): HitRateHistoryVM {
@@ -162,5 +202,8 @@ export function shapeHitRateHistory(rows: readonly RealizedOutcomeRow[]): HitRat
       decided.length > 0 && decided.length < MIN_RELIABLE_N
         ? `Only ${decided.length} decided setups so far; treat these rates as noise until there are at least ${MIN_RELIABLE_N}.`
         : null,
+    coinFlipNote: COIN_FLIP_NOTE,
+    readingText: readingFor(overall),
+    forwardStartNote: FORWARD_START_NOTE,
   };
 }

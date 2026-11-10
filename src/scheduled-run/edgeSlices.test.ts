@@ -55,8 +55,8 @@ const view = dailyRun("2024-03-15", [evaluation("EURUSD"), evaluation("GBPUSD")]
 describe("snapshot v4 shape + defaults", () => {
   it("is schema v8 and defaults every new slice to empty/absent", () => {
     const snap = buildDashboardSnapshot(view, undefined, {}, NOW);
-    expect(SNAPSHOT_SCHEMA_VERSION).toBe(8);
-    expect(snap.schemaVersion).toBe(8);
+    expect(SNAPSHOT_SCHEMA_VERSION).toBe(9);
+    expect(snap.schemaVersion).toBe(9);
     expect(snap.trackRecord).toEqual({ lookbackDays: 0, strategies: [], rangeForecast: [] });
     expect(snap.signalScorecard).toEqual({ totalRecorded: 0, rows: [] });
     expect(snap.intradayValidation).toEqual({

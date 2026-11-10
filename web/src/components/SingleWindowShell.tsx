@@ -30,13 +30,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 
 import { withTimeout } from "../api/withTimeout";
-import { EMPTY_CONFLUENCE, type ApiResult } from "../api/snapshot";
+import { EMPTY_CONFLUENCE, EMPTY_RUN_HEALTH, type ApiResult } from "../api/snapshot";
 import { getSnapshot } from "../api/snapshotCache";
 import type {
   AnalogueOutcomeRow,
   Confluence,
   DailyCommentary,
   EvaluationReportRow,
+  EventFlags,
+  Exposure,
   FiringSetupRow,
   IntradayValidation,
   SignalRationaleRow,
@@ -44,12 +46,16 @@ import type {
   Pair,
   PairEvaluationRow,
   ProvenanceRow,
+  RunHealth,
   TrackRecord,
 } from "../api/types";
 import { resolveWindowSelection } from "../pure/resolveWindowSelection";
 import { shapeAllPairsStrip } from "../pure/shapeAllPairsStrip";
 import { shapeConviction } from "../pure/shapeConviction";
 import { shapeDataHealth } from "../pure/shapeDataHealth";
+import { shapeEventFlag } from "../pure/shapeEventFlag";
+import { shapeExposure } from "../pure/shapeExposure";
+import { shapeSilence } from "../pure/shapeSilence";
 import { shapeDailyNote } from "../pure/shapeDailyNote";
 import { shapePairNote } from "../pure/shapePairNote";
 import { shapeEvidence } from "../pure/shapeEvidence";
@@ -64,6 +70,8 @@ import type { EvaluationReportsLoader } from "../tabs/Gate/GateTab";
 import { theme } from "../theme/darkTheme";
 import { AllPairsStrip } from "./AllPairsStrip";
 import { DataHealthBanner } from "./DataHealthBanner";
+import { EventFlagBanner } from "./EventFlagBanner";
+import { ExposureCard } from "./ExposureCard";
 import { EmptyState } from "./EmptyState";
 import { ErrorState } from "./ErrorState";
 import { LoadingState } from "./LoadingState";
@@ -108,6 +116,14 @@ export interface WindowEvidence {
   readonly signalScorecard: SignalScorecard;
   /** Read-only intraday 4H validation slice (schema v8). */
   readonly intradayValidation: IntradayValidation;
+  /** Why each pair is silent and which pairs ran on stale candles (schema v9). Absent = none. */
+  readonly runHealth?: RunHealth;
+  /** Scheduled high-impact events on the latest Decision_Date (schema v9). Absent = none loaded. */
+  readonly eventFlags?: EventFlags;
+  /** Net currency exposure of the latest run's firing setups. Absent = none loaded. */
+  readonly exposure?: Exposure;
+  /** The Decision_Date of the latest published run (for missed-run detection). */
+  readonly latestDecisionDate?: string;
   /** Per-pair AI rationales (one per firing pair). Absent = none loaded. */
   readonly aiRationale?: readonly SignalRationaleRow[];
   /** Per-forecast Signal_Provenance (data freshness). Absent = none loaded. */
@@ -151,6 +167,10 @@ const defaultLoadEvidence: WindowEvidenceLoader = async (options) => {
     trackRecord: snapshot.trackRecord,
     signalScorecard: snapshot.signalScorecard,
     intradayValidation: snapshot.intradayValidation,
+    runHealth: snapshot.runHealth,
+    exposure: snapshot.exposure,
+    eventFlags: snapshot.eventFlags,
+    latestDecisionDate: snapshot.decisionDate,
     aiRationale: snapshot.aiRationale,
     provenance: snapshot.provenance,
     generatedAt: snapshot.generatedAt,
@@ -377,6 +397,7 @@ function ReadyView(props: {
       data.rows,
       data.decisionDate,
       data.evidence.trackRecord,
+      data.evidence.runHealth?.rows.find((r) => r.pair === pair)?.analogue_count ?? null,
     );
     // The evidence drawer reads the pair's horizon: the firing horizon, else the evaluated one.
     const evaluation = data.evidence.pairEvaluations.find(
@@ -403,8 +424,34 @@ function ReadyView(props: {
       intradayValidation: shapeIntradayValidation(data.evidence.intradayValidation, pair),
       invalidation: shapeInvalidation(pair, data.rows, data.decisionDate),
       systemRecord: shapeSystemRecord(selectLatestReport(data.evaluationReports)),
+      eventFlag:
+        data.evidence.eventFlags === undefined
+          ? null
+          : shapeEventFlag(
+              data.evidence.eventFlags,
+              data.decisionDate,
+              data.evidence.latestDecisionDate === undefined ||
+                data.evidence.latestDecisionDate === data.decisionDate,
+            ),
+      exposure:
+        data.evidence.exposure === undefined
+          ? null
+          : shapeExposure(
+              data.evidence.exposure,
+              data.rows.length,
+              data.evidence.latestDecisionDate === undefined ||
+                data.evidence.latestDecisionDate === data.decisionDate,
+            ),
+      silence: shapeSilence(
+        pair,
+        data.decisionDate,
+        data.evidence.pairEvaluations,
+        data.evidence.runHealth ?? EMPTY_RUN_HEALTH,
+      ),
       dataHealth: shapeDataHealth({
         ...(data.evidence.provenance !== undefined ? { provenance: data.evidence.provenance } : {}),
+        ...(data.evidence.runHealth !== undefined ? { runHealth: data.evidence.runHealth } : {}),
+        ...(data.evidence.latestDecisionDate !== undefined ? { latestDecisionDate: data.evidence.latestDecisionDate } : {}),
         decisionDate: data.decisionDate,
         ...(data.evidence.generatedAt !== undefined ? { generatedAt: data.evidence.generatedAt } : {}),
         nowMs,
@@ -421,10 +468,13 @@ function ReadyView(props: {
     <>
       <DataHealthBanner health={composed.dataHealth} />
       <AllPairsStrip strip={composed.strip} selectedPair={pair} onSelectPair={onSelectPair} />
+      <EventFlagBanner vm={composed.eventFlag} />
+      <ExposureCard vm={composed.exposure} />
       <MasterCard
         pair={pair}
         conviction={composed.conviction}
         summary={composed.summary}
+        silence={composed.silence}
         cards={composed.cards}
         lookbackDays={data.evidence.trackRecord.lookbackDays}
         note={composed.note}

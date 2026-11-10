@@ -1,0 +1,39 @@
+name: Heartbeat
+# Alerts when the daily run did not publish. Cloud Monitoring cannot express "the once-per-weekday
+# job did not run" (its absence window is about a day long and has no weekend awareness), so this
+# compares the Decision_Date of the PUBLISHED snapshot with the date the most recent due run
+# should have published. A failed run here emails the repository owner through GitHub's normal
+# failed-workflow notification.
+#
+# One-time setup (non-secret): set the repository VARIABLE DASHBOARD_SNAPSHOT_URL to the public
+# object the SPA fetches, e.g. https://storage.googleapis.com/<bucket>/dashboard.json. Until it is
+# set the job is skipped. Reads one public URL and sends nothing; no credentials are involved.
+on:
+  schedule:
+    # 02:00 UTC Tuesday-Saturday: after the Monday-Friday 17:30 New York run (21:30/22:30 UTC)
+    # plus its grace period, so a Friday run is checked on Saturday morning.
+    - cron: "0 2 * * 2-6"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  heartbeat:
+    name: Daily run published?
+    runs-on: ubuntu-latest
+    if: ${{ vars.DASHBOARD_SNAPSHOT_URL != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Node (Active LTS from .nvmrc)
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        run: npm run build
+      - name: Check the published snapshot
+        env:
+          DASHBOARD_SNAPSHOT_URL: ${{ vars.DASHBOARD_SNAPSHOT_URL }}
+        run: node dist/ops/heartbeat/main.js

@@ -53,6 +53,27 @@ npm run start:scheduled-run     # one daily run against the SUPABASE_TARGET you 
 - The seed candle CSVs live in `data/` and are used by the operator backfill tools and tests only;
   they are **not** in the runtime image.
 
+### Evidence tools (local, offline)
+These never touch the hosted project and never change what the daily Job publishes.
+```bash
+npm run build
+# Audit the seed history for partial or malformed bars (read-only; CSV by default)
+node dist/ops/candle-audit/main.js --before 2026-10-12
+# Baselines, net expectancy, pre-registered slices, event-day split (appends a RESEARCH-LOG entry)
+EDGE_EVAL_DOCS_DIR=. node dist/ops/local-eval/evidenceMain.js            # discovery window only
+#   --confirm-holdout consults the untouched holdout: only after a hypothesis is written down
+# FLAT definition and label-alignment A/B; ATR post-filter experiment; hourly-resolved simulation
+EDGE_EVAL_DOCS_DIR=. node dist/ops/local-eval/flatAbMain.js
+EDGE_EVAL_DOCS_DIR=. node dist/ops/local-eval/atrFilterMain.js
+EDGE_EVAL_DOCS_DIR=. node dist/ops/local-eval/hourlySimMain.js
+# Archive hourly bars locally (Twelve Data key read from .env by NAME; paced; files in data/hourly, git-ignored)
+node --env-file=.env dist/ops/hourly-backfill/main.js --from 2021-01-01 --to 2024-12-31
+# Measure the confluence and intraday layers from the live ledgers (a small hosted READ; needs the flag)
+EDGE_EVAL_DOCS_DIR=. node dist/ops/layer-measurements/main.js --allow-hosted-read
+```
+Without `EDGE_EVAL_DOCS_DIR` the research-log note goes to the OS temp directory. A full evidence run
+over 2013-2024 takes roughly 15 minutes; the hourly backfill about ten (a 9 s pause between requests).
+
 ### Replaying a past date
 
 Set `RUN_DECISION_DATE=YYYY-MM-DD`. The pipeline is a pure function of stored candles strictly
@@ -130,6 +151,13 @@ The intraday Job rewrites `dashboard.json` (key-replacing only `intradayValidati
 an image that does a key-replace - an older version overwrote the daily slices with empty ones.
 If the live file ever shows empty daily slices, re-run the daily Job to restore it, then re-run
 the intraday Job and confirm every other slice is unchanged.
+
+### Missed-run heartbeat
+`.github/workflows/heartbeat.yml` runs Tuesday-Saturday at 02:00 UTC and fails (GitHub emails the owner) when the
+published snapshot's Decision_Date is older than the run that should have produced it. Set the repository
+VARIABLE `DASHBOARD_SNAPSHOT_URL` (the public `dashboard.json` URL, non-secret) once; until then the job is skipped.
+Run it by hand: `DASHBOARD_SNAPSHOT_URL=<url> node dist/ops/heartbeat/main.js`. A Cloud Monitoring absence alert was
+rejected because it cannot express a once-per-weekday job.
 
 ## Observability and what to do
 
