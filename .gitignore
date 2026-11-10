@@ -15,3 +15,5 @@ ops/fx-writer-key/
 supabase/.temp/
 web/.firebase/
 data/hourly/
+# Offline research bench: local only, never pushed (see docs/state/DECISIONS.md)
+src/ops/research/
