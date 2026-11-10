@@ -8,6 +8,16 @@
 > the satellites where they conflict.
 
 ---
+### 2026-11-10 — Post-deploy system check: P0 candle fix and 07:00 intraday trigger verified live (read-only)
+- **Daily run** 2026-11-09 22:30 UTC (`scheduled-daily-run-pdg8p`, image 3c2cadc): succeeded; all 5 pairs topped up from Twelve Data (fetched 1, accepted 1, rejected 0, no residual gap, no `degraded` / `nothing_accepted`); `dashboard.json` published for decisionDate 2026-11-10 (schema 8, 14 surfaced setups). A read-only `candle-repair` dry run over 2026-11-02..2026-11-09 shows 6/6 days identical to the canonical hourly-derived candles for every pair, including the new Monday candle and the previously missing Friday.
+- **Intraday run** 2026-11-10 07:00 UTC (`intraday-validation-run-bqm89`): succeeded, `validated=5 unavailable=0`, republished; snapshot `intradayValidation` populated (04:00 UTC 4H bar).
+- **Platform:** both Scheduler jobs fired on time on the expected cron; no WARNING/ERROR Cloud Run job logs in the prior 16 h; SPA 200; candle-freshness alert policy enabled and not fired. Not checked: the rendered web UI.
+---
+### 2026-11-09 (evening) — Candle fix deployed; history repaired LIVE; intraday Scheduler moved to 07:00
+- **Deployed** by the operator (PR #67, image tag 3c2cadc). Live intraday Scheduler job `intraday-validation-run-0800-uk` updated to `0 7 * * 1-5` Europe/London (name kept, historical); first 07:00 run is Tue 2026-11-10.
+- **History repair applied (operator-approved live DB write):** `candle-repair --from 2026-10-12 --to 2026-11-06` with `RUN_DECISION_DATE=2026-11-10` (the local `.env` carries a stale `RUN_DECISION_DATE=2026-10-08`, which the tool correctly rejects). Dry run: 19 replaced + 1 inserted (Fri 2026-11-06) per pair, 6-12 material per pair (e.g. EURUSD 11-04 43.5 pips off, range ratio 0.03). Apply wrote 100 candles, re-encoded vectors, re-resolved outcomes from 2026-10-07 (330 rows). A second dry run shows 20/20 `same` for every pair.
+- **Daily Job re-run** (execution scheduled-daily-run-6qfv8, completed): `dashboard.json` republished (decisionDate 2026-11-09, generatedAt 2026-11-09T19:05Z, schema 8). Not yet verified: tonight's 22:30 UTC scheduled run and tomorrow's 07:00 intraday run.
+---
 ### 2026-11-09 (later) — Daily-candle fix implemented locally (NOT deployed, history NOT repaired)
 - **Candles are now built, not trusted:** `src/ingestion/sessionAggregation.ts` (pure) aggregates HOURLY bars into the system's own 17:00 America/New_York sessions and emits a session only if it is a weekday, closed (end <= now) and complete (>= 18 bars, first bar within 2 h of the start, final hour present). Twelve Data and Massive adapters now fetch hourly bars through `ohlcFeed/hourlySessionFeed.ts` (`fetchLatest` = the single newest closed complete session before the Decision_Date; `fetchRange` = all of them, chunked); the provider clock is injectable (`buildProviderChain(config, fetch, now)`).
 - **FCS removed from the candle chain** (adapter, tests and the `EXTERNAL_SIGNAL_API_KEY` candle role deleted; the key still feeds the display-only reference). The old per-provider normalization property test was removed with the daily-row parsing it covered.
