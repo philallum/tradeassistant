@@ -8,6 +8,30 @@
 > the satellites where they conflict.
 
 ---
+### 2026-11-10 (closed out) — Dependabot cleanup COMPLETE
+- Operator merged #39 and #40 to `main` (head `a28c7d4`). After `git fetch --prune`: 0 open PRs, 0 remote `dependabot/*` branches. CI on `a28c7d4` passes (both jobs); the Deploy workflow for that commit was still in progress when last checked (the deploy for the #39 merge, `bfa467f`, succeeded).
+- CI on `bfa467f` FAILED on the same flaky timing test as #68: `src/scheduled-run/main.test.ts:538` ("timing changes nothing about the published snapshot") compares two `generatedAt` values that can differ by 1 ms. Passed on the next commit. Still unfixed; it will recur intermittently. The local gate was not re-run on updated `main`; CI is the evidence.
+---
+### 2026-11-10 (end of day) — #69 merged by operator; Dependabot #39 and #40 rebased and green
+- Operator merged PR #69 (lint fix). Commented `@dependabot rebase` on #39 and #40; both rebased, MERGEABLE, and both CI jobs pass (including the lint step that previously failed on #40). They are the last two open Dependabot PRs and are NOT yet merged. Pending: operator merge (or approval for the agent to run `gh pr merge`), then check for leftover `dependabot/*` branches and run the local gate on updated `main`.
+---
+### 2026-11-10 (final) — Lint fix committed, pushed and opened as PR #69
+- Committed `ae0cf9d` (only `src/scheduled-run/edgeSlices.ts` and `src/track-record/rangeRecord.ts`) on branch `fix/no-useless-assignment`, created from `main/main` (the git remote is named `main`, not `origin`), pushed, and opened PR #69 against `main`. `tsc --noEmit` clean on that base; CI on #69 not yet seen. Merging to `main` may trigger `deploy.yml`. After merge: `@dependabot rebase` on #40. The docs edits stay uncommitted on `dev`.
+---
+### 2026-11-10 (latest) — Lint fix for Dependabot #40 prepared locally (uncommitted, not pushed)
+- **Code:** removed two useless initial assignments flagged by ESLint `no-useless-assignment`: `let exposure: typeof EMPTY_EXPOSURE;` in `src/scheduled-run/edgeSlices.ts` and `let predicted: ExpectedRange | null;` in `src/track-record/rangeRecord.ts` (both are assigned in the `try` and the `catch`). Behaviour unchanged.
+- **Verified locally:** `tsc --noEmit` clean; ESLint 9.39.5 clean on both files with the rule forced on (it is not default in 9.39.5); 199 tests pass in `src/track-record` and `src/scheduled-run`. NOT verified: full CI lint on #40 with the newer ESLint, or the full suite.
+- **Pending operator decision:** commit these two files on a new branch, PR to `main` (merging can trigger `deploy.yml`), then have Dependabot rebase #40 (its branch is overwritten on rebase, so the fix cannot live there).
+---
+### 2026-11-10 (later) — Dependabot cleanup: operator merged the green PRs; #68 CI flake re-run
+- **Operator merged** the green Dependabot PRs. Remaining open Dependabot PRs: #39 (web-dev-tooling) and #40 (root dev-tooling), both now CONFLICTING (lockfile conflicts from the merges). Commented `@dependabot rebase` on both; Dependabot had not acted when last checked. #40 still fails lint (see below).
+- **PR #68** ("Doucment updates", dev->main, not Dependabot): first CI run failed on `src/scheduled-run/main.test.ts:538` (two `generatedAt` values 1 ms apart: a timing flake unrelated to the change). Re-ran the failed job via `gh run rerun --failed`; both jobs now pass. The flaky assertion itself is not fixed.
+---
+### 2026-11-10 — Dependabot PR/branch cleanup started (live GitHub actions; no repo files changed)
+- **Triage** (9 open Dependabot PRs, all targeting `main`; none labelled as a security update): keepers are the grouped PRs #31 (github-actions), #32 (web vite-vitest-toolchain), #39 (web-dev-tooling), #40 (root dev-tooling). Check-first: #49 (web vitest/@vitest/mocker), #48 (root vite 8.3.0->8.3.4), #20 (source-map-js 1.2.1->1.2.2; release notes cite a DoS fix, CVE-2026-93749).
+- **Live actions (operator-approved):** commented `@dependabot rebase` on #32/#39/#40/#31 (rebased; #32/#39/#31 CI green). Closed superseded ungrouped PRs #29 and #19 via `gh pr close --delete-branch` (Dependabot had not answered its `@dependabot close` comments); their branches `web/multi-c633cb6b96` and `web/multi-1f96396017` are deleted. 7 Dependabot PRs remain open.
+- **Finding:** rebased #40 fails the `eslint .` lint step (new `no-useless-assignment` rule): `src/scheduled-run/edgeSlices.ts:127` (`exposure`) and `src/track-record/rangeRecord.ts:38` (`predicted`). Not fixed yet. Nothing merged yet (merges to `main` can trigger `deploy.yml`).
+---
 ### 2026-11-10 — Post-deploy system check: P0 candle fix and 07:00 intraday trigger verified live (read-only)
 - **Daily run** 2026-11-09 22:30 UTC (`scheduled-daily-run-pdg8p`, image 3c2cadc): succeeded; all 5 pairs topped up from Twelve Data (fetched 1, accepted 1, rejected 0, no residual gap, no `degraded` / `nothing_accepted`); `dashboard.json` published for decisionDate 2026-11-10 (schema 8, 14 surfaced setups). A read-only `candle-repair` dry run over 2026-11-02..2026-11-09 shows 6/6 days identical to the canonical hourly-derived candles for every pair, including the new Monday candle and the previously missing Friday.
 - **Intraday run** 2026-11-10 07:00 UTC (`intraday-validation-run-bqm89`): succeeded, `validated=5 unavailable=0`, republished; snapshot `intradayValidation` populated (04:00 UTC 4H bar).
