@@ -29,7 +29,7 @@
 <!-- BEGIN STATE -->
 - **Phase:** v1 feature-complete and LIVE. `multi-strategy-confluence-engine`, Signal Scorecard and `intraday-validation` (snapshot schema v8) are all LIVE; the intraday republish bug is fixed, deployed and live-verified. An evidence-first hardening pass (snapshot v9, offline evidence tools) is implemented locally and NOT deployed. Delivery cadence: operator merges dev->main to deploy; agent builds/verifies locally.
 - **Updated:** 2026-11-10
-- **Summary:** Evidence-first hardening (16 tasks) is built locally and verified (`make check` green) but uncommitted and undeployed: the measured signal is a coin flip (model 50.1%) and the +1.24pp headline comes from a weak weekly-trend baseline; 79% of firing days rest on <30 analogues. See RESEARCH-LOG, NEXT-STEPS 0m. Daily-candle fix (hourly-derived 17:00-NY candles) and the 07:00 London intraday trigger are deployed and verified live on 2026-11-10 (daily candles canonical on all 5 pairs, intraday validated 5/5, no warnings). History 2026-10-12..11-06 repaired; older history unaudited. Dependabot cleanup complete (0 open PRs/branches); the flaky `generatedAt` test in `src/scheduled-run/main.test.ts` is fixed (PR #71). Four lightweight upgrades (candle range guard, data-health banner, fired-setup record view, labelled invalidation distance) are implemented and locally gated on `dev`; not committed or deployed.
+- **Summary:** Evidence-first hardening and the lightweight upgrades are committed on `dev` and merged to `main` (PR #73; live deployment not re-verified here). The offline research code (`src/ops/research/`) is local only: gitignored, never pushed or deployed (backup branch `research/edge-bench`); its reports are in `docs/research/`. Research Evidence Reports 1 to 4 (XTB costs) found no proven edge for the pattern or the four rule strategies; reversal held 5 sessions is an unconfirmed lead; the locked holdout 2025-09-16..2026-09-15 is unread. Pattern research is stopped and kept local as a backtest bench; nothing from it goes to production (NEXT-STEPS 0n, 0m).
 <!-- END STATE -->
 
 ---
@@ -668,17 +668,20 @@ Summarised; the authoritative, moving detail is in `docs/state/CHANGELOG.md`
 | `daily-candle-freshness-and-cleanup` (freshness stage + provider chain) | Phases 1–5 done/merged; Phase 6–7 cleanup partly open |
 | `multi-strategy-confluence-engine` (6 signals + confluence, schema v5) | Complete, LIVE |
 | `mobile-dashboard-single-window` (SPA single-window refactor) | Complete locally |
-| `trader-edge-validation` (evidence layer: trade-sim/ledger/walk-forward/exposure) | Code-complete (Stages A–H), NOT deployed; no edge measured yet |
+| `trader-edge-validation` (evidence layer: trade-sim/ledger/walk-forward/exposure) | Code-complete (Stages A–H), NOT deployed; its hosted `edge-eval` has not been run, but the offline research programme (§12.4) has measured the edge locally |
 | Signal Scorecard (per-signal predicted-vs-actual, schema v7) | DEPLOYED + live-verified |
 | `intraday-validation` (read-only 4H candle validation, schema v8) | DEPLOYED; manual runs live-verified (5 pairs, other slices byte-identical); its first scheduled fire (08:00 London, Mon 2026-11-09) validated 0 of 5 pairs because 08:00 London is a 4H boundary in winter; trigger moved to 07:00 (see DECISIONS 2026-11-09) |
 | Evidence-first hardening (pre-registered protocol, offline evidence tools, snapshot v9 `runHealth`/`eventFlags`, event calendar, hourly archive, heartbeat) | Implemented locally, NOT deployed; behaviour-preserving for the live decision (guard tests); the only changes to existing behaviour are web copy and a dormant trade-sim fix |
+| Edge research programme (`src/ops/research/`, `docs/research/`; four pre-registered evidence reports) | Offline only; code is local only (gitignored, not on GitHub; backup branch `research/edge-bench`); reports in `docs/research/`; never deployed; no proven edge; stopped by the operator; kept as a backtest bench (§12.4) |
 | `codebase-housekeeping` (peer-review remediation: single `fires()`, verdict-path removal, redaction, docs) | Implemented locally, NOT deployed; behaviour-preserving except two intended, tested changes (replay guard, shared matrix) |
 
-**Open threads right now** (see NEXT-STEPS for detail): **daily-candle data integrity (P0;
-partial bars stored as completed candles - diagnosed, fix and history repair pending)**;
-apply the 07:00 intraday trigger to the live Scheduler job and confirm the next scheduled
-intraday run validates; confirm the first signal-scorecard reconciliation; deploy/measure
-`trader-edge-validation`; the analogue FLAT dead-band unit-mismatch decision.
+**Open threads right now** (see NEXT-STEPS for detail): the daily-candle fix (hourly-derived
+17:00-NY candles) and the 07:00 London intraday trigger were deployed and verified live on
+2026-11-10 (candles canonical on all 5 pairs, intraday validated 5/5); history 2026-10-12..11-06
+was repaired and older history is unaudited. Still open: confirm the first signal-scorecard
+reconciliation; the analogue FLAT dead-band decision (measured offline, no gain); whether the
+dashboard keeps showing the pattern call given §12.4; whether to forward-test the reversal
+lead (§12.4).
 
 ---
 
@@ -695,8 +698,9 @@ but does not stop it clearing the firing line (0.55): a unanimous neighbourhood 
 0.667, and about 79% of measured firing days (2013-2024) had fewer than 30 analogues.
 
 **It is not** (all deliberate, and why):
-- A calibrated probability that a trade wins. Calibration has not been measured (the
-  `calibration` slice is empty until the offline `edge-eval` is run).
+- A calibrated probability that a trade wins. Measured offline in the research programme
+  (§12.4): higher Earned_Confidence does not go with a higher hit rate (0.50-0.55 hits 50.2%,
+  0.60-0.65 hits 49.3%), so it does not even rank outcomes.
 - A profit expectancy. SL/TP and net expectancy were removed from every UI surface because
   daily bars cannot say which level is hit first; after-cost expectancy is near zero on the
   measured edge.
@@ -756,7 +760,47 @@ and uses fixed UTC 4H boundaries (00/04/08/12/16/20), so DST needs no special ha
   exposure, provenance): the daily Job publishes their slices empty until an operator runs
   `edge-eval`.
 
-### 12.4 Non-goals
+### 12.4 Evidence so far: the edge research programme (2026-11-10, offline)
+
+**Why it was run.** The live signal measured about 50% directional accuracy, and its only
+recorded lead (+1.24pp) is over a weak baseline. Instead of adding indicators, the question
+became: does the existing machinery have an edge under any condition, outcome or encoding?
+
+**How.** Everything is offline (code in `src/ops/research/`, kept local only and gitignored, so
+it is not in the GitHub repository; local CSVs; hosted data untouched; live system unchanged). Each stage was written down before it was run (`docs/research/
+PRE-REGISTRATION*.md`). Exploration window 2013-06-01..2025-09-15; the last 12 months
+(2025-09-16..2026-09-15) are a locked holdout that has not been read (2025-09-16 was read once
+as an outcome; treat it as seen). Every result reports both hit rate and net pips after
+XTB standard-account costs (EURUSD 1.0, GBPUSD 1.2, USDJPY 1.3, USDCHF 2.1, USDCAD 1.9 pips
+per trade; BrokerChooser averages plus slippage; overnight swap not modelled). Statistics:
+block bootstrap by calendar week or month (five correlated USD pairs and overlapping windows),
+Benjamini-Hochberg false-discovery control at q = 0.10 within each pre-registered family,
+200 scored days minimum. The dataset reproduces the earlier recorded run exactly (15,095
+pair-days, 8,739 scored, 50.10%).
+
+| Stage | Question | Result |
+|---|---|---|
+| 1 | Does the pattern work under any condition (analogue count, similarity, confidence, agreement, rule-strategy agreement, regime, volatility, pair, weekday, 4H confirmation)? | No. 0 of 10 correlation tests and 0 of about 60 band cells significant in either subset. Confidence does not rank outcomes (0.50-0.55 hits 50.2%, 0.60-0.65 hits 49.3%). The pattern call equals the weekly-trend sign on half of days. 4H "confirmation" looks strong (+17.9pp) only because its hours are inside the scored session; on the move remaining after the read it adds +0.8pp (p = 0.72). |
+| 2 | Do trader's-eye chart features (range position, distance from averages, swing structure, candle shape, compression, channel break) improve the rule strategies' setups, or the analogue encoding? | No. 0 of 20 feature tests significant. Shape plus features vs shape alone +0.7pp (not significant); features alone significantly worse. Dropping the weekly-trend prefilter does not help. |
+| 3 | Does the pattern work over 3 or 5 sessions, or as a 1 x ATR target-before-stop bracket (calls made from the analogues' own result for that outcome)? | No. All hit rates 49.7% to 50.9%; 0 of 18 tests significant; net negative in all 9 pre-registered cells. |
+| 4 | Do the four rule strategies have timing skill when held 3 or 5 sessions or bracketed (scored as excess over what their own long/short mix would get by chance)? | No pre-registered cell passes. Trend and breakout: none (breakout slightly negative). Range: too rare to tell. **Reversal held 5 sessions is a lead**: excess +5.0pp (95% CI +0.9 to +9.4), net +17.3 pips/trade (CI +3.4 to +31.9), positive on 5 of 5 pairs, but q = 0.23 after correction, only 4 years with 100+ trades (2 positive), and about 95 signals a year. |
+
+**What this does and does not show.** At daily frequency on these five pairs, neither the
+analogue pattern nor the four rule strategies shows a demonstrable, cost-surviving edge in
+the forms tested. Not tested: intraday entries or exits, other markets or crosses, carry and
+swap, non-price inputs (rates, positioning, news), position sizing, and any tuning of the
+strategies' parameters. Per-stage figures are in `RESEARCH-LOG.md`; full tables are in
+`docs/research/EVIDENCE-REPORT-1..4.md`.
+
+**Operator decisions so far.** Pattern research is stopped and nothing from it goes to
+production. The research code is kept locally as a backtest bench for future ideas, and the
+holdout stays unread for that use. Still open: whether the live dashboard should keep showing
+the pattern call; whether to start a forward paper record of the single reversal rule (the
+12-month holdout holds only about 95 such trades, too few to confirm a 5pp effect); and what
+the product should be if it is not a directional signal (for example a chart-context and
+journaling aid).
+
+### 12.5 Non-goals
 
 Automated or continuous trading; intraday forecasting (the 4H layer only validates the daily
 call); an LLM-computed probability, confidence or verdict; news as a signal; a server API
