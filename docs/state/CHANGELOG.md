@@ -8,6 +8,12 @@
 > the satellites where they conflict.
 
 ---
+### 2026-11-10 (night) — Lightweight upgrades implemented locally (uncommitted, not deployed)
+- **Backend:** `src/ingestion/rangeGuard.ts` (`validateRange`, constants `MIN_RANGE_FRACTION` 0.1, `MAX_RANGE_MULTIPLE` 8, `MIN_HISTORY_FOR_RANGE_GUARD` 20, `RANGE_GUARD_LOOKBACK` 60) wired into `OhlcIngestion.ingest` (new optional logger arg; rejections go to `IngestReport.errors` and log `candle_ingest.range_rejected`). Tests: 2.4-pip fixture rejected and store unchanged, normal and high-volatility days accepted, short history skipped, no-look-ahead property test, and a structural test that no scoring module imports the guard.
+- **Web:** `pure/shapeDataHealth.ts` + `components/DataHealthBanner.tsx` (wired in `SingleWindowShell`; `WindowEvidence` gained optional `provenance` and `generatedAt`); `pure/shapeHitRateHistory.ts` + `tabs/Gate/TrackRecordHistory.tsx` (rendered under `GateTab` in `AppShell` on the Evaluation route); `pure/shapeInvalidation.ts` + `components/InvalidationLine.tsx` (optional `invalidation` prop on `MasterCard`). No snapshot field added, so the schema stays v8. `stop_loss_pips` was already on the web `FiringSetupRow`.
+- **Local gate:** backend eslint clean, `tsc` clean, 217 files / 1349 tests passed (1 file and 7 tests skipped) before the isolation test was added; the two new ingestion test files pass (9 tests). Web: `make check-web` passed, 37 files / 339 tests. Not exercised against a live `dashboard.json`, not committed, not deployed.
+- **Not verified:** whether `provenance` is populated on every live run (the banner falls back to snapshot age if empty); that the range-guard thresholds are right on real history (they have only been checked against synthetic fixtures; the first live ingest will show any false rejections in `candle_ingest.range_rejected`).
+---
 ### 2026-11-10 (evening) — PR #71 CI failure fixed (flaky test)
 - PR #71 (dev->main) failed only on the known flaky `generatedAt` assertion in `src/scheduled-run/main.test.ts` (1 ms apart). Fix is test-only: the "per-step timing" `drive()` now injects `buildSnapshot` calling `buildDashboardSnapshot` with a pinned `now`. Local: `tsc` and ESLint clean, 8 consecutive runs of the file pass (17/17). Committed `b8598d2` and pushed to `dev`; CI on #71 then passed both jobs. Merge of #71 is the operator's.
 ---

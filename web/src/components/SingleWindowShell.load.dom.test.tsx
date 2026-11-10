@@ -224,3 +224,50 @@ describe("SingleWindowShell load state machine", () => {
     expect(text).not.toContain("[object Object]");
   });
 });
+
+describe("SingleWindowShell data-health banner", () => {
+  const provenance = (over: { dataComplete: boolean; staleReason: string | null }) => [
+    {
+      decision_date: DATE,
+      pair: "EURUSD",
+      lastCandleTimestamp: "2026-01-30T17:00:00-05:00",
+      computedAt: "2026-02-01T17:30:00.000Z",
+      earliestEntryRef: "2026-02-01T17:00:00-05:00",
+      horizonStart: "2026-02-01T17:00:00-05:00",
+      horizonEnd: "2026-02-01T17:00:00-05:00",
+      ...over,
+    },
+  ];
+
+  it("shows the non-blocking banner alongside the dashboard when a pair's candle is missing", async () => {
+    const props = loaders(() => Promise.resolve({ rows: [firing], lastUpdated: null }));
+    props.loadEvidence.mockImplementation(() =>
+      Promise.resolve({
+        ...evidence,
+        provenance: provenance({ dataComplete: false, staleReason: "missing_candle" }),
+      }),
+    );
+    renderShell(props);
+    await flush();
+
+    expect(readyMarker()).not.toBeNull(); // the dashboard still renders
+    const banner = screen.getByTestId("data-health-banner");
+    expect(banner.textContent).toContain("Data feed delayed");
+    expect(banner.textContent).toContain("EURUSD: latest session candle missing");
+  });
+
+  it("shows no banner when provenance is complete", async () => {
+    const props = loaders(() => Promise.resolve({ rows: [firing], lastUpdated: null }));
+    props.loadEvidence.mockImplementation(() =>
+      Promise.resolve({
+        ...evidence,
+        provenance: provenance({ dataComplete: true, staleReason: null }),
+      }),
+    );
+    renderShell(props);
+    await flush();
+
+    expect(readyMarker()).not.toBeNull();
+    expect(screen.queryByTestId("data-health-banner")).toBeNull();
+  });
+});

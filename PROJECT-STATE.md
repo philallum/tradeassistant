@@ -29,7 +29,7 @@
 <!-- BEGIN STATE -->
 - **Phase:** v1 feature-complete and LIVE. `multi-strategy-confluence-engine`, Signal Scorecard and `intraday-validation` (snapshot schema v8) are all LIVE; the intraday republish bug is fixed, deployed and live-verified. Delivery cadence: operator merges dev->main to deploy; agent builds/verifies locally.
 - **Updated:** 2026-11-10
-- **Summary:** Daily-candle fix (hourly-derived 17:00-NY candles) and the 07:00 London intraday trigger are deployed and verified live on 2026-11-10 (daily candles canonical on all 5 pairs, intraday validated 5/5, no warnings). History 2026-10-12..11-06 repaired; older history unaudited. Dependabot cleanup complete (0 open PRs/branches); the flaky `generatedAt` test in `src/scheduled-run/main.test.ts` is fixed (PR #71).
+- **Summary:** Daily-candle fix (hourly-derived 17:00-NY candles) and the 07:00 London intraday trigger are deployed and verified live on 2026-11-10 (daily candles canonical on all 5 pairs, intraday validated 5/5, no warnings). History 2026-10-12..11-06 repaired; older history unaudited. Dependabot cleanup complete (0 open PRs/branches); the flaky `generatedAt` test in `src/scheduled-run/main.test.ts` is fixed (PR #71). Four lightweight upgrades (candle range guard, data-health banner, fired-setup record view, labelled invalidation distance) are implemented and locally gated on `dev`; not committed or deployed.
 <!-- END STATE -->
 
 ---

@@ -11,6 +11,7 @@ import {
   extractSessionDate,
   normalizeSessionBoundary,
 } from "./sessionBoundary.js";
+import { validateRange } from "./rangeGuard.js";
 import { InMemoryCandleStore } from "./types.js";
 import type {
   CandleStore,
@@ -20,6 +21,9 @@ import type {
   PerPairCoverage,
   RawCandle,
 } from "./types.js";
+
+/** Calendar days of stored history read before a batch for the range guard (>= 60 trading days). */
+const RANGE_HISTORY_WINDOW_DAYS = 120;
 
 /**
  * Validates a single candidate candle against the OHLC invariant:
@@ -105,8 +109,62 @@ export function validateCandle(
 export class OhlcIngestion {
   private readonly store: CandleStore;
 
-  constructor(store: CandleStore = new InMemoryCandleStore()) {
+  private readonly log: (event: object) => void;
+
+  constructor(
+    store: CandleStore = new InMemoryCandleStore(),
+    log: (event: object) => void = (event) => {
+      console.log(JSON.stringify(event));
+    },
+  ) {
     this.store = store;
+    this.log = log;
+  }
+
+  /**
+   * Drop candles whose range fails {@link validateRange}, pushing a typed error for each and
+   * logging a secret-free `candle_ingest.range_rejected` event. History = stored candles plus
+   * the batch itself, bounded to a window before the batch so the store read stays small.
+   */
+  private async applyRangeGuard(
+    pair: Pair,
+    candles: readonly Candle[],
+    errors: OhlcValidityError[],
+  ): Promise<readonly Candle[]> {
+    if (candles.length === 0) return candles;
+
+    const dates = candles.map((c) => c.date).sort();
+    const earliest = dates[0] as TradingDate;
+    const latest = dates[dates.length - 1] as TradingDate;
+    const startMs = Date.parse(`${earliest}T00:00:00Z`) - RANGE_HISTORY_WINDOW_DAYS * 86_400_000;
+    const start = Number.isNaN(startMs) ? undefined : new Date(startMs).toISOString().slice(0, 10);
+
+    const stored = await this.store.getCandles(pair, start, latest);
+    const byDate = new Map<string, Candle>();
+    for (const c of stored) byDate.set(c.date, c);
+    // Batch candles are NOT used as history for themselves when they replace a stored date.
+    for (const c of candles) if (!byDate.has(c.date)) byDate.set(c.date, c);
+    const history = [...byDate.values()];
+
+    const accepted: Candle[] = [];
+    for (const candle of candles) {
+      const verdict = validateRange(candle, history);
+      if (verdict.ok) {
+        accepted.push(candle);
+        continue;
+      }
+      errors.push({ reason: "ohlc_validity_error", candle, message: verdict.message });
+      this.log({
+        event: "candle_ingest.range_rejected",
+        severity: "WARNING",
+        pair,
+        date: candle.date,
+        kind: verdict.kind,
+        range: verdict.range,
+        medianRange: verdict.medianRange,
+      });
+    }
+    return accepted;
   }
 
   /**
@@ -141,8 +199,12 @@ export class OhlcIngestion {
     // Normalize session boundaries to Monday-Friday 17:00 NY close (Req 7.7, 7.8)
     const normalized = normalizeSessionBoundary(validRaw, pair);
 
+    // Range sanity guard: reject implausibly small/large daily ranges (forming or mis-dated
+    // bars) using only candles dated strictly before each candidate.
+    const rangeChecked = await this.applyRangeGuard(pair, normalized, errors);
+
     // Apply look-ahead guard if a historical decision date context is specified (Req 7.5)
-    let candlesToStore = normalized;
+    let candlesToStore = rangeChecked;
     if (decisionDate) {
       const guardResult = lookAheadGuard.assertPastOnly(
         normalized,

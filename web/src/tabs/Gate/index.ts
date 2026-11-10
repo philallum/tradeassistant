@@ -9,5 +9,7 @@ export { GateTab } from "./GateTab";
 export type { GateTabProps, EvaluationReportsLoader } from "./GateTab";
 export { EvaluationReportCard } from "./EvaluationReportCard";
 export type { EvaluationReportCardProps } from "./EvaluationReportCard";
+export { TrackRecordHistory } from "./TrackRecordHistory";
+export type { TrackRecordHistoryProps, RealizedOutcomesLoader } from "./TrackRecordHistory";
 export { selectLatestReport } from "./selectReport";
 export * from "./format";

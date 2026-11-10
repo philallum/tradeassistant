@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { EMPTY_CONFLUENCE, EMPTY_INTRADAY_VALIDATION, EMPTY_TRACK_RECORD } from "../api/snapshot";
 import type { Confluence, ConfluenceCell, FiringSetupRow, PairEvaluationRow, TrackRecord } from "../api/types";
 import { shapeConviction } from "../pure/shapeConviction";
+import { shapeInvalidation } from "../pure/shapeInvalidation";
 import { shapeDailyNote } from "../pure/shapeDailyNote";
 import { shapeIntradayValidation } from "../pure/shapeIntradayValidation";
 import { shapePairSummary } from "../pure/shapePairSummary";
@@ -92,7 +93,14 @@ const REPORT = {
   delta_vs_baseline: 0.0125,
 };
 
-function renderCard(over: { confluence?: Confluence; firing?: FiringSetupRow[]; track?: TrackRecord } = {}): void {
+function renderCard(
+  over: {
+    confluence?: Confluence;
+    firing?: FiringSetupRow[];
+    track?: TrackRecord;
+    withInvalidation?: boolean;
+  } = {},
+): void {
   const confluence = over.confluence ?? SPLIT_CONFLUENCE;
   const track = over.track ?? TRACK;
   const row = confluence.pairs.find((p) => p.pair === "EURUSD") ?? null;
@@ -107,6 +115,9 @@ function renderCard(over: { confluence?: Confluence; firing?: FiringSetupRow[]; 
       evidence={{ pair: "EURUSD", horizon: 1, sampleCount: 40, upShare: 0.5, downShare: 0.5 }}
       intradayValidation={shapeIntradayValidation(EMPTY_INTRADAY_VALIDATION, "EURUSD")}
       systemRecord={shapeSystemRecord(REPORT)}
+      {...(over.withInvalidation === true
+        ? { invalidation: shapeInvalidation("EURUSD", over.firing ?? [FIRING], DATE) }
+        : {})}
     />,
   );
 }
@@ -168,6 +179,24 @@ describe("MasterCard", () => {
     expect(screen.getByTestId("pair-pattern").textContent).toBe(
       "Pattern engine fired: Up, 57% confidence, 1 day horizon.",
     );
+  });
+
+  it("shows the labelled, unvalidated invalidation distance and still no take-profit", () => {
+    renderCard({ withInvalidation: true });
+    const line = screen.getByTestId("invalidation-line");
+    expect(line.textContent).toContain(
+      "If price falls 31.5 pips below the next session's open before that session closes, this pattern thesis is invalidated.",
+    );
+    expect(screen.getByTestId("invalidation-tag").textContent).toBe("unvalidated");
+    expect(line.textContent).toContain("Not a stop recommendation.");
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/stop.?loss|take.?profit|expectancy/i);
+    expect(text).not.toContain("47.5");
+  });
+
+  it("shows no invalidation line when the card has no distance (too few analogues)", () => {
+    renderCard({ withInvalidation: true, firing: [{ ...FIRING, stop_loss_pips: null }] });
+    expect(screen.queryByTestId("invalidation-line")).toBeNull();
   });
 
   it("shows NO stop-loss, take-profit, net expectancy, backtest-edge pill or 'Neutral' label", () => {
