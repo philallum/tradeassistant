@@ -8,6 +8,13 @@
 > the satellites where they conflict.
 
 ---
+### 2026-11-10 (research, stage 5) - Context statements for a pivot measured offline (pre-registered in `docs/research/PRE-REGISTRATION-5.md`); three usable; Report 3 look-ahead fixed and re-run. Live system unchanged, holdout unread.
+- **Built (local, gitignored):** `src/ops/research/contextStudy.ts` (outcomes, historical stop quantiles with a two-session lag, pinball loss, six tests, one BH family) and `report5Main.ts`; output `docs/research/EVIDENCE-REPORT-5.md`. 9 new tests (outcome arithmetic, stop history ignores the decision date's candle and later ones, null and planted-effect studies). `npm run check` green (1,562 tests).
+- **Usable:** V2 volatility mean reversion (next-week range 0.91 x ATR after high ATR percentile, 1.06 x after low; 13/13 years); E1 FOMC/jobs-report sessions 1.30 x ATR vs 0.99 (2021 onward); Q1 the live analogue stop holds the next session's adverse move only 49.1% of the time (meant as P75, mean 0.42 x ATR); a historical-P75 ATR rule holds 74.3% at 0.71 x ATR with 21% lower loss.
+- **Not usable:** V1 compression (significant, 5% effect, under the 10% bar); S1 CONFLICT_FLAT is not choppier (ER5 0.448 vs 0.458, q 0.24); S2 trendiness does not persist (q 0.93).
+- **Correction:** `analogueCall` let an analogue vote using the decision date's own session (`j + span <= i`), which has not traded at run time; fixed to `j + span < i` (matches live `isMatured`), tests tightened (boundary test; tampering now includes the decision date's candle), Report 3 re-run: changes <= about 0.1pp, still nothing significant. Errata in PRE-REGISTRATION-3 and -5 and RESEARCH-LOG.
+- **Not committed yet:** docs changes are in the working tree on `dev`; the research code is gitignored and the backup branch `research/edge-bench` does not yet contain the stage 5 code.
+
 ### 2026-11-10 (research code made local-only) - `src/ops/research/` added to `.gitignore`; docs (PROJECT-STATE, RESEARCH-LOG, docs/state, docs/research) committed on top of `main` for pushing; research code kept as ignored local files plus the local backup branch `research/edge-bench` (never merge). Docs-only push: the deploy path filters (src, web, data, build files) do not fire, so production is unchanged.
 
 ### 2026-11-10 (research, stage 4) - Four rule strategies on 3/5-session and bracket outcomes (offline, pre-registered in `docs/research/PRE-REGISTRATION-4.md`): no cell passes the bar; reversal held 5 sessions is a lead only. Live system unchanged, holdout unread.
