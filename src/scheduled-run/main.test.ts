@@ -32,6 +32,7 @@ import type { SupabaseConfig } from "../storage/supabaseConfig.js";
 import { makePersistView } from "./main.js";
 import type { RunMatrix } from "./confluenceSlice.js";
 import {
+  buildDashboardSnapshot,
   EMPTY_CONFLUENCE,
   EMPTY_SIGNAL_SCORECARD,
   EMPTY_TRACK_RECORD,
@@ -445,6 +446,7 @@ describe("makePersistView - the confluence matrix is built once and shared", () 
 
 describe("makePersistView - per-step timing is observation only", () => {
   const DECISION_DATE = "2024-03-15";
+  const PINNED_NOW = new Date("2024-03-15T22:30:00.000Z");
   const SUPABASE: SupabaseConfig = { target: "local", url: "http://unused", key: "unused" };
 
   const evaluation: PairEvaluation = {
@@ -476,6 +478,10 @@ describe("makePersistView - per-step timing is observation only", () => {
       loadHistory: () => Promise.resolve({}),
       buildEdge: () => Promise.resolve({}),
       buildMatrix: () => Promise.resolve(null),
+      // Pin the snapshot clock. Production passes `now` as undefined, so `generatedAt` is
+      // `new Date()` per call and two back-to-back drives can straddle a millisecond.
+      buildSnapshot: (view, displayOnly, history, _now, ...rest) =>
+        buildDashboardSnapshot(view, displayOnly, history, PINNED_NOW, ...rest),
       buildConfluence: () => {
         if (options.confluenceThrows) throw new Error("confluence boom");
         return Promise.resolve(EMPTY_CONFLUENCE);
