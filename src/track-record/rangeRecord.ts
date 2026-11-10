@@ -35,7 +35,7 @@ export async function replayRangeRecords(args: RangeRecordArgs): Promise<Snapsho
     let forecasts = 0;
     let correct = 0;
     for (const date of replayDates(candles, args.decisionDate, args.lookbackDays)) {
-      let predicted: ExpectedRange | null = null;
+      let predicted: ExpectedRange | null;
       try {
         predicted = await args.forecast(pair, date);
       } catch {

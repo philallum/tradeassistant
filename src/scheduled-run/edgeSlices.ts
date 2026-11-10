@@ -124,7 +124,7 @@ export async function buildEdgeSlices(deps: EdgeSliceDeps): Promise<SnapshotEdge
     calibration = EMPTY_CALIBRATION;
   }
 
-  let exposure = EMPTY_EXPOSURE;
+  let exposure: typeof EMPTY_EXPOSURE;
   try {
     const firing: FiringSetupRow[] = deps.view.cards.map((card) => ({
       decisionDate,
