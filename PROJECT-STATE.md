@@ -28,8 +28,8 @@
 
 <!-- BEGIN STATE -->
 - **Phase:** v1 feature-complete and LIVE. `multi-strategy-confluence-engine`, Signal Scorecard and `intraday-validation` (snapshot schema v8) are all LIVE; the intraday republish bug is fixed, deployed and live-verified. Delivery cadence: operator merges dev->main to deploy; agent builds/verifies locally.
-- **Updated:** 2026-11-09
-- **Summary:** P0 daily-candle defect is fixed in the repo (hourly-derived 17:00-NY candles, FCS dropped from the candle chain, repair tool added; gate green) but NOT deployed and stored history NOT repaired; intraday trigger is 07:00 in the repo, live Scheduler still 08:00. Awaiting operator approval for: Scheduler pause/update, deploy, repair `--apply`.
+- **Updated:** 2026-11-10
+- **Summary:** Daily-candle fix (hourly-derived 17:00-NY candles) and the 07:00 London intraday trigger are deployed and verified live on 2026-11-10 (daily candles canonical on all 5 pairs, intraday validated 5/5, no warnings). History 2026-10-12..11-06 repaired; older history unaudited.
 <!-- END STATE -->
 
 ---
