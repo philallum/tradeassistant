@@ -8,6 +8,9 @@
 > the satellites where they conflict.
 
 ---
+### 2026-11-10 (evening) — PR #71 CI failure fixed (flaky test)
+- PR #71 (dev->main) failed only on the known flaky `generatedAt` assertion in `src/scheduled-run/main.test.ts` (1 ms apart). Fix is test-only: the "per-step timing" `drive()` now injects `buildSnapshot` calling `buildDashboardSnapshot` with a pinned `now`. Local: `tsc` and ESLint clean, 8 consecutive runs of the file pass (17/17). Committed `b8598d2` and pushed to `dev`; CI on #71 then passed both jobs. Merge of #71 is the operator's.
+---
 ### 2026-11-10 (closed out) — Dependabot cleanup COMPLETE
 - Operator merged #39 and #40 to `main` (head `a28c7d4`). After `git fetch --prune`: 0 open PRs, 0 remote `dependabot/*` branches. CI on `a28c7d4` passes (both jobs); the Deploy workflow for that commit was still in progress when last checked (the deploy for the #39 merge, `bfa467f`, succeeded).
 - CI on `bfa467f` FAILED on the same flaky timing test as #68: `src/scheduled-run/main.test.ts:538` ("timing changes nothing about the published snapshot") compares two `generatedAt` values that can differ by 1 ms. Passed on the next commit. Still unfixed; it will recur intermittently. The local gate was not re-run on updated `main`; CI is the evidence.
