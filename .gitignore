@@ -14,6 +14,4 @@ ops/fx-writer-key/
 # CLI scratch / cache directories (link metadata, deploy caches) - never source
 supabase/.temp/
 web/.firebase/
-data/hourly/
-# Offline research bench: local only, never pushed (see docs/state/DECISIONS.md)
-src/ops/research/
+
