@@ -71,3 +71,7 @@ A (source, outcome) cell is promising only if ALL hold: Family U uplift is BH-si
 - Multi-day outcomes of neighbouring days overlap heavily; month blocks help but intervals stay optimistic.
 - The analogue pool for H5 and BR is slightly smaller than for H1, because the most recent 5 analogue days cannot vote.
 - Trends in USD over 2013 to 2025 make multi-day hit rates depend on drift; the weekly-trend baseline and the UP-share line are there to expose that.
+
+## Erratum (2026-11-10, after Report 3 was first produced)
+
+The "No look-ahead" rule above is wrong by one candle. Candle `i` (the decision date's own session) has NOT traded when the job runs, so an analogue may vote only if `j + H < i` (H3/H5), `j + 5 < i` (BR), `j + 1 < i` (H1), matching the live `isMatured` guard. The code was corrected and Report 3 re-run; both runs are in RESEARCH-LOG. A look-ahead can only flatter a result; the first run found nothing. Details in `PRE-REGISTRATION-5.md`.

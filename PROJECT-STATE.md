@@ -29,7 +29,7 @@
 <!-- BEGIN STATE -->
 - **Phase:** v1 feature-complete and LIVE. `multi-strategy-confluence-engine`, Signal Scorecard and `intraday-validation` (snapshot schema v8) are all LIVE; the intraday republish bug is fixed, deployed and live-verified. An evidence-first hardening pass (snapshot v9, offline evidence tools) is implemented locally and NOT deployed. Delivery cadence: operator merges dev->main to deploy; agent builds/verifies locally.
 - **Updated:** 2026-11-10
-- **Summary:** Evidence-first hardening and the lightweight upgrades are committed on `dev` and merged to `main` (PR #73; live deployment not re-verified here). The offline research code (`src/ops/research/`) is local only: gitignored, never pushed or deployed (backup branch `research/edge-bench`); its reports are in `docs/research/`. Research Evidence Reports 1 to 4 (XTB costs) found no proven edge for the pattern or the four rule strategies; reversal held 5 sessions is an unconfirmed lead; the locked holdout 2025-09-16..2026-09-15 is unread. Pattern research is stopped and kept local as a backtest bench; nothing from it goes to production (NEXT-STEPS 0n, 0m).
+- **Summary:** Live system unchanged; hardening work is merged to `main` (PR #73), while the offline research code stays local and gitignored (reports in `docs/research/`). Research Reports 1-4 found no proven directional edge; Report 5 found three measurable context facts (volatility mean reversion, wider FOMC/jobs-report sessions, live analogue stop far too tight) and the holdout is unread (§12.4). Next: operator decides on committing the stage 5 docs and on a context-pivot spec (NEXT-STEPS 0n).
 <!-- END STATE -->
 
 ---
@@ -672,7 +672,7 @@ Summarised; the authoritative, moving detail is in `docs/state/CHANGELOG.md`
 | Signal Scorecard (per-signal predicted-vs-actual, schema v7) | DEPLOYED + live-verified |
 | `intraday-validation` (read-only 4H candle validation, schema v8) | DEPLOYED; manual runs live-verified (5 pairs, other slices byte-identical); its first scheduled fire (08:00 London, Mon 2026-11-09) validated 0 of 5 pairs because 08:00 London is a 4H boundary in winter; trigger moved to 07:00 (see DECISIONS 2026-11-09) |
 | Evidence-first hardening (pre-registered protocol, offline evidence tools, snapshot v9 `runHealth`/`eventFlags`, event calendar, hourly archive, heartbeat) | Implemented locally, NOT deployed; behaviour-preserving for the live decision (guard tests); the only changes to existing behaviour are web copy and a dormant trade-sim fix |
-| Edge research programme (`src/ops/research/`, `docs/research/`; four pre-registered evidence reports) | Offline only; code is local only (gitignored, not on GitHub; backup branch `research/edge-bench`); reports in `docs/research/`; never deployed; no proven edge; stopped by the operator; kept as a backtest bench (§12.4) |
+| Edge research programme (`src/ops/research/`, `docs/research/`; five pre-registered evidence reports) | Offline only; code is local only (gitignored, not on GitHub; backup branch `research/edge-bench`); reports in `docs/research/`; never deployed; no proven edge; stopped by the operator; kept as a backtest bench (§12.4) |
 | `codebase-housekeeping` (peer-review remediation: single `fires()`, verdict-path removal, redaction, docs) | Implemented locally, NOT deployed; behaviour-preserving except two intended, tested changes (replay guard, shared matrix) |
 
 **Open threads right now** (see NEXT-STEPS for detail): the daily-candle fix (hourly-derived
@@ -784,13 +784,17 @@ pair-days, 8,739 scored, 50.10%).
 | 2 | Do trader's-eye chart features (range position, distance from averages, swing structure, candle shape, compression, channel break) improve the rule strategies' setups, or the analogue encoding? | No. 0 of 20 feature tests significant. Shape plus features vs shape alone +0.7pp (not significant); features alone significantly worse. Dropping the weekly-trend prefilter does not help. |
 | 3 | Does the pattern work over 3 or 5 sessions, or as a 1 x ATR target-before-stop bracket (calls made from the analogues' own result for that outcome)? | No. All hit rates 49.7% to 50.9%; 0 of 18 tests significant; net negative in all 9 pre-registered cells. |
 | 4 | Do the four rule strategies have timing skill when held 3 or 5 sessions or bracketed (scored as excess over what their own long/short mix would get by chance)? | No pre-registered cell passes. Trend and breakout: none (breakout slightly negative). Range: too rare to tell. **Reversal held 5 sessions is a lead**: excess +5.0pp (95% CI +0.9 to +9.4), net +17.3 pips/trade (CI +3.4 to +31.9), positive on 5 of 5 pairs, but q = 0.23 after correction, only 4 years with 100+ trades (2 positive), and about 95 signals a year. |
+| 5 | Which CONTEXT statements a dashboard could show are measurably true (volatility, events, stops, chop)? | Three are. **Volatility mean-reverts:** after a high ATR percentile the next week's range averages 0.91 x ATR14, after a low one 1.06 x (13/13 years). **Event sessions are wider:** FOMC and US jobs report sessions run 1.30 x ATR14 against 0.99 (2021 onward, 5/5 years). **The live analogue stop is far too tight:** 0.42 x ATR14 on average, holding the next session's adverse move only 49% of the time though meant as a 75th percentile; a plain historical-P75 ATR rule (0.71 x ATR14) holds 74% with 21% lower loss. Not supported: compression predicting expansion (true but only 5%), CONFLICT_FLAT marking chop, trendiness persisting. |
 
 **What this does and does not show.** At daily frequency on these five pairs, neither the
 analogue pattern nor the four rule strategies shows a demonstrable, cost-surviving edge in
-the forms tested. Not tested: intraday entries or exits, other markets or crosses, carry and
+the forms tested. Volatility, event effects and stop distance, by contrast, are measurable and
+stable (stage 5), which is the evidence base for a context and risk product rather than a
+directional one. Report 3 was corrected for a one-candle look-ahead (an analogue could use the
+decision date's own session) and re-run; nothing changed by more than about 0.1pp. Not tested: intraday entries or exits, other markets or crosses, carry and
 swap, non-price inputs (rates, positioning, news), position sizing, and any tuning of the
 strategies' parameters. Per-stage figures are in `RESEARCH-LOG.md`; full tables are in
-`docs/research/EVIDENCE-REPORT-1..4.md`.
+`docs/research/EVIDENCE-REPORT-1..5.md`.
 
 **Operator decisions so far.** Pattern research is stopped and nothing from it goes to
 production. The research code is kept locally as a backtest bench for future ideas, and the
